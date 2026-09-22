@@ -18,6 +18,16 @@ REDIRECTED = (
 
 UNKNOWN_TOOL = "No tool named {name} is available to you. Do not call it again."
 
+TRUNCATED = "\n[truncated: {omitted} more characters. Narrow the request if you need the rest.]"
+
+MAX_ERROR_CHARS = 500
+
+
+def truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    return text[:limit] + TRUNCATED.format(omitted=len(text) - limit)
+
 
 @dataclass(frozen=True)
 class Tool:

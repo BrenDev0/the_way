@@ -35,10 +35,23 @@ class Settings(BaseSettings):
     def taskiq_result_backend_url(self) -> str:
         return self.TASKIQ_RESULT_BACKEND_URL or self.TASKIQ_BROKER_URL
 
+    OPENAI_API_KEY: str | None = None
+    ANTHROPIC_API_KEY: str | None = None
+
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USER: str | None = None
     SMTP_PASSWORD: str | None = None
+
+    def require_api_key(self, provider: str) -> str:
+        field = f"{provider.upper()}_API_KEY"
+        key = getattr(self, field, None)
+        if not key:
+            raise InternalServerError(
+                message="Unable to process request at this time",
+                code="llm_api_key_not_configured",
+            )
+        return key
 
     def require_smtp_host(self) -> str:
         if not self.SMTP_HOST:

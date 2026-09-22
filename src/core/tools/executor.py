@@ -5,11 +5,13 @@ from collections.abc import Mapping, Sequence
 from src.core.llm.domain import ToolCall
 
 from .domain import (
+    MAX_ERROR_CHARS,
     UNKNOWN_TOOL,
     ApprovalRequest,
     Decision,
     Tool,
     ToolResult,
+    truncate,
 )
 from .ports import ApprovalGate, ToolEvents
 
@@ -28,10 +30,12 @@ class Executor:
         tools: Mapping[str, Tool],
         gate: ApprovalGate,
         events: ToolEvents | None = None,
+        max_error_chars: int = MAX_ERROR_CHARS,
     ) -> None:
         self._tools = dict(tools)
         self._gate = gate
         self._events = events or NullEvents()
+        self._max_error_chars = max_error_chars
 
     def requires_approval(self, call: ToolCall) -> bool:
         tool = self._tools.get(call.name)
@@ -93,11 +97,16 @@ class Executor:
         except Exception as exc:  # noqa: BLE001
             return ToolResult(
                 tool_call_id=call.id,
-                content=f"{type(exc).__name__}: {exc}",
+                content=truncate(_describe(exc), self._max_error_chars),
                 failed=True,
             )
 
         return ToolResult(tool_call_id=call.id, content=str(output))
+
+
+def _describe(exc: Exception) -> str:
+    message = str(exc).strip()
+    return f"{type(exc).__name__}: {message}" if message else type(exc).__name__
 
 
 def _build(builder, args: Mapping):

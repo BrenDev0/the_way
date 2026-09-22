@@ -2,9 +2,38 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
+from src.core.llm.domain import Completion, Message, TokenUsage, ToolCall, assistant
 from src.core.sessions.domain import Session
 from src.organizations.domain import Organization
 from src.users.domain import Role, User
+
+
+class FakeLLM:
+    def __init__(self, *replies: Completion | str) -> None:
+        self.replies = [
+            reply if isinstance(reply, Completion) else make_completion(reply)
+            for reply in replies
+        ]
+        self.received: list[list[Message]] = []
+
+    async def respond(self, messages: list[Message]) -> Completion:
+        self.received.append(list(messages))
+        if not self.replies:
+            raise AssertionError("FakeLLM was called more times than it has replies")
+        return self.replies.pop(0)
+
+
+def make_completion(
+    text: str = "",
+    tool_calls: tuple[ToolCall, ...] = (),
+    usage: TokenUsage | None = None,
+) -> Completion:
+    return Completion(
+        message=assistant(text, tool_calls),
+        text=text,
+        tool_calls=tool_calls,
+        usage=usage or TokenUsage(),
+    )
 
 
 class FakeCacheStore:

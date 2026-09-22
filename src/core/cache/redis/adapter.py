@@ -95,4 +95,4 @@ class RedisCacheStore:
         return bool(result)
     
     async def close_connection(self):
-        await self._redis.close()
+        await self._redis.aclose()

@@ -1,0 +1,2 @@
+MODEL = "gpt-5.4"
+TEMPERATURE = 0.0

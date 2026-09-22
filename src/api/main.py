@@ -47,3 +47,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan)
 register_exception_handlers(app)
 app.include_router(v1_router, prefix="/api/v1")
+
+
+@app.get("/health", tags=["health"])
+async def health_check() -> dict[str, str]:
+    return {"status": "ok"}

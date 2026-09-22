@@ -305,3 +305,77 @@ async def test_default_gate_choice_is_the_callers_and_denial_is_safe():
 
     assert "denied" in results[0].content
     assert isinstance(results[0], ToolResult)
+
+
+async def test_a_long_error_is_capped():
+    async def noisy(path: str) -> str:
+        raise RuntimeError("x" * 5000)
+
+    results = await executor(
+        AutoApproveGate(), Noisy=Tool(schema=ReadFile, handler=noisy)
+    ).execute([call("Noisy", path="x")])
+
+    assert len(results[0].content) < 700
+    assert "truncated" in results[0].content
+
+
+async def test_a_capped_error_keeps_the_exception_type():
+    async def noisy(path: str) -> str:
+        raise FileNotFoundError("x" * 5000)
+
+    results = await executor(
+        AutoApproveGate(), Noisy=Tool(schema=ReadFile, handler=noisy)
+    ).execute([call("Noisy", path="x")])
+
+    assert results[0].content.startswith("FileNotFoundError:")
+
+
+async def test_a_short_error_is_untouched():
+    async def boom(path: str) -> str:
+        raise PermissionError("denied on /etc/passwd")
+
+    results = await executor(
+        AutoApproveGate(), Boom=Tool(schema=ReadFile, handler=boom)
+    ).execute([call("Boom", path="x")])
+
+    assert results[0].content == "PermissionError: denied on /etc/passwd"
+
+
+async def test_an_exception_with_no_message_still_names_its_type():
+    async def bare(path: str) -> str:
+        raise RuntimeError
+
+    results = await executor(
+        AutoApproveGate(), Bare=Tool(schema=ReadFile, handler=bare)
+    ).execute([call("Bare", path="x")])
+
+    assert results[0].content == "RuntimeError"
+
+
+async def test_a_large_result_is_passed_through_untouched():
+    payload = "y" * 50_000
+
+    async def flood(path: str) -> str:
+        return payload
+
+    results = await executor(
+        AutoApproveGate(), Flood=Tool(schema=ReadFile, handler=flood)
+    ).execute([call("Flood", path="x")])
+
+    assert results[0].content == payload
+
+
+async def test_the_error_cap_is_configurable():
+    async def noisy(path: str) -> str:
+        raise RuntimeError("x" * 500)
+
+    runner = Executor(
+        {"Noisy": Tool(schema=ReadFile, handler=noisy)},
+        AutoApproveGate(),
+        max_error_chars=50,
+    )
+
+    results = await runner.execute([call("Noisy", path="x")])
+
+    assert "more characters" in results[0].content
+    assert len(results[0].content) < 200

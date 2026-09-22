@@ -1,0 +1,121 @@
+name: the-way
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: the_way
+      POSTGRES_PASSWORD: the_way
+      POSTGRES_DB: the_way
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U the_way -d the_way"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis:
+    image: redis:8-alpine
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  redis-queue:
+    image: redis:8-alpine
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory-policy noeviction
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_queue_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  mailpit:
+    image: axllent/mailpit:latest
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: 1
+      MP_SMTP_AUTH_ALLOW_INSECURE: 1
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  api:
+    build: .
+    profiles: ["app"]
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://the_way:the_way@postgres:5432/the_way
+      REDIS_URL: redis://redis:6379/0
+      TASKIQ_BROKER_URL: redis://redis-queue:6379/0
+      TASKIQ_RESULT_BACKEND_URL: redis://redis-queue:6379/1
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+      WATCHFILES_FORCE_POLLING: "true"
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+
+  worker:
+    build: .
+    profiles: ["app"]
+    command: taskiq worker src.worker.main:broker --workers 1
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://the_way:the_way@postgres:5432/the_way
+      REDIS_URL: redis://redis:6379/0
+      TASKIQ_BROKER_URL: redis://redis-queue:6379/0
+      TASKIQ_RESULT_BACKEND_URL: redis://redis-queue:6379/1
+      SMTP_HOST: mailpit
+      SMTP_PORT: "1025"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      redis-queue:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+  redis_queue_data:

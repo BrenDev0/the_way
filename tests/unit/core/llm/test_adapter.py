@@ -223,3 +223,102 @@ async def test_an_empty_stream_is_an_error():
         await LangchainLLM(FakeChatModel(chunks=[]), stream=True).respond(conversation())
 
     assert exc.value.code == "llm_empty_response"
+
+
+async def test_openai_shape_plain_answer():
+    model = FakeChatModel(AIMessage(content="hello"))
+
+    completion = await LangchainLLM(model).respond(conversation())
+
+    assert completion.text == "hello"
+    assert completion.message["content"] == "hello"
+
+
+async def test_openai_shape_with_tool_calls():
+    model = FakeChatModel(
+        AIMessage(
+            content="",
+            tool_calls=[{"id": "c1", "name": "ReadFile", "args": {}, "type": "tool_call"}],
+        )
+    )
+
+    completion = await LangchainLLM(model).respond(conversation())
+
+    assert completion.text == ""
+    assert completion.tool_calls[0].name == "ReadFile"
+
+
+async def test_anthropic_shape_single_text_block_arrives_as_a_string():
+    model = FakeChatModel(AIMessage(content="hello"))
+
+    completion = await LangchainLLM(model).respond(conversation())
+
+    assert completion.text == "hello"
+
+
+async def test_anthropic_shape_tool_use_arrives_as_a_block_list():
+    content = [
+        {"type": "text", "text": "Let me look."},
+        {"type": "tool_use", "id": "c1", "name": "ReadFile", "input": {"path": "x.txt"}},
+    ]
+    model = FakeChatModel(
+        AIMessage(
+            content=content,
+            tool_calls=[
+                {"id": "c1", "name": "ReadFile", "args": {"path": "x.txt"}, "type": "tool_call"}
+            ],
+        )
+    )
+
+    completion = await LangchainLLM(model).respond(conversation())
+
+    assert completion.text == "Let me look."
+    assert completion.tool_calls[0].id == "c1"
+    assert completion.message["content"] == content
+
+
+async def test_anthropic_shape_thinking_blocks_are_kept_but_not_spoken():
+    content = [
+        {"type": "thinking", "thinking": "internal reasoning", "signature": "sig"},
+        {"type": "text", "text": "the answer"},
+    ]
+    model = FakeChatModel(AIMessage(content=content))
+
+    completion = await LangchainLLM(model).respond(conversation())
+
+    assert completion.text == "the answer"
+    assert "internal reasoning" not in completion.text
+    assert completion.message["content"] == content
+
+
+async def test_anthropic_shape_tool_use_with_no_commentary():
+    content = [{"type": "tool_use", "id": "c1", "name": "ReadFile", "input": {}}]
+    model = FakeChatModel(
+        AIMessage(
+            content=content,
+            tool_calls=[{"id": "c1", "name": "ReadFile", "args": {}, "type": "tool_call"}],
+        )
+    )
+
+    completion = await LangchainLLM(model).respond(conversation())
+
+    assert completion.text == ""
+    assert completion.tool_calls[0].name == "ReadFile"
+
+
+async def test_every_provider_shape_survives_persistence():
+    shapes = [
+        "plain string",
+        [{"type": "text", "text": "hi"}],
+        [
+            {"type": "thinking", "thinking": "r", "signature": "s"},
+            {"type": "text", "text": "hi"},
+        ],
+        [{"type": "tool_use", "id": "c1", "name": "ReadFile", "input": {"path": "x"}}],
+    ]
+
+    for content in shapes:
+        completion = await LangchainLLM(FakeChatModel(AIMessage(content=content))).respond(
+            conversation()
+        )
+        assert json.loads(json.dumps(completion.message)) == completion.message

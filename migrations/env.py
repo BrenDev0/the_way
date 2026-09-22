@@ -1,14 +1,14 @@
 import asyncio
 from logging.config import fileConfig
 
+from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from alembic import context
-
-import src.core.sessions.sqlalchemy  # noqa: F401
-import src.organizations.sqlalchemy  # noqa: F401
+import src.conversations.sqlalchemy
+import src.core.sessions.sqlalchemy
+import src.organizations.sqlalchemy
 import src.users.sqlalchemy  # noqa: F401
 from src.core.database.sqlalchemy.models import Base
 from src.core.settings import settings

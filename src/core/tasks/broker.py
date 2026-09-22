@@ -14,8 +14,9 @@ def build_broker() -> AsyncBroker:
     )
     return RedisStreamBroker(
         url=settings.TASKIQ_BROKER_URL,
-        stream_name=settings.TASKIQ_STREAM_NAME,
+        queue_name=settings.TASKIQ_STREAM_NAME,
         consumer_group_name=settings.TASKIQ_CONSUMER_GROUP,
+        consumer_id="0",
     ).with_result_backend(result_backend)
 
 

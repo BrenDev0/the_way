@@ -43,7 +43,7 @@ class ConflictError(ApplicationError):
 
 
 class ValidationError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_422_UNPROCESSABLE_ENTITY
+    default_status_code: ClassVar[int] = status.HTTP_422_UNPROCESSABLE_CONTENT
 
     def __init__(self, message: str = "Validation failed", code: str = "validation_error") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)

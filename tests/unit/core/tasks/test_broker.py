@@ -3,10 +3,16 @@ import taskiq_fastapi
 from taskiq import InMemoryBroker
 
 from src.core.settings import settings
-from src.core.tasks import health
 from src.core.tasks.broker import broker, build_broker
+from src.worker import health
+
+in_memory_only = pytest.mark.skipif(
+    settings.TASKIQ_BROKER_URL != "memory://",
+    reason="needs the in-memory broker; the environment points at a real one",
+)
 
 
+@in_memory_only
 def test_memory_url_builds_an_in_memory_broker():
     assert isinstance(broker, InMemoryBroker)
 
@@ -18,6 +24,14 @@ def test_redis_url_builds_a_stream_broker(monkeypatch):
 
     assert type(built).__name__ == "RedisStreamBroker"
     assert built.result_backend is not None
+    assert built.queue_name == settings.TASKIQ_STREAM_NAME
+    assert built.consumer_group_name == settings.TASKIQ_CONSUMER_GROUP
+
+
+def test_a_new_consumer_group_drains_the_backlog(monkeypatch):
+    monkeypatch.setattr(settings, "TASKIQ_BROKER_URL", "redis://localhost:6379/1")
+
+    assert build_broker().consumer_id == "0"
 
 
 def test_result_backend_url_falls_back_to_the_broker_url(monkeypatch):
@@ -36,10 +50,11 @@ def test_result_backend_url_is_used_when_set(monkeypatch):
 def test_tasks_are_registered_on_the_broker():
     registered = set(broker.get_all_tasks())
 
-    assert "src.core.tasks.health:ping" in registered
-    assert "src.core.tasks.health:check_dependencies" in registered
+    assert "src.worker.health:ping" in registered
+    assert "src.worker.health:check_dependencies" in registered
 
 
+@in_memory_only
 async def test_a_task_round_trips_through_the_broker():
     await broker.startup()
     try:
@@ -52,11 +67,12 @@ async def test_a_task_round_trips_through_the_broker():
     assert result.return_value
 
 
+@in_memory_only
 async def test_dependency_injection_reaches_a_task(cache_store):
-    from src.api import dependencies as api_dependencies
+    from src.worker import dependencies as worker_dependencies
 
     broker.add_dependency_context({})
-    broker.dependency_overrides[api_dependencies.get_cache_store] = lambda: cache_store
+    broker.dependency_overrides[worker_dependencies.get_cache_store] = lambda: cache_store
 
     await broker.startup()
     try:
@@ -64,7 +80,7 @@ async def test_dependency_injection_reaches_a_task(cache_store):
         result = await task.wait_result(timeout=5)
     finally:
         await broker.shutdown()
-        broker.dependency_overrides.pop(api_dependencies.get_cache_store, None)
+        broker.dependency_overrides.pop(worker_dependencies.get_cache_store, None)
 
     assert not result.is_err
     assert result.return_value is True
