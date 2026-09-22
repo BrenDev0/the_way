@@ -11,6 +11,7 @@ from src.core.exception_handlers import register_exception_handlers
 from src.core.sessions.config import SessionCookieConfig
 from src.core.sessions.tokens import SessionTokenService
 from src.core.settings import settings
+from src.core.tasks.broker import broker
 
 from .v1.routes import router as v1_router
 
@@ -32,7 +33,14 @@ async def lifespan(app: FastAPI):
         samesite=settings.SESSION_COOKIE_SAMESITE,
         max_age_seconds=settings.SESSION_TTL_SECONDS,
     )
+
+    if not broker.is_worker_process:
+        await broker.startup()
+
     yield
+
+    if not broker.is_worker_process:
+        await broker.shutdown()
     await app.state.cache_store.close_connection()
 
 

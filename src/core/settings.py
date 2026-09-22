@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     REQUEST_SIGNING_SECRET: str
     REQUEST_SIGNATURE_WINDOW_SECONDS: int = 30
 
+    TASKIQ_BROKER_URL: str
+    TASKIQ_RESULT_BACKEND_URL: str | None = None
+    TASKIQ_RESULT_TTL_SECONDS: int = 60 * 60
+    TASKIQ_STREAM_NAME: str = "taskiq:stream"
+    TASKIQ_CONSUMER_GROUP: str = "taskiq:workers"
+
+    def taskiq_result_backend_url(self) -> str:
+        return self.TASKIQ_RESULT_BACKEND_URL or self.TASKIQ_BROKER_URL
+
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USER: str | None = None

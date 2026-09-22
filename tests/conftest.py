@@ -6,6 +6,7 @@ os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://user:pass@localhost/
 os.environ.setdefault("CRYPTOGRAPHY_FERNET_KEY", Fernet.generate_key().decode("utf-8"))
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
 os.environ.setdefault("REQUEST_SIGNING_SECRET", "test-signing-secret")
+os.environ.setdefault("TASKIQ_BROKER_URL", "memory://")
 
 import pytest
 from helpers import FakeCacheStore, FakeEncryptionService, FakeHashingService
