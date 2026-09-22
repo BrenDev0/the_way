@@ -2,13 +2,8 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request, Response, status
 
-from src.api.dependencies import (
-    get_cache_store,
-    get_encryption_service,
-    get_hashing_service,
-    get_session_cookie_config,
-    get_session_token_service,
-)
+from src.api import dependencies as api_dependencies
+from src.auth import use_cases as auth_use_cases
 from src.auth.schemas import (
     AuthUserResponse,
     LoginRequest,
@@ -17,23 +12,14 @@ from src.auth.schemas import (
     RequestRegistrationVerificationResponse,
     UserRegistrationRequest,
 )
-from src.auth.use_cases import (
-    login_user,
-    logout_user,
-    register_user,
-    send_registration_verification_code,
-)
 from src.core.cache.ports import CacheStore
 from src.core.cryptography.ports import EncryptionService, HashingService
 from src.core.exceptions import AuthenticationError
+from src.core.sessions import dependencies as sessions_dependencies
 from src.core.sessions.config import SessionCookieConfig
-from src.core.sessions.dependencies import (
-    provide_create_session_fn,
-    provide_revoke_session_by_token_hash_fn,
-)
 from src.core.sessions.ports import CreateSessionFn, RevokeSessionByTokenHashFn
 from src.core.sessions.tokens import SessionTokenService
-from src.users.dependencies import provide_create_user_fn, provide_get_user_by_email_hash_fn
+from src.users import dependencies as users_dependencies
 from src.users.ports import CreateUserFn, GetUserByEmailHashFn
 from src.users.schemas import UserResponse
 
@@ -47,14 +33,14 @@ router = APIRouter(tags=["auth"])
 )
 async def request_registration_verification_route(
     payload: RequestRegistrationVerificationRequest,
-    cache_store: Annotated[CacheStore, Depends(get_cache_store)],
-    hashing_service: Annotated[HashingService, Depends(get_hashing_service)],
+    cache_store: Annotated[CacheStore, Depends(api_dependencies.get_cache_store)],
+    hashing_service: Annotated[HashingService, Depends(api_dependencies.get_hashing_service)],
     get_user_by_email_hash_fn: Annotated[
         GetUserByEmailHashFn,
-        Depends(provide_get_user_by_email_hash_fn),
+        Depends(users_dependencies.provide_get_user_by_email_hash_fn),
     ],
 ) -> RequestRegistrationVerificationResponse:
-    expires_at = await send_registration_verification_code(
+    expires_at = await auth_use_cases.send_registration_verification_code(
         email=payload.email,
         cache_store=cache_store,
         hashing_service=hashing_service,
@@ -69,16 +55,19 @@ async def request_registration_verification_route(
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user_route(
     payload: UserRegistrationRequest,
-    create_user_fn: Annotated[CreateUserFn, Depends(provide_create_user_fn)],
+    create_user_fn: Annotated[CreateUserFn, Depends(users_dependencies.provide_create_user_fn)],
     get_user_by_email_hash_fn: Annotated[
         GetUserByEmailHashFn,
-        Depends(provide_get_user_by_email_hash_fn),
+        Depends(users_dependencies.provide_get_user_by_email_hash_fn),
     ],
-    cache_store: Annotated[CacheStore, Depends(get_cache_store)],
-    hashing_service: Annotated[HashingService, Depends(get_hashing_service)],
-    encryption_service: Annotated[EncryptionService, Depends(get_encryption_service)],
+    cache_store: Annotated[CacheStore, Depends(api_dependencies.get_cache_store)],
+    hashing_service: Annotated[HashingService, Depends(api_dependencies.get_hashing_service)],
+    encryption_service: Annotated[
+        EncryptionService,
+        Depends(api_dependencies.get_encryption_service),
+    ],
 ) -> UserResponse:
-    return await register_user(
+    return await auth_use_cases.register_user(
         organization_id=payload.organization_id,
         email=payload.email,
         password=payload.password,
@@ -97,15 +86,27 @@ async def login_user_route(
     response: Response,
     get_user_by_email_hash_fn: Annotated[
         GetUserByEmailHashFn,
-        Depends(provide_get_user_by_email_hash_fn),
+        Depends(users_dependencies.provide_get_user_by_email_hash_fn),
     ],
-    create_session_fn: Annotated[CreateSessionFn, Depends(provide_create_session_fn)],
-    hashing_service: Annotated[HashingService, Depends(get_hashing_service)],
-    encryption_service: Annotated[EncryptionService, Depends(get_encryption_service)],
-    session_token_service: Annotated[SessionTokenService, Depends(get_session_token_service)],
-    session_cookie_config: Annotated[SessionCookieConfig, Depends(get_session_cookie_config)],
+    create_session_fn: Annotated[
+        CreateSessionFn,
+        Depends(sessions_dependencies.provide_create_session_fn),
+    ],
+    hashing_service: Annotated[HashingService, Depends(api_dependencies.get_hashing_service)],
+    encryption_service: Annotated[
+        EncryptionService,
+        Depends(api_dependencies.get_encryption_service),
+    ],
+    session_token_service: Annotated[
+        SessionTokenService,
+        Depends(api_dependencies.get_session_token_service),
+    ],
+    session_cookie_config: Annotated[
+        SessionCookieConfig,
+        Depends(api_dependencies.get_session_cookie_config),
+    ],
 ) -> AuthUserResponse:
-    user, session_token = await login_user(
+    user, session_token = await auth_use_cases.login_user(
         email=payload.email,
         password=payload.password,
         get_user_by_email_hash_fn=get_user_by_email_hash_fn,
@@ -134,16 +135,22 @@ async def logout_user_route(
     response: Response,
     revoke_session_by_token_hash_fn: Annotated[
         RevokeSessionByTokenHashFn,
-        Depends(provide_revoke_session_by_token_hash_fn),
+        Depends(sessions_dependencies.provide_revoke_session_by_token_hash_fn),
     ],
-    session_token_service: Annotated[SessionTokenService, Depends(get_session_token_service)],
-    session_cookie_config: Annotated[SessionCookieConfig, Depends(get_session_cookie_config)],
+    session_token_service: Annotated[
+        SessionTokenService,
+        Depends(api_dependencies.get_session_token_service),
+    ],
+    session_cookie_config: Annotated[
+        SessionCookieConfig,
+        Depends(api_dependencies.get_session_cookie_config),
+    ],
 ) -> LogoutResponse:
     session_token = request.cookies.get(session_cookie_config.name)
     if not session_token:
         raise AuthenticationError(message="Missing session", code="missing_session")
 
-    await logout_user(
+    await auth_use_cases.logout_user(
         session_token=session_token,
         revoke_session_by_token_hash_fn=revoke_session_by_token_hash_fn,
         session_token_service=session_token_service,

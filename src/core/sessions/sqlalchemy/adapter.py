@@ -6,16 +6,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.sessions.domain import Session, SessionCreate
-from src.core.sessions.sqlalchemy.mappers import domain_create_to_row, row_to_domain
+from src.core.sessions.sqlalchemy import mapper
 from src.core.sessions.sqlalchemy.models import SessionRow
 
 
 async def create(session: AsyncSession, session_create: SessionCreate) -> Session:
-    row = domain_create_to_row(session_create)
+    row = mapper.domain_create_to_row(session_create)
     session.add(row)
     await session.flush()
     await session.refresh(row)
-    return row_to_domain(row)
+    return mapper.row_to_domain(row)
 
 
 async def get_by_token_hash(session: AsyncSession, token_hash: str) -> Session | None:
@@ -23,7 +23,7 @@ async def get_by_token_hash(session: AsyncSession, token_hash: str) -> Session |
     row = result.scalar_one_or_none()
     if row is None:
         return None
-    return row_to_domain(row)
+    return mapper.row_to_domain(row)
 
 
 async def touch(session: AsyncSession, session_id: UUID) -> Session | None:
@@ -34,7 +34,7 @@ async def touch(session: AsyncSession, session_id: UUID) -> Session | None:
     row.last_seen_at = datetime.now(UTC)
     await session.flush()
     await session.refresh(row)
-    return row_to_domain(row)
+    return mapper.row_to_domain(row)
 
 
 async def revoke(session: AsyncSession, session_id: UUID) -> bool:

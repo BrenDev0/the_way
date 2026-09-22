@@ -2,16 +2,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, Response
 
-from src.api.dependencies import get_session_cookie_config
-from src.auth.dependencies import get_current_user
+from src.api import dependencies as api_dependencies
+from src.auth import dependencies as auth_dependencies
+from src.core.sessions import dependencies as sessions_dependencies
 from src.core.sessions.config import SessionCookieConfig
-from src.core.sessions.dependencies import provide_revoke_sessions_by_user_id_fn
 from src.core.sessions.ports import RevokeSessionsByUserIdFn
-from src.users.dependencies import provide_delete_user_fn
+from src.users import dependencies as users_dependencies
+from src.users import use_cases as users_use_cases
 from src.users.domain import User
 from src.users.ports import DeleteUserFn
 from src.users.schemas import DeleteUserResponse
-from src.users.use_cases import delete_user
 
 router = APIRouter(tags=["users"])
 
@@ -19,15 +19,18 @@ router = APIRouter(tags=["users"])
 @router.delete("/me", response_model=DeleteUserResponse)
 async def delete_current_user_route(
     response: Response,
-    current_user: Annotated[User, Depends(get_current_user)],
-    delete_user_fn: Annotated[DeleteUserFn, Depends(provide_delete_user_fn)],
+    current_user: Annotated[User, Depends(auth_dependencies.get_current_user)],
+    delete_user_fn: Annotated[DeleteUserFn, Depends(users_dependencies.provide_delete_user_fn)],
     revoke_sessions_by_user_id_fn: Annotated[
         RevokeSessionsByUserIdFn,
-        Depends(provide_revoke_sessions_by_user_id_fn),
+        Depends(sessions_dependencies.provide_revoke_sessions_by_user_id_fn),
     ],
-    session_cookie_config: Annotated[SessionCookieConfig, Depends(get_session_cookie_config)],
+    session_cookie_config: Annotated[
+        SessionCookieConfig,
+        Depends(api_dependencies.get_session_cookie_config),
+    ],
 ) -> DeleteUserResponse:
-    await delete_user(
+    await users_use_cases.delete_user(
         user_id=current_user.id,
         delete_user_fn=delete_user_fn,
         revoke_sessions_by_user_id_fn=revoke_sessions_by_user_id_fn,
