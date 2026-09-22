@@ -2,8 +2,10 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.core.exceptions import ConflictError
 from src.users.domain import Role, User, UserCreate
 
 from . import mapper
@@ -13,7 +15,13 @@ from .models import UserRow
 async def create(session: AsyncSession, user: UserCreate) -> User:
     row = mapper.domain_create_to_row(user)
     session.add(row)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        raise ConflictError(
+            message="User with this email already exists",
+            code="user_email_already_exists",
+        ) from exc
     await session.refresh(row)
     return mapper.row_to_domain(row)
 

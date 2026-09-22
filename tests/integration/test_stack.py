@@ -1,5 +1,7 @@
 from uuid import uuid4
 
+import pytest
+
 from src.core.llm.domain import ToolCall
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
@@ -139,3 +141,33 @@ def test_tool_call_ids_survive_a_json_round_trip():
     import json
 
     assert json.loads(json.dumps(conversation)) == conversation
+
+
+async def test_a_duplicate_email_is_a_conflict_not_a_crash(db_session):
+    from src.core.exceptions import ConflictError
+    from src.organizations.domain import OrganizationCreate
+    from src.organizations.sqlalchemy import adapter as organizations_adapter
+    from src.users.domain import Role, UserCreate
+    from src.users.sqlalchemy import adapter as users_adapter
+
+    organization = await organizations_adapter.create(
+        db_session, OrganizationCreate(name="Acme Inc")
+    )
+    email_hash = f"dhash::{uuid4()}"
+
+    def new_user():
+        return UserCreate(
+            organization_id=organization.id,
+            encrypted_email=f"enc::{uuid4()}",
+            email_hash=email_hash,
+            password_hash="pwhash::secret",
+            role=Role.OWNER,
+        )
+
+    await users_adapter.create(db_session, new_user())
+
+    with pytest.raises(ConflictError) as exc:
+        await users_adapter.create(db_session, new_user())
+
+    assert exc.value.code == "user_email_already_exists"
+    assert exc.value.status_code == 409

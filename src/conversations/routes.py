@@ -10,18 +10,22 @@ from . import dependencies as conversations_dependencies
 from . import mapper
 from . import use_cases as conversations_use_cases
 from .ports import (
+    AppendMessagesFn,
     CreateConversationFn,
     DeleteConversationForUserFn,
     GetConversationForUserFn,
     ListConversationsForUserFn,
     ListMessagesForUserFn,
+    SaveTurnStateFn,
 )
 from .schemas import (
     ConversationResponse,
     CreateConversationRequest,
     DeleteConversationResponse,
     MessageResponse,
+    SendMessageRequest,
 )
+from .tasks import advance_conversation
 
 router = APIRouter(tags=["conversations"])
 
@@ -113,3 +117,39 @@ async def delete_conversation_route(
         delete_conversation_for_user_fn=delete_conversation_for_user_fn,
     )
     return DeleteConversationResponse(detail="Conversation deleted")
+
+
+@router.post(
+    "/{conversation_id}/messages",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def send_message_route(
+    conversation_id: UUID,
+    payload: SendMessageRequest,
+    current_user: CurrentUser,
+    get_conversation_for_user_fn: Annotated[
+        GetConversationForUserFn,
+        Depends(conversations_dependencies.provide_get_conversation_for_user_fn),
+    ],
+    append_messages_fn: Annotated[
+        AppendMessagesFn,
+        Depends(conversations_dependencies.provide_append_messages_fn),
+    ],
+    save_turn_state_fn: Annotated[
+        SaveTurnStateFn,
+        Depends(conversations_dependencies.provide_save_turn_state_fn),
+    ],
+) -> ConversationResponse:
+    conversation = await conversations_use_cases.send_message(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        message=payload.message,
+        get_conversation_for_user_fn=get_conversation_for_user_fn,
+        append_messages_fn=append_messages_fn,
+        save_turn_state_fn=save_turn_state_fn,
+    )
+
+    await advance_conversation.kiq(conversation.id)  # type: ignore[call-overload]
+
+    return mapper.domain_to_conversation_response(conversation)

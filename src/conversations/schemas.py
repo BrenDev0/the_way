@@ -11,6 +11,10 @@ class CreateConversationRequest(ApiBaseModel):
     title: str = "New conversation"
 
 
+class SendMessageRequest(ApiBaseModel):
+    message: str
+
+
 class ConversationResponse(ApiBaseModel):
     id: UUID
     title: str

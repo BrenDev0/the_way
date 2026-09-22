@@ -35,6 +35,24 @@ async def get_for_user(
     return mapper.row_to_domain(row) if row else None
 
 
+async def get_by_id(session: AsyncSession, conversation_id: UUID) -> Conversation | None:
+    result = await session.execute(
+        select(ConversationRow).where(ConversationRow.id == conversation_id)
+    )
+    row = result.scalar_one_or_none()
+
+    return mapper.row_to_domain(row) if row else None
+
+
+async def list_messages(session: AsyncSession, conversation_id: UUID) -> list[Message]:
+    result = await session.execute(
+        select(MessageRow)
+        .where(MessageRow.conversation_id == conversation_id)
+        .order_by(MessageRow.position)
+    )
+    return [mapper.message_row_to_domain(row) for row in result.scalars().all()]
+
+
 async def list_for_user(session: AsyncSession, user_id: UUID) -> Sequence[Conversation]:
     result = await session.execute(
         select(ConversationRow)

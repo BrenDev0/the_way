@@ -102,6 +102,16 @@ def worker():
         handle.close()
 
 
+@pytest.fixture(autouse=True)
+async def dispose_shared_engine():
+    """Production code opens sessions from the module-level engine. Each test gets
+    its own event loop, so pooled connections must not survive between them."""
+    yield
+    from src.core.database.sqlalchemy.core import engine
+
+    await engine.dispose()
+
+
 @pytest.fixture
 async def db_session():
     engine = build_engine()

@@ -10,6 +10,7 @@ from src.conversations.ports import (
     AppendMessagesFn,
     CreateConversationFn,
     DeleteConversationForUserFn,
+    GetConversationByIdFn,
     GetConversationForUserFn,
     ListConversationsForUserFn,
     ListMessagesForUserFn,
@@ -82,3 +83,12 @@ def provide_append_messages_fn(
         return await adapter.append_messages(session, conversation_id, messages)
 
     return append_messages_fn
+
+
+def provide_get_conversation_by_id_fn(
+    session: Annotated[AsyncSession, Depends(db_dependencies.get_db_session)],
+) -> GetConversationByIdFn:
+    async def get_conversation_by_id_fn(conversation_id: UUID):
+        return await adapter.get_by_id(session, conversation_id)
+
+    return get_conversation_by_id_fn
