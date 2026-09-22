@@ -1,7 +1,7 @@
 from collections.abc import Awaitable, Callable, Sequence
 from uuid import UUID
 
-from src.core.sessions.domain import Session, SessionCreate
+from .domain import Session, SessionCreate
 
 CreateSessionFn = Callable[[SessionCreate], Awaitable[Session]]
 GetSessionByTokenHashFn = Callable[[str], Awaitable[Session | None]]

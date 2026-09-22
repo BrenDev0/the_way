@@ -1,4 +1,4 @@
-from src.core.sessions.sqlalchemy.providers import (
+from .sqlalchemy.providers import (
     provide_create_session_fn,
     provide_get_session_by_token_hash_fn,
     provide_revoke_session_by_token_hash_fn,

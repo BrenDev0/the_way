@@ -1,6 +1,13 @@
 from dataclasses import dataclass
 from datetime import datetime
+from enum import StrEnum
 from uuid import UUID
+
+
+class Role(StrEnum):
+    OWNER = "owner"
+    ADMIN = "admin"
+    MEMBER = "member"
 
 
 @dataclass
@@ -10,6 +17,7 @@ class User:
     encrypted_email: str
     email_hash: str
     password_hash: str
+    role: Role
     created_at: datetime
 
 
@@ -19,3 +27,4 @@ class UserCreate:
     encrypted_email: str
     email_hash: str
     password_hash: str
+    role: Role

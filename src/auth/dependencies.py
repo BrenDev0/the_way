@@ -1,17 +1,20 @@
+from collections.abc import Callable, Coroutine
 from typing import Annotated
 
 from fastapi import Depends
 from starlette.requests import Request
 
 from src.api import dependencies as api_dependencies
-from src.core.exceptions import AuthenticationError
+from src.core.cache.ports import CacheStore
+from src.core.exceptions import AuthenticationError, AuthorizationError
 from src.core.sessions import dependencies as sessions_dependencies
 from src.core.sessions import service as sessions_service
 from src.core.sessions.config import SessionCookieConfig
 from src.core.sessions.ports import GetSessionByTokenHashFn, TouchSessionFn
 from src.core.sessions.tokens import SessionTokenService
 from src.users import dependencies as users_dependencies
-from src.users.domain import User
+from src.users import use_cases as users_use_cases
+from src.users.domain import Role, User
 from src.users.ports import GetUserByIdFn
 
 
@@ -37,6 +40,7 @@ async def get_current_user(
         SessionCookieConfig,
         Depends(api_dependencies.get_session_cookie_config),
     ],
+    cache_store: Annotated[CacheStore, Depends(api_dependencies.get_cache_store)],
 ) -> User:
     session_token = request.cookies.get(session_cookie_config.name)
     if not session_token:
@@ -51,8 +55,26 @@ async def get_current_user(
     if session is None:
         raise AuthenticationError(message="Invalid session", code="invalid_session")
 
-    user = await get_user_by_id_fn(session.user_id)
+    user = await users_use_cases.get_user(
+        user_id=session.user_id,
+        get_user_by_id_fn=get_user_by_id_fn,
+        cache_store=cache_store,
+    )
     if user is None:
         raise AuthenticationError(message="Invalid session", code="invalid_session")
     return user
+
+
+def require_role(*allowed: Role) -> Callable[..., Coroutine[None, None, User]]:
+    async def dependency(
+        current_user: Annotated[User, Depends(get_current_user)],
+    ) -> User:
+        if current_user.role not in allowed:
+            raise AuthorizationError(
+                message="Not authorized to perform this action",
+                code="insufficient_role",
+            )
+        return current_user
+
+    return dependency
 

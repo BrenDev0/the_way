@@ -1,15 +1,15 @@
 from datetime import UTC, datetime
 from uuid import UUID
 
-from src.core.sessions.domain import Session, SessionCreate
-from src.core.sessions.ports import (
+from .domain import Session, SessionCreate
+from .ports import (
     CreateSessionFn,
     GetSessionByTokenHashFn,
     RevokeSessionByTokenHashFn,
     RevokeSessionsByUserIdFn,
     TouchSessionFn,
 )
-from src.core.sessions.tokens import SessionTokenService
+from .tokens import SessionTokenService
 
 
 def ensure_aware_utc(value: datetime) -> datetime:

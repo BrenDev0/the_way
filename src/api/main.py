@@ -3,14 +3,16 @@ from datetime import timedelta
 
 from fastapi import FastAPI
 
-from src.api.v1.routes import router as v1_router
 from src.core.cache.redis import adapter as redis_adapter
+from src.core.communications.smtp import adapter as smtp_adapter
 from src.core.cryptography.bcrypt import adapter as bcrypt_adapter
 from src.core.cryptography.fernet import adapter as fernet_adapter
 from src.core.exception_handlers import register_exception_handlers
 from src.core.sessions.config import SessionCookieConfig
 from src.core.sessions.tokens import SessionTokenService
 from src.core.settings import settings
+
+from .v1.routes import router as v1_router
 
 
 @asynccontextmanager
@@ -20,6 +22,7 @@ async def lifespan(app: FastAPI):
     )
     app.state.hashing_service = bcrypt_adapter.BcryptHashingService()
     app.state.cache_store = redis_adapter.RedisCacheStore(settings.REDIS_URL)
+    app.state.email_sender = smtp_adapter.SmtpEmailSender()
     app.state.session_token_service = SessionTokenService(
         session_ttl=timedelta(seconds=settings.SESSION_TTL_SECONDS),
     )

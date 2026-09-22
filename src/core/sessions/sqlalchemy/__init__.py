@@ -1,1 +1,1 @@
-from src.core.sessions.sqlalchemy.models import SessionRow  # noqa: F401
+from .models import SessionRow  # noqa: F401

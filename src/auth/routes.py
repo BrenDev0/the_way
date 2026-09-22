@@ -3,8 +3,23 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response, status
 
 from src.api import dependencies as api_dependencies
-from src.auth import use_cases as auth_use_cases
-from src.auth.schemas import (
+from src.core.cache.ports import CacheStore
+from src.core.communications.ports import EmailSender
+from src.core.cryptography.ports import EncryptionService, HashingService
+from src.core.exceptions import AuthenticationError
+from src.core.sessions import dependencies as sessions_dependencies
+from src.core.sessions.config import SessionCookieConfig
+from src.core.sessions.ports import CreateSessionFn, RevokeSessionByTokenHashFn
+from src.core.sessions.tokens import SessionTokenService
+from src.organizations import dependencies as organizations_dependencies
+from src.organizations.ports import CreateOrganizationFn
+from src.users import dependencies as users_dependencies
+from src.users import mapper as users_mapper
+from src.users.ports import CreateUserFn, GetUserByEmailHashFn
+from src.users.schemas import UserResponse
+
+from . import use_cases as auth_use_cases
+from .schemas import (
     AuthUserResponse,
     LoginRequest,
     LogoutResponse,
@@ -12,16 +27,6 @@ from src.auth.schemas import (
     RequestRegistrationVerificationResponse,
     UserRegistrationRequest,
 )
-from src.core.cache.ports import CacheStore
-from src.core.cryptography.ports import EncryptionService, HashingService
-from src.core.exceptions import AuthenticationError
-from src.core.sessions import dependencies as sessions_dependencies
-from src.core.sessions.config import SessionCookieConfig
-from src.core.sessions.ports import CreateSessionFn, RevokeSessionByTokenHashFn
-from src.core.sessions.tokens import SessionTokenService
-from src.users import dependencies as users_dependencies
-from src.users.ports import CreateUserFn, GetUserByEmailHashFn
-from src.users.schemas import UserResponse
 
 router = APIRouter(tags=["auth"])
 
@@ -39,12 +44,14 @@ async def request_registration_verification_route(
         GetUserByEmailHashFn,
         Depends(users_dependencies.provide_get_user_by_email_hash_fn),
     ],
+    email_sender: Annotated[EmailSender, Depends(api_dependencies.get_email_sender)],
 ) -> RequestRegistrationVerificationResponse:
     expires_at = await auth_use_cases.send_registration_verification_code(
         email=payload.email,
         cache_store=cache_store,
         hashing_service=hashing_service,
         get_user_by_email_hash_fn=get_user_by_email_hash_fn,
+        email_sender=email_sender,
     )
     return RequestRegistrationVerificationResponse(
         detail="Verification code sent",
@@ -55,6 +62,10 @@ async def request_registration_verification_route(
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register_user_route(
     payload: UserRegistrationRequest,
+    create_organization_fn: Annotated[
+        CreateOrganizationFn,
+        Depends(organizations_dependencies.provide_create_organization_fn),
+    ],
     create_user_fn: Annotated[CreateUserFn, Depends(users_dependencies.provide_create_user_fn)],
     get_user_by_email_hash_fn: Annotated[
         GetUserByEmailHashFn,
@@ -67,17 +78,19 @@ async def register_user_route(
         Depends(api_dependencies.get_encryption_service),
     ],
 ) -> UserResponse:
-    return await auth_use_cases.register_user(
-        organization_id=payload.organization_id,
+    user = await auth_use_cases.register_user(
+        organization_name=payload.organization_name,
         email=payload.email,
         password=payload.password,
         verification_code=payload.verification_code,
+        create_organization_fn=create_organization_fn,
         create_user_fn=create_user_fn,
         get_user_by_email_hash_fn=get_user_by_email_hash_fn,
         cache_store=cache_store,
         hashing_service=hashing_service,
         encryption_service=encryption_service,
     )
+    return users_mapper.domain_to_user_response(user, encryption_service)
 
 
 @router.post("/login", response_model=AuthUserResponse)
@@ -113,7 +126,6 @@ async def login_user_route(
         hashing_service=hashing_service,
         create_session_fn=create_session_fn,
         session_token_service=session_token_service,
-        encryption_service=encryption_service,
     )
 
     response.set_cookie(
@@ -126,7 +138,7 @@ async def login_user_route(
         httponly=session_cookie_config.httponly,
         samesite=session_cookie_config.samesite,
     )
-    return AuthUserResponse(user=user)
+    return AuthUserResponse(user=users_mapper.domain_to_user_response(user, encryption_service))
 
 
 @router.post("/logout", response_model=LogoutResponse)

@@ -1,19 +1,19 @@
-import asyncio
-from uuid import UUID
 from datetime import datetime
 
-from src.auth import service as auth_service
 from src.core.cache.ports import CacheStore
 from src.core.communications import service as communications_service
+from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
 from src.core.exceptions import AuthenticationError, ConflictError
 from src.core.sessions import service as sessions_service
 from src.core.sessions.ports import CreateSessionFn, RevokeSessionByTokenHashFn
 from src.core.sessions.tokens import SessionTokenService
-from src.users import mapper as users_mapper
-from src.users.domain import UserCreate
+from src.organizations.domain import OrganizationCreate
+from src.organizations.ports import CreateOrganizationFn
+from src.users.domain import Role, User, UserCreate
 from src.users.ports import CreateUserFn, GetUserByEmailHashFn
-from src.users.schemas import UserResponse
+
+from . import service as auth_service
 
 
 async def send_registration_verification_code(
@@ -21,6 +21,7 @@ async def send_registration_verification_code(
     cache_store: CacheStore,
     hashing_service: HashingService,
     get_user_by_email_hash_fn: GetUserByEmailHashFn,
+    email_sender: EmailSender,
 ) -> datetime:
     email_hash = hashing_service.deterministic_hash(email)
     existing_user = await get_user_by_email_hash_fn(email_hash)
@@ -35,24 +36,22 @@ async def send_registration_verification_code(
         cache_store=cache_store,
         code_hash_fn=hashing_service.deterministic_hash,
     )
-    await asyncio.to_thread(
-        communications_service.send_email,
-        communications_service.create_verification_email(raw_code, email),
-    )
+    await email_sender.send(communications_service.create_verification_email(raw_code, email))
     return expires_at
 
 
 async def register_user(
-    organization_id: UUID,
+    organization_name: str,
     email: str,
     password: str,
     verification_code: str,
+    create_organization_fn: CreateOrganizationFn,
     create_user_fn: CreateUserFn,
     get_user_by_email_hash_fn: GetUserByEmailHashFn,
     cache_store: CacheStore,
     hashing_service: HashingService,
     encryption_service: EncryptionService,
-) -> UserResponse:
+) -> User:
     email_hash = hashing_service.deterministic_hash(email)
     existing_user = await get_user_by_email_hash_fn(email_hash)
     if existing_user is not None:
@@ -69,16 +68,18 @@ async def register_user(
         == stored_code_hash,
     )
 
+    organization = await create_organization_fn(OrganizationCreate(name=organization_name))
+
     encrypted_email = encryption_service.encrypt(email)
     password_hash = hashing_service.hash_password(password)
     user_to_create = UserCreate(
-        organization_id=organization_id,
+        organization_id=organization.id,
         encrypted_email=encrypted_email,
         email_hash=email_hash,
         password_hash=password_hash,
+        role=Role.OWNER,
     )
-    created_user = await create_user_fn(user_to_create)
-    return users_mapper.domain_to_user_response(created_user, encryption_service)
+    return await create_user_fn(user_to_create)
 
 
 async def login_user(
@@ -88,8 +89,7 @@ async def login_user(
     hashing_service: HashingService,
     create_session_fn: CreateSessionFn,
     session_token_service: SessionTokenService,
-    encryption_service: EncryptionService,
-) -> tuple[UserResponse, str]:
+) -> tuple[User, str]:
     email_hash = hashing_service.deterministic_hash(email)
     user = await get_user_by_email_hash_fn(email_hash)
     if user is None or not hashing_service.compare_password(password, user.password_hash):
@@ -100,7 +100,7 @@ async def login_user(
         create_session_fn=create_session_fn,
         token_service=session_token_service,
     )
-    return users_mapper.domain_to_user_response(user, encryption_service), raw_session_token
+    return user, raw_session_token
 
 
 async def logout_user(

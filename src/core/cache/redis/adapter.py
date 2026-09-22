@@ -42,7 +42,7 @@ class RedisCacheStore:
     ) -> bool:
         result = await self._redis.set(
             name=key,
-            value=str(data),  # explicit string conversion
+            value=str(data), 
             ex=expire_seconds
         )
         return bool(result)

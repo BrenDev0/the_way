@@ -3,10 +3,11 @@ from datetime import UTC, datetime, timedelta
 from secrets import choice
 from string import digits
 
-from src.auth.cache import AuthCacheKey, build_auth_cache_key
 from src.core.cache.ports import CacheStore
 from src.core.exceptions import AuthenticationError, ConflictError, InternalServerError
 from src.core.settings import settings
+
+from .cache import AuthCacheKey, build_auth_cache_key
 
 DEFAULT_VERIFICATION_CODE_LENGTH = 6
 

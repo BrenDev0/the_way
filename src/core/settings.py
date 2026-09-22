@@ -1,6 +1,7 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from src.core.exceptions import InternalServerError
+from .exceptions import InternalServerError
+from .sessions.config import SameSitePolicy
 
 
 class Settings(BaseSettings):
@@ -14,7 +15,7 @@ class Settings(BaseSettings):
     CRYPTOGRAPHY_FERNET_KEY: str
     SESSION_COOKIE_NAME: str = "session"
     SESSION_COOKIE_SECURE: bool = True
-    SESSION_COOKIE_SAMESITE: str = "lax"
+    SESSION_COOKIE_SAMESITE: SameSitePolicy = "lax"
     SESSION_TTL_SECONDS: int = 60 * 60 * 24 * 7
     REGISTRATION_VERIFICATION_CODE_TTL_SECONDS: int = 60 * 15
     REGISTRATION_VERIFICATION_MAX_ATTEMPTS: int = 5

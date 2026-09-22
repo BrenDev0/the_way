@@ -4,9 +4,10 @@ from uuid import UUID
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.users.domain import User, UserCreate
-from src.users.sqlalchemy import mapper
-from src.users.sqlalchemy.models import UserRow
+from src.users.domain import Role, User, UserCreate
+
+from . import mapper
+from .models import UserRow
 
 
 async def create(session: AsyncSession, user: UserCreate) -> User:
@@ -35,6 +36,18 @@ async def list_users(session: AsyncSession) -> Sequence[User]:
     result = await session.execute(select(UserRow))
     rows = result.scalars().all()
     return [mapper.row_to_domain(row) for row in rows]
+
+
+async def update_role(session: AsyncSession, user_id: UUID, role: Role) -> User | None:
+    result = await session.execute(select(UserRow).where(UserRow.id == user_id))
+    row = result.scalar_one_or_none()
+    if row is None:
+        return None
+
+    row.role = role
+    await session.flush()
+    await session.refresh(row)
+    return mapper.row_to_domain(row)
 
 
 async def delete_user(session: AsyncSession, user_id: UUID) -> bool:

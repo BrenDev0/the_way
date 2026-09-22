@@ -1,12 +1,15 @@
-from collections.abc import Callable, Awaitable
-from uuid import UUID
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
+from uuid import UUID
+
 from .domain import Organization, OrganizationCreate
 
-CreateOrganizatinFn = Callable[[OrganizationCreate], Awaitable[Organization]]
+CreateOrganizationFn = Callable[[OrganizationCreate], Awaitable[Organization]]
 GetOrganizationByIdFn = Callable[[UUID], Awaitable[Organization | None]]
 DeleteOrganizationByIdFn = Callable[[UUID], Awaitable[bool]]
 
 
 class UpdateOrganizationByIdFn(Protocol):
-    async def __call__(self, organization_id: UUID, changes: dict[str, Any]): ...
+    async def __call__(
+        self, organization_id: UUID, changes: dict[str, Any]
+    ) -> Organization | None: ...

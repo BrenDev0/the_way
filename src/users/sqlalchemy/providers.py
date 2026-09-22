@@ -5,15 +5,17 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.database.sqlalchemy import dependencies as db_dependencies
-from src.users.domain import UserCreate
+from src.users.domain import Role, UserCreate
 from src.users.ports import (
     CreateUserFn,
     DeleteUserFn,
     GetUserByEmailHashFn,
     GetUserByIdFn,
     ListUsersFn,
+    UpdateUserRoleFn,
 )
-from src.users.sqlalchemy import adapter
+
+from . import adapter
 
 
 def provide_create_user_fn(
@@ -50,6 +52,15 @@ def provide_list_users_fn(
         return await adapter.list_users(session)
 
     return list_users_fn
+
+
+def provide_update_user_role_fn(
+    session: Annotated[AsyncSession, Depends(db_dependencies.get_db_session)],
+) -> UpdateUserRoleFn:
+    async def update_user_role_fn(user_id: UUID, role: Role):
+        return await adapter.update_role(session, user_id, role)
+
+    return update_user_role_fn
 
 
 def provide_delete_user_fn(

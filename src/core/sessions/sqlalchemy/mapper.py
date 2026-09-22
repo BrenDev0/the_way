@@ -1,5 +1,6 @@
 from src.core.sessions.domain import Session, SessionCreate
-from src.core.sessions.sqlalchemy.models import SessionRow
+
+from .models import SessionRow
 
 
 def row_to_domain(row: SessionRow) -> Session:

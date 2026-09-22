@@ -6,8 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.sessions.domain import Session, SessionCreate
-from src.core.sessions.sqlalchemy import mapper
-from src.core.sessions.sqlalchemy.models import SessionRow
+
+from . import mapper
+from .models import SessionRow
 
 
 async def create(session: AsyncSession, session_create: SessionCreate) -> Session:

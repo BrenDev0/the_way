@@ -3,6 +3,7 @@ from typing import Any
 from starlette.requests import Request
 
 from src.core.cache.ports import CacheStore
+from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
 from src.core.exceptions import InternalServerError
 from src.core.sessions.config import SessionCookieConfig
@@ -37,4 +38,8 @@ def get_session_cookie_config(request: Request) -> SessionCookieConfig:
 
 def get_cache_store(request: Request) -> CacheStore:
     return _from_app_state(request, "cache_store", "cache_store_missing")
+
+
+def get_email_sender(request: Request) -> EmailSender:
+    return _from_app_state(request, "email_sender", "email_sender_missing")
 

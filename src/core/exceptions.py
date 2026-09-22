@@ -6,8 +6,6 @@ from fastapi import status
 
 @dataclass(eq=False)
 class ApplicationError(Exception):
-    """Base exception for expected domain/application failures."""
-
     message: str
     code: str
     status_code: int

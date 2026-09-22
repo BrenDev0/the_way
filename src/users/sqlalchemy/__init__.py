@@ -1,1 +1,1 @@
-from src.users.sqlalchemy.models import UserRow  # noqa: F401
+from .models import UserRow  # noqa: F401

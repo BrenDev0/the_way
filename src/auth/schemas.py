@@ -1,5 +1,4 @@
 from datetime import datetime
-from uuid import UUID
 
 from src.core.schemas import ApiBaseModel
 from src.users.schemas import UserResponse

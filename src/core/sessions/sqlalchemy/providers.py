@@ -14,7 +14,8 @@ from src.core.sessions.ports import (
     RevokeSessionsByUserIdFn,
     TouchSessionFn,
 )
-from src.core.sessions.sqlalchemy import adapter
+
+from . import adapter
 
 
 def provide_create_session_fn(

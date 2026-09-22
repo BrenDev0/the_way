@@ -4,14 +4,16 @@ from fastapi import APIRouter, Depends, Response
 
 from src.api import dependencies as api_dependencies
 from src.auth import dependencies as auth_dependencies
+from src.core.cache.ports import CacheStore
 from src.core.sessions import dependencies as sessions_dependencies
 from src.core.sessions.config import SessionCookieConfig
 from src.core.sessions.ports import RevokeSessionsByUserIdFn
-from src.users import dependencies as users_dependencies
-from src.users import use_cases as users_use_cases
-from src.users.domain import User
-from src.users.ports import DeleteUserFn
-from src.users.schemas import DeleteUserResponse
+
+from . import dependencies as users_dependencies
+from . import use_cases as users_use_cases
+from .domain import User
+from .ports import DeleteUserFn
+from .schemas import DeleteUserResponse
 
 router = APIRouter(tags=["users"])
 
@@ -25,6 +27,7 @@ async def delete_current_user_route(
         RevokeSessionsByUserIdFn,
         Depends(sessions_dependencies.provide_revoke_sessions_by_user_id_fn),
     ],
+    cache_store: Annotated[CacheStore, Depends(api_dependencies.get_cache_store)],
     session_cookie_config: Annotated[
         SessionCookieConfig,
         Depends(api_dependencies.get_session_cookie_config),
@@ -32,8 +35,10 @@ async def delete_current_user_route(
 ) -> DeleteUserResponse:
     await users_use_cases.delete_user(
         user_id=current_user.id,
+        role=current_user.role,
         delete_user_fn=delete_user_fn,
         revoke_sessions_by_user_id_fn=revoke_sessions_by_user_id_fn,
+        cache_store=cache_store,
     )
 
     response.delete_cookie(
