@@ -1,6 +1,11 @@
+from collections.abc import Sequence
+from typing import Any, cast
+
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, convert_to_messages
 from langchain_core.messages.tool import ToolCall as LangchainToolCall
+from langchain_core.runnables import Runnable
+from pydantic import BaseModel
 
 from src.core.exceptions import InternalServerError
 
@@ -12,8 +17,12 @@ class LangchainLLM:
         self._model = model
         self._stream = stream
 
-    async def respond(self, messages: list[Message]) -> Completion:
-        result = await self._generate(messages)
+    async def respond(
+        self,
+        messages: list[Message],
+        tools: Sequence[type[BaseModel]] = (),
+    ) -> Completion:
+        result = await self._generate(messages, tools)
         tool_calls = tuple(_tool_call(call) for call in result.tool_calls)
         return Completion(
             message=assistant(result.content, tool_calls),
@@ -22,14 +31,19 @@ class LangchainLLM:
             usage=_usage(result),
         )
 
-    async def _generate(self, messages: list[Message]) -> AIMessage:
+    async def _generate(
+        self,
+        messages: list[Message],
+        tools: Sequence[type[BaseModel]],
+    ) -> AIMessage:
         converted = convert_to_messages(messages)
+        model: Runnable = self._model.bind_tools(list(tools)) if tools else self._model
 
         if not self._stream:
-            return await self._model.ainvoke(converted)
+            return cast("AIMessage", await model.ainvoke(converted))
 
-        result = None
-        async for chunk in self._model.astream(converted):
+        result: Any = None
+        async for chunk in model.astream(converted):
             result = chunk if result is None else result + chunk
 
         if result is None:
@@ -37,7 +51,7 @@ class LangchainLLM:
                 message="Unable to process request at this time",
                 code="llm_empty_response",
             )
-        return result
+        return cast("AIMessage", result)
 
 
 def _tool_call(call: LangchainToolCall) -> ToolCall:

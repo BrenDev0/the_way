@@ -5,8 +5,13 @@ from src.core.llm.ports import LLM
 from . import config
 
 
-def provide_llm(stream: bool = False) -> LLM:
+def provide_llm(
+    model: str,
+    api_key: str,
+    temperature: float = config.TEMPERATURE,
+    stream: bool = False,
+) -> LLM:
     return LangchainLLM(
-        llm_providers.build_model(config.MODEL, config.TEMPERATURE),
+        llm_providers.build_model(model, temperature, api_key=api_key),
         stream=stream,
     )

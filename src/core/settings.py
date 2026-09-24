@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     SMTP_USER: str | None = None
     SMTP_PASSWORD: str | None = None
 
+    BUCKET_NAME: str | None = None
+    BUCKET_PREFIX: str = "the_way"
+    BUCKET_ENDPOINT: str | None = None
+    BUCKET_REGION: str | None = None
+    BUCKET_ACCESS_KEY_ID: str | None = None
+    BUCKET_SECRET_ACCESS_KEY: str | None = None
+
     def require_api_key(self, provider: str) -> str:
         field = f"{provider.upper()}_API_KEY"
         key = getattr(self, field, None)

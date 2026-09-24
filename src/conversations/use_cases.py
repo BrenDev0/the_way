@@ -13,6 +13,7 @@ from . import config, prompt
 from .domain import Conversation, ConversationCreate, ConversationStatus, TurnState
 from .ports import (
     AppendMessagesFn,
+    BuildKnowledgeContextFn,
     CreateConversationFn,
     DeleteConversationForUserFn,
     GetConversationByIdFn,
@@ -124,6 +125,7 @@ async def advance_turn(
     list_messages_fn: ListMessagesFn,
     append_messages_fn: AppendMessagesFn,
     save_turn_state_fn: SaveTurnStateFn,
+    build_knowledge_context_fn: BuildKnowledgeContextFn | None = None,
     max_iterations: int = config.MAX_ITERATIONS,
 ) -> ConversationStatus | None:
     conversation = await get_conversation_by_id_fn(conversation_id)
@@ -131,7 +133,13 @@ async def advance_turn(
         return None
 
     history = await list_messages_fn(conversation_id)
-    opening = [llm_domain.system(prompt.SYSTEM), *history]
+
+    opening = [llm_domain.system(prompt.SYSTEM)]
+    if build_knowledge_context_fn is not None:
+        knowledge = await build_knowledge_context_fn(conversation.organization_id)
+        if knowledge:
+            opening.append(llm_domain.system(knowledge))
+    opening.extend(history)
 
     result = await advance(
         LoopState(

@@ -28,3 +28,6 @@ class ListMessagesForUserFn(Protocol):
     async def __call__(
         self, conversation_id: UUID, user_id: UUID
     ) -> list[Message] | None: ...
+
+
+BuildKnowledgeContextFn = Callable[[UUID], Awaitable[str]]

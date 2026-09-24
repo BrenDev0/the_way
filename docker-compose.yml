@@ -61,6 +61,27 @@ services:
       timeout: 3s
       retries: 30
 
+  s3:
+    image: adobe/s3mock:latest
+    ports:
+      - "9090:9090"
+
+  s3-bucket:
+    image: curlimages/curl:latest
+    depends_on:
+      - s3
+    command:
+      - "-sS"
+      - "--retry"
+      - "60"
+      - "--retry-delay"
+      - "2"
+      - "--retry-connrefused"
+      - "--retry-all-errors"
+      - "-X"
+      - "PUT"
+      - "http://s3:9090/the-way"
+
   api:
     build: .
     profiles: ["app"]
@@ -74,6 +95,11 @@ services:
       TASKIQ_RESULT_BACKEND_URL: redis://redis-queue:6379/1
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
+      BUCKET_NAME: the-way
+      BUCKET_ENDPOINT: http://s3:9090
+      BUCKET_ACCESS_KEY_ID: the_way
+      BUCKET_SECRET_ACCESS_KEY: the_way_secret
+      BUCKET_REGION: us-east-1
       WATCHFILES_FORCE_POLLING: "true"
     ports:
       - "8000:8000"
@@ -106,6 +132,11 @@ services:
       TASKIQ_RESULT_BACKEND_URL: redis://redis-queue:6379/1
       SMTP_HOST: mailpit
       SMTP_PORT: "1025"
+      BUCKET_NAME: the-way
+      BUCKET_ENDPOINT: http://s3:9090
+      BUCKET_ACCESS_KEY_ID: the_way
+      BUCKET_SECRET_ACCESS_KEY: the_way_secret
+      BUCKET_REGION: us-east-1
     volumes:
       - .:/app
     depends_on:

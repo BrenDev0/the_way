@@ -56,7 +56,7 @@ async def advance(
         if conversation_size(snapshot()) > max_conversation_chars:
             return LoopResult(status=LoopStatus.CONVERSATION_LIMIT, state=snapshot())
 
-        completion = await llm.respond(messages)
+        completion = await llm.respond(messages, executor.schemas)
         iterations += 1
         usage = usage + completion.usage
         messages.append(completion.message)

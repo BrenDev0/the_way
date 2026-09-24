@@ -2,6 +2,7 @@ from typing import Any
 
 from starlette.requests import Request
 
+from src.core.bucket.ports import BucketStore
 from src.core.cache.ports import CacheStore
 from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
@@ -42,4 +43,8 @@ def get_cache_store(request: Request) -> CacheStore:
 
 def get_email_sender(request: Request) -> EmailSender:
     return _from_app_state(request, "email_sender", "email_sender_missing")
+
+
+def get_bucket_store(request: Request) -> BucketStore:
+    return _from_app_state(request, "bucket_store", "bucket_store_missing")
 

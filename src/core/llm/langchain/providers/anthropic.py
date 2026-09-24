@@ -2,8 +2,6 @@ from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 
-from src.core.settings import settings
-
 from .spec import ModelSpec
 
 PROVIDER = "anthropic"
@@ -18,12 +16,12 @@ MODELS = (
 CATALOG = {spec.name: spec for spec in MODELS}
 
 
-def build(spec: ModelSpec, temperature: float) -> BaseChatModel:
+def build(spec: ModelSpec, temperature: float, api_key: str) -> BaseChatModel:
     from langchain_anthropic import ChatAnthropic
 
     kwargs: dict[str, Any] = {
         "model_name": spec.name,
-        "api_key": settings.require_api_key(PROVIDER),
+        "api_key": api_key,
     }
     if spec.accepts_temperature:
         kwargs["temperature"] = temperature

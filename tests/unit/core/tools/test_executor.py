@@ -379,3 +379,19 @@ async def test_the_error_cap_is_configurable():
 
     assert "more characters" in results[0].content
     assert len(results[0].content) < 200
+
+
+def test_schemas_are_exposed_for_binding():
+    executor = Executor(
+        {
+            "ReadFile": Tool(schema=ReadFile, handler=read_file),
+            "DeleteFile": Tool(schema=DeleteFile, handler=delete_file),
+        },
+        DenyGate(),
+    )
+
+    assert set(executor.schemas) == {ReadFile, DeleteFile}
+
+
+def test_an_empty_registry_exposes_no_schemas():
+    assert Executor({}, DenyGate()).schemas == ()

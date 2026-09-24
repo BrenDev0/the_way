@@ -2,6 +2,8 @@ import asyncio
 import inspect
 from collections.abc import Mapping, Sequence
 
+from pydantic import BaseModel
+
 from src.core.llm.domain import ToolCall
 
 from .domain import (
@@ -36,6 +38,10 @@ class Executor:
         self._gate = gate
         self._events = events or NullEvents()
         self._max_error_chars = max_error_chars
+
+    @property
+    def schemas(self) -> tuple[type[BaseModel], ...]:
+        return tuple(tool.schema for tool in self._tools.values())
 
     def requires_approval(self, call: ToolCall) -> bool:
         tool = self._tools.get(call.name)

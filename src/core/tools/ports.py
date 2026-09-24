@@ -1,6 +1,8 @@
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
+from pydantic import BaseModel
+
 from src.core.llm.domain import ToolCall
 
 from .domain import ApprovalRequest, Decision, ToolResult
@@ -24,3 +26,6 @@ class ToolExecutor(Protocol):
     ) -> tuple[ToolResult, ...]: ...
 
     def requires_approval(self, call: ToolCall) -> bool: ...
+
+    @property
+    def schemas(self) -> tuple[type[BaseModel], ...]: ...

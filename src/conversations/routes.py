@@ -3,6 +3,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
+from src.api_keys import dependencies as api_keys_dependencies
+from src.api_keys import use_cases as api_keys_use_cases
+from src.api_keys.ports import ListApiKeysForUserFn
 from src.auth import dependencies as auth_dependencies
 from src.users.domain import Role, User
 
@@ -140,7 +143,16 @@ async def send_message_route(
         SaveTurnStateFn,
         Depends(conversations_dependencies.provide_save_turn_state_fn),
     ],
+    list_api_keys_for_user_fn: Annotated[
+        ListApiKeysForUserFn,
+        Depends(api_keys_dependencies.provide_list_api_keys_for_user_fn),
+    ],
 ) -> ConversationResponse:
+    await api_keys_use_cases.resolve_llm_credential(
+        user_id=current_user.id,
+        list_api_keys_for_user_fn=list_api_keys_for_user_fn,
+    )
+
     conversation = await conversations_use_cases.send_message(
         conversation_id=conversation_id,
         user_id=current_user.id,

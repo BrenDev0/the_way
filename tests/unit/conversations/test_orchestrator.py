@@ -106,14 +106,10 @@ def test_a_temperature_is_configured():
     assert 0.0 <= config.TEMPERATURE <= 2.0
 
 
-def test_provide_llm_builds_a_working_adapter(monkeypatch):
+def test_provide_llm_builds_a_working_adapter():
     from src.conversations import providers as orchestrator_providers
-    from src.core.settings import settings
 
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-test")
-
-    llm = orchestrator_providers.provide_llm()
+    llm = orchestrator_providers.provide_llm(model=config.MODEL, api_key="sk-test")
 
     assert hasattr(llm, "respond")
 

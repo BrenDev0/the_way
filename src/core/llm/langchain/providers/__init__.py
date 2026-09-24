@@ -27,6 +27,6 @@ def spec_for(model: str) -> ModelSpec:
     return spec
 
 
-def build_model(model: str, temperature: float = 0.0) -> BaseChatModel:
+def build_model(model: str, temperature: float = 0.0, *, api_key: str) -> BaseChatModel:
     spec = spec_for(model)
-    return BUILDERS[spec.provider](spec, temperature)
+    return BUILDERS[spec.provider](spec, temperature, api_key)

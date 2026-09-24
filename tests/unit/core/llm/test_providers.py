@@ -1,15 +1,11 @@
 import pytest
 
-from src.core.exceptions import InternalServerError, ValidationError
+from src.core.exceptions import ValidationError
 from src.core.llm.langchain import providers
 from src.core.llm.langchain.providers import anthropic, openai
-from src.core.settings import settings
 
-
-@pytest.fixture(autouse=True)
-def api_keys(monkeypatch):
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", "sk-test")
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "sk-ant-test")
+OPENAI_KEY = "sk-openai-test"
+ANTHROPIC_KEY = "sk-ant-test"
 
 
 def test_catalog_merges_every_provider():
@@ -50,56 +46,51 @@ def test_the_rejection_names_the_model():
 
 
 def test_builds_an_openai_client():
-    model = providers.build_model("gpt-4o")
+    model = providers.build_model("gpt-4o", api_key=OPENAI_KEY)
 
     assert type(model).__name__ == "ChatOpenAI"
     assert model.model_name == "gpt-4o"
 
 
 def test_builds_an_anthropic_client():
-    model = providers.build_model("claude-sonnet-5")
+    model = providers.build_model("claude-sonnet-5", api_key=ANTHROPIC_KEY)
 
     assert type(model).__name__ == "ChatAnthropic"
     assert model.model == "claude-sonnet-5"
 
 
+def test_the_supplied_key_reaches_the_openai_client():
+    model = providers.build_model("gpt-4o", api_key=OPENAI_KEY)
+
+    assert model.openai_api_key.get_secret_value() == OPENAI_KEY
+
+
+def test_the_supplied_key_reaches_the_anthropic_client():
+    model = providers.build_model("claude-sonnet-5", api_key=ANTHROPIC_KEY)
+
+    assert model.anthropic_api_key.get_secret_value() == ANTHROPIC_KEY
+
+
+def test_two_callers_get_clients_with_their_own_keys():
+    first = providers.build_model("gpt-4o", api_key="sk-first")
+    second = providers.build_model("gpt-4o", api_key="sk-second")
+
+    assert first.openai_api_key.get_secret_value() == "sk-first"
+    assert second.openai_api_key.get_secret_value() == "sk-second"
+
+
+def test_a_key_must_be_supplied():
+    with pytest.raises(TypeError):
+        providers.build_model("gpt-4o")  # type: ignore[call-arg]
+
+
 def test_temperature_is_applied_when_the_model_accepts_it():
-    model = providers.build_model("gpt-4o", temperature=0.9)
+    model = providers.build_model("gpt-4o", temperature=0.9, api_key=OPENAI_KEY)
 
     assert model.temperature == 0.9
 
 
 def test_temperature_is_omitted_when_the_model_rejects_it():
-    model = providers.build_model("gpt-5.4", temperature=0.9)
+    model = providers.build_model("gpt-5.4", temperature=0.9, api_key=OPENAI_KEY)
 
     assert model.temperature != 0.9
-
-
-def test_a_missing_openai_key_is_reported(monkeypatch):
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
-
-    with pytest.raises(InternalServerError) as exc:
-        providers.build_model("gpt-4o")
-
-    assert exc.value.code == "llm_api_key_not_configured"
-
-
-def test_a_missing_anthropic_key_is_reported(monkeypatch):
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
-
-    with pytest.raises(InternalServerError) as exc:
-        providers.build_model("claude-sonnet-5")
-
-    assert exc.value.code == "llm_api_key_not_configured"
-
-
-def test_an_openai_model_never_reads_the_anthropic_key(monkeypatch):
-    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", None)
-
-    assert providers.build_model("gpt-4o") is not None
-
-
-def test_an_anthropic_model_never_reads_the_openai_key(monkeypatch):
-    monkeypatch.setattr(settings, "OPENAI_API_KEY", None)
-
-    assert providers.build_model("claude-sonnet-5") is not None

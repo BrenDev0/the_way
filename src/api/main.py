@@ -3,6 +3,7 @@ from datetime import timedelta
 
 from fastapi import FastAPI
 
+from src.core.bucket.boto3 import adapter as bucket_adapter
 from src.core.cache.redis import adapter as redis_adapter
 from src.core.communications.smtp import adapter as smtp_adapter
 from src.core.cryptography.bcrypt import adapter as bcrypt_adapter
@@ -24,6 +25,14 @@ async def lifespan(app: FastAPI):
     app.state.hashing_service = bcrypt_adapter.BcryptHashingService()
     app.state.cache_store = redis_adapter.RedisCacheStore(settings.REDIS_URL)
     app.state.email_sender = smtp_adapter.SmtpEmailSender()
+    if settings.BUCKET_NAME:
+        app.state.bucket_store = bucket_adapter.Boto3BucketStore(
+            bucket=settings.BUCKET_NAME,
+            region=settings.BUCKET_REGION,
+            access_key=settings.BUCKET_ACCESS_KEY_ID,
+            secret_key=settings.BUCKET_SECRET_ACCESS_KEY,
+            endpoint_url=settings.BUCKET_ENDPOINT,
+        )
     app.state.session_token_service = SessionTokenService(
         session_ttl=timedelta(seconds=settings.SESSION_TTL_SECONDS),
     )
@@ -42,6 +51,8 @@ async def lifespan(app: FastAPI):
     if not broker.is_worker_process:
         await broker.shutdown()
     await app.state.cache_store.close_connection()
+    if getattr(app.state, "bucket_store", None) is not None:
+        await app.state.bucket_store.aclose()
 
 
 app = FastAPI(lifespan=lifespan)

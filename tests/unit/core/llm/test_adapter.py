@@ -2,6 +2,7 @@ import json
 
 import pytest
 from langchain_core.messages import AIMessage, AIMessageChunk
+from pydantic import BaseModel
 
 from src.core.exceptions import InternalServerError
 from src.core.llm import domain
@@ -11,9 +12,14 @@ from src.core.llm.langchain.adapter import LangchainLLM
 
 class FakeChatModel:
     def __init__(self, result=None, chunks=None):
+        self.bound = None
         self._result = result
         self._chunks = chunks or []
         self.received = None
+
+    def bind_tools(self, tools):
+        self.bound = tuple(tools)
+        return self
 
     async def ainvoke(self, messages):
         self.received = messages
@@ -322,3 +328,44 @@ async def test_every_provider_shape_survives_persistence():
             conversation()
         )
         assert json.loads(json.dumps(completion.message)) == completion.message
+
+
+class Weather(BaseModel):
+    city: str
+
+
+class Forecast(BaseModel):
+    city: str
+    days: int
+
+
+async def test_no_tools_are_bound_when_none_are_given():
+    model = FakeChatModel(AIMessage(content="hi"))
+
+    await LangchainLLM(model).respond(conversation())
+
+    assert model.bound is None
+
+
+async def test_the_given_tools_are_bound():
+    model = FakeChatModel(AIMessage(content="hi"))
+
+    await LangchainLLM(model).respond(conversation(), (Weather, Forecast))
+
+    assert model.bound == (Weather, Forecast)
+
+
+async def test_tools_are_bound_when_streaming():
+    model = FakeChatModel(chunks=[AIMessageChunk(content="hi")])
+
+    await LangchainLLM(model, stream=True).respond(conversation(), (Weather,))
+
+    assert model.bound == (Weather,)
+
+
+async def test_an_empty_tool_sequence_leaves_the_model_alone():
+    model = FakeChatModel(AIMessage(content="hi"))
+
+    await LangchainLLM(model).respond(conversation(), ())
+
+    assert model.bound is None

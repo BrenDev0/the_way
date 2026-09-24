@@ -1,12 +1,15 @@
+from collections.abc import Sequence
 from uuid import uuid4
 
 import pytest
-from helpers import make_completion
+from helpers import FakeEncryptionService, make_completion
+from pydantic import BaseModel
 
 from src.conversations import tasks as conversation_tasks
 from src.conversations import use_cases as conversations_use_cases
 from src.conversations.domain import ConversationCreate, ConversationStatus
 from src.conversations.sqlalchemy import adapter as conversations_adapter
+from src.core.exceptions import ConflictError
 from src.core.llm.domain import Completion, Message
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
@@ -18,7 +21,7 @@ class ScriptedLLM:
     def __init__(self, reply: str) -> None:
         self.reply = reply
 
-    async def respond(self, messages: list[Message]) -> Completion:
+    async def respond(self, messages: list[Message], tools: Sequence[type[BaseModel]] = ()) -> Completion:
         return make_completion(self.reply)
 
 
@@ -69,7 +72,7 @@ async def send_and_run(db_session, conversation, message: str, llm):
     )
     await db_session.commit()
 
-    await conversation_tasks.run_turn(conversation.id, llm)
+    await conversation_tasks.run_turn(conversation.id, llm=llm)
 
     await db_session.rollback()
     current = await conversations_adapter.get_by_id(db_session, conversation.id)
@@ -126,3 +129,32 @@ async def test_iterations_reset_between_turns(db_session, conversation, scripted
     first = await send_and_run(db_session, conversation, "first", scripted_llm)
 
     assert first.turn.iterations_used == 1
+
+
+async def test_a_turn_fails_when_the_user_has_no_ai_key(db_session, conversation):
+    await conversations_use_cases.send_message(
+        conversation_id=conversation.id,
+        user_id=conversation.user_id,
+        message="hello there",
+        get_conversation_for_user_fn=lambda cid, uid: conversations_adapter.get_for_user(
+            db_session, cid, uid
+        ),
+        append_messages_fn=lambda cid, msgs: conversations_adapter.append_messages(
+            db_session, cid, msgs
+        ),
+        save_turn_state_fn=lambda cid, turn: conversations_adapter.save_turn_state(
+            db_session, cid, turn
+        ),
+    )
+    await db_session.commit()
+
+    with pytest.raises(ConflictError) as exc:
+        await conversation_tasks.run_turn(
+            conversation.id, encryption_service=FakeEncryptionService()
+        )
+
+    assert exc.value.code == "api_key_not_configured"
+
+    await db_session.rollback()
+    current = await conversations_adapter.get_by_id(db_session, conversation.id)
+    assert current.turn.status is ConversationStatus.FAILED

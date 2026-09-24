@@ -322,3 +322,19 @@ def test_only_awaiting_approval_counts_as_suspended(status):
     from src.core.agents.domain import LoopResult
 
     assert LoopResult(status=status, state=LoopState()).is_suspended is False
+
+
+async def test_the_model_is_told_which_tools_exist():
+    llm = FakeLLM(make_completion("done"))
+
+    await advance(LoopState(messages=[llm_domain.user("hi")]), llm, Executor(TOOLS, DenyGate()))
+
+    assert set(llm.tools_received[0]) == {ReadFile, DeleteFile}
+
+
+async def test_an_empty_registry_binds_nothing():
+    llm = FakeLLM(make_completion("done"))
+
+    await advance(LoopState(messages=[llm_domain.user("hi")]), llm, Executor({}, DenyGate()))
+
+    assert llm.tools_received[0] == ()

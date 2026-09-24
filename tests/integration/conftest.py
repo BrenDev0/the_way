@@ -10,8 +10,12 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+import src.api_keys.sqlalchemy
+import src.conversations.sqlalchemy
 import src.core.sessions.sqlalchemy
+import src.documents.sqlalchemy
 import src.organizations.sqlalchemy
+import src.skills.sqlalchemy
 import src.users.sqlalchemy  # noqa: F401
 from src.core.database.sqlalchemy.models import Base
 from src.core.settings import settings
