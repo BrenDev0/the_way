@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from uuid import UUID
 
 from src.core.cache.ports import CacheStore
@@ -7,7 +8,7 @@ from src.core.sessions.ports import RevokeSessionsByUserIdFn
 
 from . import cache, mapper
 from .domain import Role, User
-from .ports import DeleteUserFn, GetUserByIdFn
+from .ports import DeleteUserFn, GetUserByIdFn, ListUsersFn
 
 
 def _cache_key(user_id: UUID) -> str:
@@ -53,3 +54,10 @@ async def delete_user(
     await sessions_service.revoke_user_sessions(user_id, revoke_sessions_by_user_id_fn)
     await delete_user_fn(user_id)
     await evict_user(user_id, cache_store)
+
+
+async def list_users(
+    organization_id: UUID,
+    list_users_fn: ListUsersFn,
+) -> Sequence[User]:
+    return await list_users_fn(organization_id)

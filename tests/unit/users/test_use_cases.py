@@ -61,3 +61,24 @@ async def test_blocked_owner_deletion_changes_nothing(delete, calls):
         await delete(Role.OWNER)
 
     assert calls == []
+
+
+async def test_listing_asks_only_for_the_callers_organization():
+    from helpers import make_user
+
+    from src.users import use_cases as users_use_cases
+
+    asked = []
+    organization_id = uuid4()
+
+    async def list_users_fn(org_id):
+        asked.append(org_id)
+        return [make_user(organization_id=org_id)]
+
+    listed = await users_use_cases.list_users(
+        organization_id=organization_id,
+        list_users_fn=list_users_fn,
+    )
+
+    assert asked == [organization_id]
+    assert [user.organization_id for user in listed] == [organization_id]

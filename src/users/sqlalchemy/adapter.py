@@ -40,8 +40,14 @@ async def get_user_by_email_hash(session: AsyncSession, email_hash: str) -> User
     return mapper.row_to_domain(row) if row else None
 
 
-async def list_users(session: AsyncSession) -> Sequence[User]:
-    result = await session.execute(select(UserRow))
+async def list_users(
+    session: AsyncSession, organization_id: UUID
+) -> Sequence[User]:
+    result = await session.execute(
+        select(UserRow)
+        .where(UserRow.organization_id == organization_id)
+        .order_by(UserRow.created_at)
+    )
     rows = result.scalars().all()
     return [mapper.row_to_domain(row) for row in rows]
 

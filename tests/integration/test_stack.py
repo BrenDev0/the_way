@@ -171,3 +171,40 @@ async def test_a_duplicate_email_is_a_conflict_not_a_crash(db_session):
 
     assert exc.value.code == "user_email_already_exists"
     assert exc.value.status_code == 409
+
+
+async def test_listing_users_is_scoped_to_one_organization(db_session):
+    from src.users.sqlalchemy import adapter as users_adapter
+
+    async def org_with_users(name, count):
+        organization = await organizations_adapter.create(
+            db_session, OrganizationCreate(name=name)
+        )
+        for _ in range(count):
+            await users_adapter.create(
+                db_session,
+                UserCreate(
+                    organization_id=organization.id,
+                    encrypted_email=f"enc::{uuid4()}@example.com",
+                    email_hash=f"dhash::{uuid4()}",
+                    password_hash="pwhash::secret",
+                    role=Role.MEMBER,
+                ),
+            )
+        return organization
+
+    mine = await org_with_users("Acme Inc", 3)
+    theirs = await org_with_users("Rival Ltd", 2)
+    await db_session.commit()
+
+    assert len(await users_adapter.list_users(db_session, mine.id)) == 3
+    assert len(await users_adapter.list_users(db_session, theirs.id)) == 2
+
+    listed = await users_adapter.list_users(db_session, mine.id)
+    assert all(user.organization_id == mine.id for user in listed)
+
+
+async def test_listing_users_of_an_unknown_organization_is_empty(db_session):
+    from src.users.sqlalchemy import adapter as users_adapter
+
+    assert await users_adapter.list_users(db_session, uuid4()) == []

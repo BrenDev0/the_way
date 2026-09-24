@@ -5,15 +5,17 @@ from fastapi import APIRouter, Depends, Response
 from src.api import dependencies as api_dependencies
 from src.auth import dependencies as auth_dependencies
 from src.core.cache.ports import CacheStore
+from src.core.cryptography.ports import EncryptionService
 from src.core.sessions import dependencies as sessions_dependencies
 from src.core.sessions.config import SessionCookieConfig
 from src.core.sessions.ports import RevokeSessionsByUserIdFn
 
 from . import dependencies as users_dependencies
+from . import mapper
 from . import use_cases as users_use_cases
-from .domain import User
-from .ports import DeleteUserFn
-from .schemas import DeleteUserResponse
+from .domain import Role, User
+from .ports import DeleteUserFn, ListUsersFn
+from .schemas import DeleteUserResponse, UserResponse
 
 router = APIRouter(tags=["users"])
 
@@ -49,3 +51,22 @@ async def delete_current_user_route(
         samesite=session_cookie_config.samesite,
     )
     return DeleteUserResponse(detail="Account deleted")
+
+
+@router.get("", response_model=list[UserResponse])
+async def list_users_route(
+    current_user: Annotated[
+        User,
+        Depends(auth_dependencies.require_role(Role.OWNER, Role.ADMIN)),
+    ],
+    list_users_fn: Annotated[ListUsersFn, Depends(users_dependencies.provide_list_users_fn)],
+    encryption_service: Annotated[
+        EncryptionService,
+        Depends(api_dependencies.get_encryption_service),
+    ],
+) -> list[UserResponse]:
+    users = await users_use_cases.list_users(
+        organization_id=current_user.organization_id,
+        list_users_fn=list_users_fn,
+    )
+    return [mapper.domain_to_user_response(user, encryption_service) for user in users]

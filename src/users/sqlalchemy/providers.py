@@ -49,8 +49,8 @@ def provide_get_user_by_email_hash_fn(
 def provide_list_users_fn(
     session: Annotated[AsyncSession, Depends(db_dependencies.get_db_session)],
 ) -> ListUsersFn:
-    async def list_users_fn():
-        return await adapter.list_users(session)
+    async def list_users_fn(organization_id: UUID):
+        return await adapter.list_users(session, organization_id)
 
     return list_users_fn
 
