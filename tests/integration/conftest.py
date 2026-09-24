@@ -14,6 +14,7 @@ import src.api_keys.sqlalchemy
 import src.conversations.sqlalchemy
 import src.core.sessions.sqlalchemy
 import src.documents.sqlalchemy
+import src.invitations.sqlalchemy
 import src.organizations.sqlalchemy
 import src.skills.sqlalchemy
 import src.users.sqlalchemy  # noqa: F401

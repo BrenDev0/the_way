@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.database.sqlalchemy import dependencies as db_dependencies
 from src.users.domain import Role, UserCreate
 from src.users.ports import (
+    CountUsersForOrganizationFn,
     CreateUserFn,
     DeleteUserFn,
     GetUserByEmailHashFn,
@@ -70,3 +71,12 @@ def provide_delete_user_fn(
         return await adapter.delete_user(session, user_id)
 
     return delete_user_fn
+
+
+def provide_count_users_for_organization_fn(
+    session: Annotated[AsyncSession, Depends(db_dependencies.get_db_session)],
+) -> CountUsersForOrganizationFn:
+    async def count_users_for_organization_fn(organization_id: UUID):
+        return await adapter.count_for_organization(session, organization_id)
+
+    return count_users_for_organization_fn

@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Invitación</title>
+        <style>
+            body { font-family: Arial, sans-serif; background-color: #f4f4f4; color: #333; padding: 20px; }
+            .container { max-width: 600px; margin: 0 auto; background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1); }
+            .button { display: inline-block; font-size: 16px; font-weight: bold; color: #fff; background-color: #007bff; padding: 12px 24px; margin-top: 10px; border-radius: 5px; text-decoration: none; }
+            .link { font-size: 12px; color: #666; word-break: break-all; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h2>Te invitaron a {{organization_name}}</h2>
+            <p>Hola,</p>
+            <p>Te han invitado a unirte a <strong>{{organization_name}}</strong> con el rol de <strong>{{role}}</strong>.</p>
+            <p>Para aceptar la invitación y crear tu contraseña, haz clic en el siguiente botón:</p>
+            <p><a class="button" href="{{invitation_link}}">Aceptar invitación</a></p>
+            <p>Si el botón no funciona, copia y pega esta dirección en tu navegador:</p>
+            <p class="link">{{invitation_link}}</p>
+            <p>Esta invitación expira en 7 días. Si no esperabas este correo, puedes ignorarlo.</p>
+            <p>Saludos,<br>El equipo de Xplorers</p>
+        </div>
+    </body>
+</html>

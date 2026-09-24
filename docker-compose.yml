@@ -1,11 +1,31 @@
 name: the-way
 
+x-app-environment: &app-environment
+  DATABASE_URL: postgresql+asyncpg://the_way:${POSTGRES_PASSWORD}@postgres:5432/the_way
+  REDIS_URL: redis://redis:6379/0
+  TASKIQ_BROKER_URL: redis://redis-queue:6379/0
+  TASKIQ_RESULT_BACKEND_URL: redis://redis-queue:6379/1
+  CRYPTOGRAPHY_FERNET_KEY: ${CRYPTOGRAPHY_FERNET_KEY}
+  REQUEST_SIGNING_SECRET: ${REQUEST_SIGNING_SECRET}
+  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+  INVITATION_ACCEPT_URL: ${INVITATION_ACCEPT_URL}
+  SMTP_HOST: ${SMTP_HOST}
+  SMTP_PORT: ${SMTP_PORT}
+  SMTP_USER: ${SMTP_USER}
+  SMTP_PASSWORD: ${SMTP_PASSWORD}
+  BUCKET_NAME: ${BUCKET_NAME}
+  BUCKET_PREFIX: ${BUCKET_PREFIX}
+  BUCKET_ENDPOINT: http://s3:9090
+  BUCKET_REGION: ${BUCKET_REGION}
+  BUCKET_ACCESS_KEY_ID: ${BUCKET_ACCESS_KEY_ID}
+  BUCKET_SECRET_ACCESS_KEY: ${BUCKET_SECRET_ACCESS_KEY}
+
 services:
   postgres:
     image: postgres:17-alpine
     environment:
       POSTGRES_USER: the_way
-      POSTGRES_PASSWORD: the_way
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: the_way
     ports:
       - "5432:5432"
@@ -47,19 +67,6 @@ services:
       timeout: 3s
       retries: 30
 
-  mailpit:
-    image: axllent/mailpit:latest
-    environment:
-      MP_SMTP_AUTH_ACCEPT_ANY: 1
-      MP_SMTP_AUTH_ALLOW_INSECURE: 1
-    ports:
-      - "1025:1025"
-      - "8025:8025"
-    healthcheck:
-      test: ["CMD", "/mailpit", "readyz"]
-      interval: 2s
-      timeout: 3s
-      retries: 30
 
   s3:
     image: adobe/s3mock:latest
@@ -68,6 +75,7 @@ services:
 
   s3-bucket:
     image: curlimages/curl:latest
+    restart: "no"
     depends_on:
       - s3
     command:
@@ -80,31 +88,24 @@ services:
       - "--retry-all-errors"
       - "-X"
       - "PUT"
-      - "http://s3:9090/the-way"
+      - "http://s3:9090/${BUCKET_NAME}"
+
+  migrate:
+    image: ${APP_IMAGE}
+    restart: "no"
+    command: alembic upgrade head
+    environment: *app-environment
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   api:
-    build: .
-    profiles: ["app"]
-    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://the_way:the_way@postgres:5432/the_way
-      REDIS_URL: redis://redis:6379/0
-      TASKIQ_BROKER_URL: redis://redis-queue:6379/0
-      TASKIQ_RESULT_BACKEND_URL: redis://redis-queue:6379/1
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
-      BUCKET_NAME: the-way
-      BUCKET_ENDPOINT: http://s3:9090
-      BUCKET_ACCESS_KEY_ID: the_way
-      BUCKET_SECRET_ACCESS_KEY: the_way_secret
-      BUCKET_REGION: us-east-1
-      WATCHFILES_FORCE_POLLING: "true"
+    image: ${APP_IMAGE}
+    restart: unless-stopped
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    environment: *app-environment
     ports:
       - "8000:8000"
-    volumes:
-      - .:/app
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)"]
       interval: 5s
@@ -112,40 +113,29 @@ services:
       retries: 20
       start_period: 15s
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       redis-queue:
         condition: service_healthy
+      s3:
+        condition: service_started
 
   worker:
-    build: .
-    profiles: ["app"]
+    image: ${APP_IMAGE}
+    restart: unless-stopped
     command: taskiq worker src.worker.main:broker --workers 1
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://the_way:the_way@postgres:5432/the_way
-      REDIS_URL: redis://redis:6379/0
-      TASKIQ_BROKER_URL: redis://redis-queue:6379/0
-      TASKIQ_RESULT_BACKEND_URL: redis://redis-queue:6379/1
-      SMTP_HOST: mailpit
-      SMTP_PORT: "1025"
-      BUCKET_NAME: the-way
-      BUCKET_ENDPOINT: http://s3:9090
-      BUCKET_ACCESS_KEY_ID: the_way
-      BUCKET_SECRET_ACCESS_KEY: the_way_secret
-      BUCKET_REGION: us-east-1
-    volumes:
-      - .:/app
+    environment: *app-environment
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       redis-queue:
         condition: service_healthy
+      s3:
+        condition: service_started
 
 volumes:
   postgres_data:

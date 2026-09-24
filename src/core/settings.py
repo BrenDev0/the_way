@@ -1,3 +1,4 @@
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .exceptions import InternalServerError
@@ -35,9 +36,6 @@ class Settings(BaseSettings):
     def taskiq_result_backend_url(self) -> str:
         return self.TASKIQ_RESULT_BACKEND_URL or self.TASKIQ_BROKER_URL
 
-    OPENAI_API_KEY: str | None = None
-    ANTHROPIC_API_KEY: str | None = None
-
     SMTP_HOST: str | None = None
     SMTP_PORT: int = 587
     SMTP_USER: str | None = None
@@ -50,15 +48,17 @@ class Settings(BaseSettings):
     BUCKET_ACCESS_KEY_ID: str | None = None
     BUCKET_SECRET_ACCESS_KEY: str | None = None
 
-    def require_api_key(self, provider: str) -> str:
-        field = f"{provider.upper()}_API_KEY"
-        key = getattr(self, field, None)
-        if not key:
+    CORS_ALLOWED_ORIGINS: list[str] = []
+
+    INVITATION_ACCEPT_URL: str | None = None
+
+    def require_invitation_accept_url(self) -> str:
+        if not self.INVITATION_ACCEPT_URL:
             raise InternalServerError(
                 message="Unable to process request at this time",
-                code="llm_api_key_not_configured",
+                code="invitation_accept_url_not_configured",
             )
-        return key
+        return self.INVITATION_ACCEPT_URL
 
     def require_smtp_host(self) -> str:
         if not self.SMTP_HOST:

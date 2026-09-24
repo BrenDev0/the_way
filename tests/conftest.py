@@ -7,6 +7,9 @@ os.environ.setdefault("CRYPTOGRAPHY_FERNET_KEY", Fernet.generate_key().decode("u
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
 os.environ.setdefault("REQUEST_SIGNING_SECRET", "test-signing-secret")
 os.environ.setdefault("TASKIQ_BROKER_URL", "memory://")
+os.environ.setdefault(
+    "CORS_ALLOWED_ORIGINS", '["https://app.example.com","https://admin.example.com"]'
+)
 
 import pytest
 from helpers import FakeCacheStore, FakeEncryptionService, FakeHashingService

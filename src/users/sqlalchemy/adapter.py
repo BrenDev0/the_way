@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -64,3 +64,12 @@ async def delete_user(session: AsyncSession, user_id: UUID) -> bool:
     )
     return result.scalar_one_or_none() is not None
 
+
+
+async def count_for_organization(session: AsyncSession, organization_id: UUID) -> int:
+    result = await session.execute(
+        select(func.count())
+        .select_from(UserRow)
+        .where(UserRow.organization_id == organization_id)
+    )
+    return int(result.scalar_one())

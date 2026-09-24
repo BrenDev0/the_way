@@ -1,4 +1,5 @@
 from .sqlalchemy.providers import (
+    provide_count_users_for_organization_fn,
     provide_create_user_fn,
     provide_delete_user_fn,
     provide_get_user_by_email_hash_fn,
@@ -8,6 +9,7 @@ from .sqlalchemy.providers import (
 )
 
 __all__ = [
+    "provide_count_users_for_organization_fn",
     "provide_create_user_fn",
     "provide_delete_user_fn",
     "provide_get_user_by_email_hash_fn",

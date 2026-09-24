@@ -1,0 +1,25 @@
+# Local development. Compose loads this automatically, so `docker compose up -d`
+# builds the app from this working tree and reads settings from .env.
+
+services:
+  migrate:
+    build: .
+    env_file:
+      - .env
+
+  api:
+    build: .
+    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
+    env_file:
+      - .env
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    volumes:
+      - .:/app
+
+  worker:
+    build: .
+    env_file:
+      - .env
+    volumes:
+      - .:/app
