@@ -45,7 +45,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
         # Auto-approved: the builder revises the page it is writing, with nobody to ask,
         # and nothing destructive is in its reach to approve.
         tools = {name: tool for name, tool in available.items() if name in names}
-        return Executor(tools, AutoApproveGate())
+        return Executor(tools, AutoApproveGate(), context.events)
 
     async def written(project: str, path: str) -> str:
         try:

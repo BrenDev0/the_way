@@ -10,6 +10,13 @@ them as server-sent events. The types:
                 result, clipped -- the full thread is always at GET .../messages
   tool.started  a server-side tool began running
   tool.finished it ended, and whether it failed
+
+A tool.* event from an assistant that runs inside another tool (BuildHtmlPage's designer
+and builder, BuildSkill's writer) carries parentId, the call it runs inside. Their reply
+text is not streamed: it is working-out for the tool, not an answer to the user.
+
+  task.started  a background task this conversation started began working
+  task.finished it ended, with its status -- its tool.* events carry its taskId
 """
 
 import re
@@ -23,6 +30,7 @@ from src.core.events.domain import EventStreamUnavailable
 from src.core.events.ports import EventStream
 from src.core.llm.domain import Message, ToolCall
 from src.core.tools.domain import ToolResult
+from src.core.tools.executor import current_call
 
 from . import mapper
 from .domain import Conversation
@@ -81,9 +89,13 @@ async def follow(
 
 
 class ConversationEvents:
-    def __init__(self, stream: EventStream, conversation_id: UUID) -> None:
+    """Publishes one run's events to its conversation's stream. A background task started
+    from the conversation publishes there too, with its task_id on every tool event."""
+
+    def __init__(self, stream: EventStream, conversation_id: UUID, task_id: UUID | None = None) -> None:
         self._stream = stream
         self._topic = topic(conversation_id)
+        self._task_id = task_id
 
     async def _publish(self, type: str, data: dict[str, Any]) -> None:
         # Telling watchers is best-effort: the turn's state is in the database either way,
@@ -118,7 +130,27 @@ class ConversationEvents:
     # --- ToolEvents -----------------------------------------------------------------
 
     async def tool_started(self, call: ToolCall) -> None:
-        await self._publish("tool.started", {"id": call.id, "name": call.name, "args": call.args})
+        await self._publish("tool.started", self._tagged({"id": call.id, "name": call.name, "args": call.args}))
 
     async def tool_finished(self, call: ToolCall, result: ToolResult) -> None:
-        await self._publish("tool.finished", {"id": call.id, "name": call.name, "failed": result.failed})
+        await self._publish("tool.finished", self._tagged({"id": call.id, "name": call.name, "failed": result.failed}))
+
+    def _tagged(self, body: dict[str, Any]) -> dict[str, Any]:
+        # A call made by an assistant running inside another tool names that tool's call,
+        # so the client can show it as a step of that call rather than one of the reply's.
+        parent = current_call()
+        if parent is not None:
+            body["parentId"] = parent
+        if self._task_id is not None:
+            body["taskId"] = str(self._task_id)
+        return body
+
+    # --- background tasks -----------------------------------------------------------
+
+    async def task_started(self, task_id: UUID, description: str) -> None:
+        await self._publish("task.started", {"taskId": str(task_id), "description": description})
+
+    async def task_finished(self, task_id: UUID, description: str, status: str) -> None:
+        await self._publish(
+            "task.finished", {"taskId": str(task_id), "description": description, "status": status}
+        )

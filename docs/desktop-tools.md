@@ -42,7 +42,15 @@ no request signature on this prefix, and it never accepts a cookie.
    | `status` | the conversation, sent whenever the turn's state is saved |
    | `text` | `{text}` — a piece of the assistant's reply as the model writes it |
    | `message` | a message the turn added (assistant with any `toolCalls`, or a clipped tool result) |
-   | `tool.started` / `tool.finished` | `{id, name}` / `{id, name, failed}` for server-side tools |
+   | `tool.started` / `tool.finished` | `{id, name, args}` / `{id, name, failed}` for server-side tools |
+   | `task.started` / `task.finished` | `{taskId, description}` / `{taskId, description, status}` for a background task this conversation started |
+
+   Some server tools run an assistant of their own: `BuildHtmlPage` (a designer, then a
+   builder) and `BuildSkill`. Their tool calls are published too, with **`parentId`**, the id of the
+   call they run inside, so show them as steps of that call. Their text is not streamed:
+   it's working-out for the tool, not the reply. A background task's tool calls carry
+   **`taskId`** instead. It runs after the turn ends, so they only reach a client that keeps
+   the stream open.
 
    Every relayed event carries an `id`. After a dropped connection, reconnect with
    `Last-Event-ID: <last id seen>` and nothing is missed. A `: keep-alive` comment goes out

@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.core.bucket.ports import BucketStore
 from src.core.llm.ports import LLM
 
+from .ports import ToolEvents
+
 
 class LLMFactory(Protocol):
     """A model built from the user's own keys: the first of `preferred` whose provider
@@ -40,3 +42,6 @@ class ToolContext:
     credentials: Mapping[str, Credential]
     llm_factory: LLMFactory
     conversation_id: UUID | None = None
+    # Where a tool that runs an assistant of its own reports that assistant's tool calls,
+    # so whoever watches the run sees the work instead of one long silent call.
+    events: ToolEvents | None = None

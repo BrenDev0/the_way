@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 from collections.abc import Mapping, Sequence
+from contextvars import ContextVar
 
 from pydantic import BaseModel
 
@@ -22,6 +23,15 @@ from .ports import ApprovalGate, ToolEvents
 # Every result lands in the conversation and is resent on every later step, so one
 # oversized page or dataset must not be allowed to swallow the context window.
 MAX_OUTPUT_CHARS = 60_000
+
+# The id of the tool call whose handler is running. A tool that runs an assistant of its
+# own (a page builder, a skill writer) hands that assistant an executor; its calls are
+# started inside this one's handler, so reading this tells them which call they belong to.
+_current_call: ContextVar[str | None] = ContextVar("current_tool_call", default=None)
+
+
+def current_call() -> str | None:
+    return _current_call.get()
 
 
 class NullEvents:
@@ -107,7 +117,11 @@ class Executor:
             return self._desktop_result(tool, call, decision)
 
         await self._events.tool_started(call)
-        result = await self._invoke(tool, call)
+        running = _current_call.set(call.id)
+        try:
+            result = await self._invoke(tool, call)
+        finally:
+            _current_call.reset(running)
         await self._events.tool_finished(call, result)
         return result
 

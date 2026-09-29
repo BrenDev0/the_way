@@ -9,6 +9,7 @@ from src.background import jobs as background_jobs
 from src.background import tools as background_tools
 from src.background.domain import BackgroundTaskCreate, TaskStatus
 from src.background.sqlalchemy import adapter as background_adapter
+from src.conversations import events as conversation_events
 from src.conversations import tasks as conversation_tasks
 from src.conversations import tools as conversation_tools
 from src.conversations import use_cases as conversations_use_cases
@@ -18,6 +19,7 @@ from src.conversations.domain import (
     ToolResolution,
 )
 from src.conversations.sqlalchemy import adapter as conversations_adapter
+from src.core.events.memory import InMemoryEventStream
 from src.core.llm.domain import ToolCall
 from src.core.tools.context import ToolContext
 from src.core.tools.domain import ToolLocation
@@ -252,6 +254,38 @@ async def test_a_background_task_writes_verifies_and_delivers(db_session, owner,
     files = ProjectFiles(db_session, owner.organization_id, owner.id, bucket)
     _, data = await files.read_bytes(await files.project("Reports"), "q3/report.md")
     assert data == b"# Q3"
+
+
+async def test_a_background_task_reports_its_work_on_the_conversation_that_started_it(
+    db_session, owner, bucket
+):
+    conversation = await conversations_adapter.create(
+        db_session, ConversationCreate(organization_id=owner.organization_id, user_id=owner.id, title="Desk")
+    )
+    task = await background_adapter.create(
+        db_session,
+        BackgroundTaskCreate(
+            organization_id=owner.organization_id,
+            user_id=owner.id,
+            conversation_id=conversation.id,
+            description="Inventory",
+            instructions="List the projects",
+        ),
+    )
+    await db_session.commit()
+
+    async def factory(preferred=(), temperature=0.0):
+        return FakeLLM(make_completion("", (ToolCall(id="l1", name="ListProjects", args={}),)), "Done.")
+
+    stream = InMemoryEventStream()
+    await background_jobs.run_task(task.id, bucket, llm_factory=factory, event_stream=stream)
+
+    published = stream.of(conversation_events.topic(conversation.id))
+    assert [event.type for event in published] == ["task.started", "tool.started", "tool.finished", "task.finished"]
+    assert published[0].data == {"taskId": str(task.id), "description": "Inventory"}
+    assert published[1].data["taskId"] == str(task.id)
+    assert published[1].data["name"] == "ListProjects"
+    assert published[-1].data["status"] == str(TaskStatus.DONE)
 
 
 async def test_a_worker_out_of_steps_is_failed_and_not_delivered(db_session, owner, bucket):

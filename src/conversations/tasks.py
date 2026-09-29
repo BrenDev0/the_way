@@ -126,6 +126,7 @@ async def run_turn(
                 credentials=credentials,
                 llm_factory=factory,
                 conversation_id=conversation.id,
+                events=events,
             )
             desktop = conversation.client is ConversationClient.DESKTOP
 

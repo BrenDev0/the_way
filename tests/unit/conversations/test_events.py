@@ -187,6 +187,31 @@ async def test_a_stream_ends_after_its_lifetime_so_the_client_reconnects():
     assert all(frame == sse.KEEP_ALIVE for frame in frames[1:])
 
 
+async def test_an_assistant_inside_a_tool_publishes_its_calls_under_that_tool():
+    stream = InMemoryEventStream()
+    events = conversation_events.ConversationEvents(stream, uuid4())
+    inner = Executor({"ListProjects": Tool(schema=ListProjects, handler=list_projects)}, SuspendGate(), events)
+
+    class BuildPage(BaseModel):
+        pass
+
+    async def build_page() -> str:
+        # what a page builder does: its own assistant, calling tools of its own
+        await inner.execute([ToolCall(id="inner-1", name="ListProjects", args={})])
+        return "built"
+
+    outer = Executor({"BuildPage": Tool(schema=BuildPage, handler=build_page)}, SuspendGate(), events)
+    await outer.execute([ToolCall(id="outer-1", name="BuildPage", args={})])
+
+    published = [(e.type, e.data["id"], e.data.get("parentId")) for e in next(iter(stream.events.values()))]
+    assert published == [
+        ("tool.started", "outer-1", None),
+        ("tool.started", "inner-1", "outer-1"),
+        ("tool.finished", "inner-1", "outer-1"),
+        ("tool.finished", "outer-1", None),
+    ]
+
+
 class DownStream(InMemoryEventStream):
     async def publish(self, topic, type, data):
         raise EventStreamUnavailable("redis is down")

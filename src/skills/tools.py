@@ -62,7 +62,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
         llm = await context.llm_factory(BUILDER_MODELS)
         result = await run_assistant(
             llm,
-            Executor(builder_tools, AutoApproveGate()),
+            Executor(builder_tools, AutoApproveGate(), context.events),
             [
                 llm_domain.system(BUILDER_PROMPT),
                 llm_domain.user(f"Skill name: {skill_name}\n\nBrief:\n{description}"),

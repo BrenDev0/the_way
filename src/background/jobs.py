@@ -7,15 +7,18 @@ from taskiq import TaskiqDepends
 from src.api_keys import credentials as api_keys_credentials
 from src.api_keys.sqlalchemy import adapter as api_keys_adapter
 from src.assistants.catalog import server_tools
+from src.conversations.events import ConversationEvents
 from src.core.agents.runner import AssistantRun, run_assistant
 from src.core.bucket.ports import BucketStore
 from src.core.cryptography.ports import EncryptionService
 from src.core.database.sqlalchemy.core import async_session_factory
+from src.core.events.ports import EventStream
 from src.core.llm import domain as llm_domain
 from src.core.tasks.broker import broker
 from src.core.tools.context import LLMFactory, ToolContext
 from src.core.tools.executor import Executor
 from src.core.tools.gates import AutoApproveGate
+from src.core.tools.ports import ToolEvents
 from src.projects.files import ProjectFiles
 from src.users.sqlalchemy import adapter as users_adapter
 from src.worker import dependencies as worker_dependencies
@@ -38,8 +41,14 @@ async def run_background_task(
         BucketStore,
         TaskiqDepends(worker_dependencies.get_bucket_store),
     ],
+    event_stream: Annotated[
+        EventStream,
+        TaskiqDepends(worker_dependencies.get_event_stream),
+    ],
 ) -> str | None:
-    return await run_task(task_id, bucket_store, encryption_service=encryption_service)
+    return await run_task(
+        task_id, bucket_store, encryption_service=encryption_service, event_stream=event_stream
+    )
 
 
 async def run_task(
@@ -47,14 +56,22 @@ async def run_task(
     bucket_store: BucketStore,
     encryption_service: EncryptionService | None = None,
     llm_factory: LLMFactory | None = None,
+    event_stream: EventStream | None = None,
 ) -> str | None:
+    events: ConversationEvents | None = None
+    task: BackgroundTask | None = None
     async with async_session_factory() as session:
         try:
             task = await adapter.get_by_id(session, task_id)
             if task is None or task.status is not TaskStatus.RUNNING:
                 return None
 
-            context = await _context(session, task, bucket_store, encryption_service, llm_factory)
+            # told on the conversation that started it, where the user is watching
+            if event_stream is not None and task.conversation_id is not None:
+                events = ConversationEvents(event_stream, task.conversation_id, task_id=task.id)
+                await events.task_started(task.id, task.description)
+
+            context = await _context(session, task, bucket_store, encryption_service, llm_factory, events)
             files = ProjectFiles(session, task.organization_id, task.user_id, bucket_store)
             await files.make_folder(await files.workspace(), background_use_cases.task_path(task))
 
@@ -69,10 +86,14 @@ async def run_task(
 
             await adapter.finish(session, task.id, status, result)
             await session.commit()
+            if events:
+                await events.task_finished(task.id, task.description, str(status))
             return str(status)
         except Exception as exc:
             await session.rollback()
             await _mark_failed(task_id, f"{background_use_cases.FAILURE_MARKER} -- {type(exc).__name__}: {exc}")
+            if events and task:
+                await events.task_finished(task.id, task.description, str(TaskStatus.FAILED))
             raise
 
 
@@ -82,6 +103,7 @@ async def _context(
     bucket_store: BucketStore,
     encryption_service: EncryptionService | None,
     llm_factory: LLMFactory | None,
+    events: ToolEvents | None = None,
 ) -> ToolContext:
     user = await users_adapter.get_user_by_id(session, task.user_id)
     if user is None:
@@ -106,6 +128,7 @@ async def _context(
         credentials=credentials,
         llm_factory=llm_factory or api_keys_credentials.build_llm_factory(credentials),
         conversation_id=task.conversation_id,
+        events=events,
     )
 
 
@@ -115,7 +138,7 @@ async def _work(context: ToolContext, files: ProjectFiles, task: BackgroundTask)
 
     run: AssistantRun = await run_assistant(
         llm,
-        Executor(tools, AutoApproveGate()),
+        Executor(tools, AutoApproveGate(), context.events),
         [
             llm_domain.system(SYSTEM_PROMPT),
             llm_domain.user(
