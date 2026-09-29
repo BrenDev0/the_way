@@ -1,6 +1,11 @@
 from src.core.llm import domain as llm_domain
 from src.core.llm.ports import LLM
-from src.core.tools.domain import ApprovalRequired, Decision, ToolResult
+from src.core.tools.domain import (
+    ClientActionRequired,
+    ClientRequest,
+    Decision,
+    ToolResult,
+)
 from src.core.tools.ports import ToolExecutor
 
 from .domain import (
@@ -27,6 +32,7 @@ async def advance(
     messages = list(state.messages)
     pending = state.pending_tool_calls
     completed = state.completed_tool_results
+    requests: tuple[ClientRequest, ...] = state.pending_requests
     iterations = state.iterations_used
     usage = state.usage
 
@@ -37,6 +43,7 @@ async def advance(
             completed_tool_results=completed,
             iterations_used=iterations,
             usage=usage,
+            pending_requests=requests,
             **changes,
         )
 
@@ -44,12 +51,14 @@ async def advance(
         if pending:
             try:
                 results = await executor.execute(pending, decisions)
-            except ApprovalRequired:
-                return LoopResult(status=LoopStatus.AWAITING_APPROVAL, state=snapshot())
+            except ClientActionRequired as exc:
+                requests = exc.requests
+                return LoopResult(status=LoopStatus.AWAITING_CLIENT, state=snapshot())
 
             messages.extend(_result_messages(completed + results))
             pending = ()
             completed = ()
+            requests = ()
             decisions = None
             continue
 
@@ -68,9 +77,9 @@ async def advance(
                 text=completion.text,
             )
 
-        gated = tuple(call for call in completion.tool_calls if executor.requires_approval(call))
+        gated = tuple(call for call in completion.tool_calls if executor.needs_client(call))
         ungated = tuple(
-            call for call in completion.tool_calls if not executor.requires_approval(call)
+            call for call in completion.tool_calls if not executor.needs_client(call)
         )
 
         if not gated:
@@ -80,10 +89,11 @@ async def advance(
         ungated_results = await executor.execute(ungated) if ungated else ()
         try:
             results = await executor.execute(gated, decisions)
-        except ApprovalRequired:
+        except ClientActionRequired as exc:
             pending = gated
             completed = ungated_results
-            return LoopResult(status=LoopStatus.AWAITING_APPROVAL, state=snapshot())
+            requests = exc.requests
+            return LoopResult(status=LoopStatus.AWAITING_CLIENT, state=snapshot())
 
         messages.extend(_result_messages(ungated_results + results))
 

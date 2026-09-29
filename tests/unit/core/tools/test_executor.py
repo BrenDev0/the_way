@@ -5,8 +5,8 @@ from pydantic import BaseModel
 
 from src.core.llm.domain import ToolCall
 from src.core.tools.domain import (
-    ApprovalRequest,
-    ApprovalRequired,
+    ClientActionRequired,
+    ClientRequest,
     Decision,
     Tool,
     ToolResult,
@@ -41,7 +41,7 @@ async def explodes(path: str) -> str:
 
 class RecordingGate:
     def __init__(self, decisions=None):
-        self.seen: list[ApprovalRequest] = []
+        self.seen: list[ClientRequest] = []
         self._decisions = decisions
 
     async def decide(self, requests):
@@ -53,7 +53,7 @@ class RecordingGate:
 
 class SuspendingGate:
     async def decide(self, requests):
-        raise ApprovalRequired(tuple(requests))
+        raise ClientActionRequired(tuple(requests))
 
 
 class RecordingEvents:
@@ -146,7 +146,7 @@ async def test_a_supplied_denial_is_honoured_on_resume():
 
 
 async def test_a_suspending_gate_stops_the_batch():
-    with pytest.raises(ApprovalRequired) as exc:
+    with pytest.raises(ClientActionRequired) as exc:
         await executor(SuspendingGate()).execute([call("DeleteFile", path="x.txt")])
 
     assert [r.call.name for r in exc.value.requests] == ["DeleteFile"]
@@ -158,7 +158,7 @@ async def test_the_whole_gated_batch_is_offered_at_once():
         call("DeleteFile", "c2", path="b.txt"),
     ]
 
-    with pytest.raises(ApprovalRequired) as exc:
+    with pytest.raises(ClientActionRequired) as exc:
         await executor(SuspendingGate()).execute(calls)
 
     assert [r.call.id for r in exc.value.requests] == ["c1", "c2"]
@@ -289,13 +289,13 @@ def test_tool_name_comes_from_its_schema():
 
 
 async def test_deny_gate_denies_everything():
-    decisions = await DenyGate().decide([ApprovalRequest(call=call("DeleteFile"))])
+    decisions = await DenyGate().decide([ClientRequest(call=call("DeleteFile"))])
 
     assert decisions[0].approved is False
 
 
 async def test_auto_approve_gate_approves_everything():
-    decisions = await AutoApproveGate().decide([ApprovalRequest(call=call("DeleteFile"))])
+    decisions = await AutoApproveGate().decide([ClientRequest(call=call("DeleteFile"))])
 
     assert decisions[0].approved is True
 

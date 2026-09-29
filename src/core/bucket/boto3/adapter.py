@@ -1,6 +1,7 @@
 import asyncio
 from contextlib import AsyncExitStack
 from pathlib import Path
+from urllib.parse import quote
 
 import aioboto3
 from botocore.config import Config
@@ -114,6 +115,19 @@ class Boto3BucketStore:
         except BotoCoreError as exc:
             raise BucketError(f"Could not check '{key}': {exc}") from exc
 
+    async def copy(self, source_key: str, destination_key: str) -> None:
+        client = await self._s3()
+
+        with _wrapped(
+            f"copying {source_key} to {destination_key}",
+            missing=f"'{source_key}' is not in the bucket.",
+        ):
+            await client.copy_object(
+                Bucket=self._bucket,
+                Key=destination_key,
+                CopySource={"Bucket": self._bucket, "Key": source_key},
+            )
+
     async def presign_put(self, key: str, content_type: str, expires_in: int) -> str:
         client = await self._s3()
 
@@ -122,6 +136,21 @@ class Boto3BucketStore:
                 "put_object",
                 Params={"Bucket": self._bucket, "Key": key, "ContentType": content_type},
                 ExpiresIn=expires_in,
+            )
+
+    async def presign_get(
+        self, key: str, expires_in: int, download_name: str | None = None
+    ) -> str:
+        client = await self._s3()
+        params = {"Bucket": self._bucket, "Key": key}
+        if download_name:
+            params["ResponseContentDisposition"] = (
+                f"attachment; filename*=UTF-8''{quote(download_name, safe='')}"
+            )
+
+        with _wrapped(f"preparing a download for {key}"):
+            return await client.generate_presigned_url(
+                "get_object", Params=params, ExpiresIn=expires_in
             )
 
     async def aclose(self) -> None:

@@ -122,7 +122,7 @@ async def test_tool_calls_and_results_survive_postgres(db_session, conversation)
 
 async def test_turn_state_is_saved_and_restored(db_session, conversation):
     turn = TurnState(
-        status=ConversationStatus.AWAITING_APPROVAL,
+        status=ConversationStatus.AWAITING_CLIENT,
         pending_tool_calls=(ToolCall(id="c1", name="DeleteFile", args={"path": "x"}),),
         completed_tool_results=(ToolResult(tool_call_id="c0", content="done"),),
         iterations_used=7,
@@ -133,7 +133,7 @@ async def test_turn_state_is_saved_and_restored(db_session, conversation):
     found = await conversations_adapter.get_for_user(db_session, conversation.id, conversation.user_id)
 
     assert found is not None
-    assert found.turn.status is ConversationStatus.AWAITING_APPROVAL
+    assert found.turn.status is ConversationStatus.AWAITING_CLIENT
     assert found.turn.pending_tool_calls[0].name == "DeleteFile"
     assert found.turn.pending_tool_calls[0].args == {"path": "x"}
     assert found.turn.completed_tool_results[0].content == "done"

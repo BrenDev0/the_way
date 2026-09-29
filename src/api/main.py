@@ -4,6 +4,7 @@ from datetime import timedelta
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.auth import config as auth_config
 from src.core.bucket.boto3 import adapter as bucket_adapter
 from src.core.cache.redis import adapter as redis_adapter
 from src.core.communications.smtp import adapter as smtp_adapter
@@ -15,6 +16,7 @@ from src.core.sessions.tokens import SessionTokenService
 from src.core.settings import settings
 from src.core.tasks.broker import broker
 
+from .desktop.routes import router as desktop_router
 from .v1.routes import router as v1_router
 
 
@@ -67,7 +69,8 @@ app.add_middleware(
 )
 
 register_exception_handlers(app)
-app.include_router(v1_router, prefix="/api/v1")
+app.include_router(v1_router, prefix=auth_config.WEB_API_PREFIX)
+app.include_router(desktop_router, prefix=auth_config.DESKTOP_API_PREFIX)
 
 
 @app.get("/health", tags=["health"])

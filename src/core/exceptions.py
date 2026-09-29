@@ -49,6 +49,13 @@ class ValidationError(ApplicationError):
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
+class RateLimitError(ApplicationError):
+    default_status_code: ClassVar[int] = status.HTTP_429_TOO_MANY_REQUESTS
+
+    def __init__(self, message: str = "Too many requests", code: str = "rate_limited") -> None:
+        super().__init__(message=message, code=code, status_code=self.default_status_code)
+
+
 class InternalServerError(ApplicationError):
     default_status_code: ClassVar[int] = status.HTTP_500_INTERNAL_SERVER_ERROR
 

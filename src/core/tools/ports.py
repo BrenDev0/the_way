@@ -5,11 +5,11 @@ from pydantic import BaseModel
 
 from src.core.llm.domain import ToolCall
 
-from .domain import ApprovalRequest, Decision, ToolResult
+from .domain import ClientRequest, Decision, ToolResult
 
 
 class ApprovalGate(Protocol):
-    async def decide(self, requests: Sequence[ApprovalRequest]) -> tuple[Decision, ...]: ...
+    async def decide(self, requests: Sequence[ClientRequest]) -> tuple[Decision, ...]: ...
 
 
 class ToolEvents(Protocol):
@@ -26,6 +26,8 @@ class ToolExecutor(Protocol):
     ) -> tuple[ToolResult, ...]: ...
 
     def requires_approval(self, call: ToolCall) -> bool: ...
+
+    def needs_client(self, call: ToolCall) -> bool: ...
 
     @property
     def schemas(self) -> tuple[type[BaseModel], ...]: ...

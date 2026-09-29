@@ -38,6 +38,42 @@ async def touch(session: AsyncSession, session_id: UUID) -> Session | None:
     return mapper.row_to_domain(row)
 
 
+async def renew(session: AsyncSession, session_id: UUID, expires_at: datetime) -> Session | None:
+    row = await session.get(SessionRow, session_id)
+    if row is None:
+        return None
+    row.last_seen_at = datetime.now(UTC)
+    row.expires_at = expires_at
+    await session.flush()
+    await session.refresh(row)
+    return mapper.row_to_domain(row)
+
+
+async def list_active_for_user(session: AsyncSession, user_id: UUID) -> Sequence[Session]:
+    result = await session.execute(
+        select(SessionRow)
+        .where(
+            SessionRow.user_id == user_id,
+            SessionRow.revoked_at.is_(None),
+            SessionRow.expires_at > datetime.now(UTC),
+        )
+        .order_by(SessionRow.last_seen_at.desc())
+    )
+    return [mapper.row_to_domain(row) for row in result.scalars().all()]
+
+
+async def revoke_for_user(session: AsyncSession, session_id: UUID, user_id: UUID) -> bool:
+    result = await session.execute(
+        select(SessionRow).where(SessionRow.id == session_id, SessionRow.user_id == user_id)
+    )
+    row = result.scalar_one_or_none()
+    if row is None or row.revoked_at is not None:
+        return False
+    row.revoked_at = datetime.now(UTC)
+    await session.flush()
+    return True
+
+
 async def revoke(session: AsyncSession, session_id: UUID) -> bool:
     result = await session.execute(select(SessionRow).where(SessionRow.id == session_id))
     row = result.scalar_one_or_none()

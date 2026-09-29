@@ -344,7 +344,7 @@ async def test_a_turn_tells_the_model_about_the_knowledge_tools(db_session, tena
     llm = ToolCallingLLM("ReadSkill", {"name": "nope"})
     await conversation_tasks.run_turn(conversation.id, llm=llm)
 
-    assert set(llm.tools_seen[0]) == {"ReadKnowledgeDocument", "ReadSkill"}
+    assert {"ReadKnowledgeDocument", "ReadSkill"} <= set(llm.tools_seen[0])
 
 
 async def test_a_turn_carries_the_knowledge_index_in_its_context(db_session, tenant):

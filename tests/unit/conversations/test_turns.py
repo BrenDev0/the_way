@@ -116,7 +116,7 @@ async def test_sending_to_someone_elses_conversation_is_not_found():
 
 
 @pytest.mark.parametrize(
-    "status", [ConversationStatus.RUNNING, ConversationStatus.AWAITING_APPROVAL]
+    "status", [ConversationStatus.RUNNING, ConversationStatus.AWAITING_CLIENT]
 )
 async def test_sending_while_busy_is_rejected(status):
     store = Store(make_conversation(status=status))
@@ -281,7 +281,7 @@ async def test_a_missing_conversation_is_left_alone():
     assert llm.received == []
 
 
-async def test_a_gated_tool_leaves_the_conversation_awaiting_approval():
+async def test_a_gated_tool_leaves_the_conversation_awaiting_client():
     from pydantic import BaseModel
 
     class DeleteFile(BaseModel):
@@ -292,9 +292,9 @@ async def test_a_gated_tool_leaves_the_conversation_awaiting_approval():
 
     class Suspending:
         async def decide(self, requests):
-            from src.core.tools.domain import ApprovalRequired
+            from src.core.tools.domain import ClientActionRequired
 
-            raise ApprovalRequired(tuple(requests))
+            raise ClientActionRequired(tuple(requests))
 
     tools = {"DeleteFile": Tool(schema=DeleteFile, handler=delete_file, requires_approval=True)}
     store = Store(make_conversation(status=ConversationStatus.RUNNING))
@@ -310,5 +310,5 @@ async def test_a_gated_tool_leaves_the_conversation_awaiting_approval():
         store.save,
     )
 
-    assert status is ConversationStatus.AWAITING_APPROVAL
+    assert status is ConversationStatus.AWAITING_CLIENT
     assert store.saved[-1].pending_tool_calls[0].id == "c1"

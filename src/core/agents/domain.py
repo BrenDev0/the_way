@@ -2,7 +2,7 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
 from src.core.llm.domain import Message, TokenUsage, ToolCall
-from src.core.tools.domain import ToolResult
+from src.core.tools.domain import ClientRequest, ToolResult
 
 DEFAULT_MAX_ITERATIONS = 40
 DEFAULT_MAX_CONVERSATION_CHARS = 400_000
@@ -10,7 +10,7 @@ DEFAULT_MAX_CONVERSATION_CHARS = 400_000
 
 class LoopStatus(StrEnum):
     COMPLETED = "completed"
-    AWAITING_APPROVAL = "awaiting_approval"
+    AWAITING_CLIENT = "awaiting_client"
     ITERATION_LIMIT = "iteration_limit"
     CONVERSATION_LIMIT = "conversation_limit"
 
@@ -22,6 +22,9 @@ class LoopState:
     completed_tool_results: tuple[ToolResult, ...] = ()
     iterations_used: int = 0
     usage: TokenUsage = field(default_factory=TokenUsage)
+    # What the client is being asked to do for each pending call -- run it on the desktop,
+    # or approve it -- kept beside the calls so the API can say so.
+    pending_requests: tuple[ClientRequest, ...] = ()
 
     def advanced(self, **changes) -> "LoopState":
         return replace(self, **changes)
@@ -35,4 +38,4 @@ class LoopResult:
 
     @property
     def is_suspended(self) -> bool:
-        return self.status is LoopStatus.AWAITING_APPROVAL
+        return self.status is LoopStatus.AWAITING_CLIENT

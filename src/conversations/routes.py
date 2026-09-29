@@ -26,6 +26,7 @@ from .schemas import (
     CreateConversationRequest,
     DeleteConversationResponse,
     MessageResponse,
+    ResolveToolCallsRequest,
     SendMessageRequest,
 )
 from .tasks import advance_conversation
@@ -52,6 +53,7 @@ async def start_conversation_route(
         user_id=current_user.id,
         title=payload.title,
         create_conversation_fn=create_conversation_fn,
+        client=payload.client,
     )
     return mapper.domain_to_conversation_response(conversation)
 
@@ -159,6 +161,37 @@ async def send_message_route(
         message=payload.message,
         get_conversation_for_user_fn=get_conversation_for_user_fn,
         append_messages_fn=append_messages_fn,
+        save_turn_state_fn=save_turn_state_fn,
+    )
+
+    await advance_conversation.kiq(conversation.id)  # type: ignore[call-overload]
+
+    return mapper.domain_to_conversation_response(conversation)
+
+
+@router.post(
+    "/{conversation_id}/tool-results",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def resolve_tool_calls_route(
+    conversation_id: UUID,
+    payload: ResolveToolCallsRequest,
+    current_user: CurrentUser,
+    get_conversation_for_user_fn: Annotated[
+        GetConversationForUserFn,
+        Depends(conversations_dependencies.provide_get_conversation_for_user_fn),
+    ],
+    save_turn_state_fn: Annotated[
+        SaveTurnStateFn,
+        Depends(conversations_dependencies.provide_save_turn_state_fn),
+    ],
+) -> ConversationResponse:
+    conversation = await conversations_use_cases.resolve_tool_calls(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        resolutions=[mapper.resolution_request_to_domain(r) for r in payload.resolutions],
+        get_conversation_for_user_fn=get_conversation_for_user_fn,
         save_turn_state_fn=save_turn_state_fn,
     )
 

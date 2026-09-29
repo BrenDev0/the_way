@@ -250,18 +250,35 @@ def make_skill(
 
 
 class FakeBucketStore:
-    def __init__(self, *, presign_url: str = "https://bucket.example/upload") -> None:
+    def __init__(
+        self,
+        *,
+        presign_url: str = "https://bucket.example/upload",
+        download_url: str = "https://bucket.example/download",
+    ) -> None:
         self.objects: dict[str, int] = {}
+        self.contents: dict[str, bytes] = {}
         self.deleted: list[str] = []
         self.presigned: list[tuple[str, str, int]] = []
+        self.presigned_gets: list[tuple[str, int, str | None]] = []
         self.presign_url = presign_url
+        self.download_url = download_url
 
     async def put(self, key: str, source):
         self.objects[key] = source.stat().st_size
+        self.contents[key] = source.read_bytes()
         return RemoteObject(key=key, size=self.objects[key])
 
     async def get(self, key: str, destination):
+        if key in self.contents:
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(self.contents[key])
         return destination
+
+    async def copy(self, source_key: str, destination_key: str) -> None:
+        self.objects[destination_key] = self.objects[source_key]
+        if source_key in self.contents:
+            self.contents[destination_key] = self.contents[source_key]
 
     async def list(self, prefix: str = "") -> list[RemoteObject]:
         return [
@@ -273,6 +290,7 @@ class FakeBucketStore:
     async def delete(self, key: str) -> None:
         self.deleted.append(key)
         self.objects.pop(key, None)
+        self.contents.pop(key, None)
 
     async def exists(self, key: str) -> bool:
         return key in self.objects
@@ -280,6 +298,12 @@ class FakeBucketStore:
     async def presign_put(self, key: str, content_type: str, expires_in: int) -> str:
         self.presigned.append((key, content_type, expires_in))
         return self.presign_url
+
+    async def presign_get(
+        self, key: str, expires_in: int, download_name: str | None = None
+    ) -> str:
+        self.presigned_gets.append((key, expires_in, download_name))
+        return self.download_url
 
     async def aclose(self) -> None:
         return None

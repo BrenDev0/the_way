@@ -1,7 +1,8 @@
 from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Text, cast, delete, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.conversations.domain import Conversation, ConversationCreate, TurnState
@@ -98,6 +99,32 @@ async def list_messages_for_user(
         .order_by(MessageRow.position)
     )
     return [mapper.message_row_to_domain(row) for row in result.scalars().all()]
+
+
+async def search_messages(
+    session: AsyncSession,
+    user_id: UUID,
+    terms: Sequence[str],
+    limit: int,
+) -> list[tuple[Message, Any]]:
+    """The user's own chat messages containing any of the terms, newest first, with when
+    each was written. Candidates only -- ranking them is the caller's job."""
+    if not terms:
+        return []
+
+    text = cast(MessageRow.content, Text)
+    result = await session.execute(
+        select(MessageRow)
+        .join(ConversationRow, ConversationRow.id == MessageRow.conversation_id)
+        .where(
+            ConversationRow.user_id == user_id,
+            MessageRow.role.in_(("user", "assistant")),
+            or_(*(text.ilike(f"%{term}%") for term in terms)),
+        )
+        .order_by(MessageRow.created_at.desc())
+        .limit(limit)
+    )
+    return [(mapper.message_row_to_domain(row), row.created_at) for row in result.scalars().all()]
 
 
 async def save_turn_state(

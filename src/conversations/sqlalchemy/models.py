@@ -22,9 +22,11 @@ class ConversationRow(Base, IDMixin, TimestampMixin):
         index=True,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    client: Mapped[str] = mapped_column(String(16), nullable=False, default="desktop")
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     pending_tool_calls: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
     completed_tool_results: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)
+    tool_decisions: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     iterations_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

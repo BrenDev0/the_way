@@ -19,3 +19,5 @@ class SessionRow(Base, IDMixin, TimestampMixin):
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    client: Mapped[str] = mapped_column(String(16), nullable=False, default="web")
+    device_name: Mapped[str | None] = mapped_column(String(100), nullable=True)

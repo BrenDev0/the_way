@@ -7,11 +7,14 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 import src.api_keys.sqlalchemy
+import src.background.sqlalchemy
 import src.conversations.sqlalchemy
 import src.core.sessions.sqlalchemy
 import src.documents.sqlalchemy
 import src.invitations.sqlalchemy
 import src.organizations.sqlalchemy
+import src.preferences.sqlalchemy
+import src.projects.sqlalchemy
 import src.skills.sqlalchemy
 import src.users.sqlalchemy  # noqa: F401
 from src.core.database.sqlalchemy.models import Base

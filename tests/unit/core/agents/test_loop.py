@@ -29,9 +29,9 @@ async def delete_file(path: str) -> str:
 
 class SuspendingGate:
     async def decide(self, requests):
-        from src.core.tools.domain import ApprovalRequired
+        from src.core.tools.domain import ClientActionRequired
 
-        raise ApprovalRequired(tuple(requests))
+        raise ClientActionRequired(tuple(requests))
 
 
 TOOLS = {
@@ -166,7 +166,7 @@ async def test_a_gated_tool_suspends_the_run():
 
     result = await advance(start(), llm, executor(SuspendingGate()))
 
-    assert result.status is LoopStatus.AWAITING_APPROVAL
+    assert result.status is LoopStatus.AWAITING_CLIENT
     assert result.is_suspended
 
 
@@ -243,7 +243,7 @@ async def test_ungated_work_in_a_gated_batch_is_not_thrown_away():
 
     result = await advance(start(), llm, executor(SuspendingGate()))
 
-    assert result.status is LoopStatus.AWAITING_APPROVAL
+    assert result.status is LoopStatus.AWAITING_CLIENT
     assert [r.tool_call_id for r in result.state.completed_tool_results] == ["a"]
     assert [c.id for c in result.state.pending_tool_calls] == ["b"]
 
@@ -318,7 +318,7 @@ async def test_the_input_state_is_never_mutated():
     "status",
     [LoopStatus.COMPLETED, LoopStatus.ITERATION_LIMIT, LoopStatus.CONVERSATION_LIMIT],
 )
-def test_only_awaiting_approval_counts_as_suspended(status):
+def test_only_awaiting_client_counts_as_suspended(status):
     from src.core.agents.domain import LoopResult
 
     assert LoopResult(status=status, state=LoopState()).is_suspended is False

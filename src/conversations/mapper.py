@@ -1,18 +1,49 @@
 from src.core.llm.domain import Message
+from src.core.tools.domain import ClientRequest
 
-from .domain import Conversation
-from .schemas import ConversationResponse, MessageResponse
+from .domain import Conversation, ToolResolution
+from .schemas import (
+    ConversationResponse,
+    MessageResponse,
+    PendingToolCallResponse,
+    ToolResolutionRequest,
+)
 
 
 def domain_to_conversation_response(conversation: Conversation) -> ConversationResponse:
     return ConversationResponse(
         id=conversation.id,
         title=conversation.title,
+        client=conversation.client,
         status=conversation.turn.status,
+        pending_tool_calls=[
+            request_to_response(request) for request in conversation.turn.pending_requests
+        ],
         iterations_used=conversation.turn.iterations_used,
         total_tokens=conversation.turn.usage.total_tokens,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
+    )
+
+
+def request_to_response(request: ClientRequest) -> PendingToolCallResponse:
+    return PendingToolCallResponse(
+        id=request.call.id,
+        name=request.call.name,
+        args=request.call.args,
+        location=request.location,
+        requires_approval=request.requires_approval,
+        detail=request.detail,
+    )
+
+
+def resolution_request_to_domain(request: ToolResolutionRequest) -> ToolResolution:
+    return ToolResolution(
+        tool_call_id=request.tool_call_id,
+        approved=request.approved,
+        feedback=request.feedback,
+        output=request.output,
+        failed=request.failed,
     )
 
 

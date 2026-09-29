@@ -1,4 +1,4 @@
-from src.core.sessions.domain import Session, SessionCreate
+from src.core.sessions.domain import Session, SessionClient, SessionCreate
 
 from .models import SessionRow
 
@@ -12,6 +12,8 @@ def row_to_domain(row: SessionRow) -> Session:
         last_seen_at=row.last_seen_at,
         created_at=row.created_at,
         revoked_at=row.revoked_at,
+        client=SessionClient(row.client or SessionClient.WEB),
+        device_name=row.device_name,
     )
 
 
@@ -21,4 +23,6 @@ def domain_create_to_row(session: SessionCreate) -> SessionRow:
         token_hash=session.token_hash,
         expires_at=session.expires_at,
         last_seen_at=session.last_seen_at,
+        client=session.client,
+        device_name=session.device_name,
     )

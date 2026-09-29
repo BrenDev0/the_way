@@ -8,14 +8,20 @@ from src.core.llm.domain import ToolCall
 
 from .domain import (
     MAX_ERROR_CHARS,
+    NO_DESKTOP,
     UNKNOWN_TOOL,
-    ApprovalRequest,
+    ClientRequest,
     Decision,
     Tool,
+    ToolLocation,
     ToolResult,
     truncate,
 )
 from .ports import ApprovalGate, ToolEvents
+
+# Every result lands in the conversation and is resent on every later step, so one
+# oversized page or dataset must not be allowed to swallow the context window.
+MAX_OUTPUT_CHARS = 60_000
 
 
 class NullEvents:
@@ -33,11 +39,13 @@ class Executor:
         gate: ApprovalGate,
         events: ToolEvents | None = None,
         max_error_chars: int = MAX_ERROR_CHARS,
+        max_output_chars: int = MAX_OUTPUT_CHARS,
     ) -> None:
         self._tools = dict(tools)
         self._gate = gate
         self._events = events or NullEvents()
         self._max_error_chars = max_error_chars
+        self._max_output_chars = max_output_chars
 
     @property
     def schemas(self) -> tuple[type[BaseModel], ...]:
@@ -46,6 +54,10 @@ class Executor:
     def requires_approval(self, call: ToolCall) -> bool:
         tool = self._tools.get(call.name)
         return bool(tool and tool.requires_approval)
+
+    def needs_client(self, call: ToolCall) -> bool:
+        tool = self._tools.get(call.name)
+        return bool(tool and tool.needs_client)
 
     async def execute(
         self,
@@ -56,11 +68,11 @@ class Executor:
         undecided = [
             call
             for call in calls
-            if self.requires_approval(call) and call.id not in decided
+            if self.needs_client(call) and call.id not in decided
         ]
 
         if undecided:
-            requests = tuple(self._approval_request(call) for call in undecided)
+            requests = tuple(self._client_request(call) for call in undecided)
             for call, decision in zip(undecided, await self._gate.decide(requests), strict=True):
                 decided[call.id] = decision
 
@@ -69,10 +81,12 @@ class Executor:
         )
         return tuple(results)
 
-    def _approval_request(self, call: ToolCall) -> ApprovalRequest:
+    def _client_request(self, call: ToolCall) -> ClientRequest:
         tool = self._tools[call.name]
-        return ApprovalRequest(
+        return ClientRequest(
             call=call,
+            location=tool.location,
+            requires_approval=tool.requires_approval,
             preview=_build(tool.preview, call.args),
             detail=_build(tool.describe, call.args),
         )
@@ -89,12 +103,35 @@ class Executor:
         if decision is not None and not decision.approved:
             return ToolResult(tool_call_id=call.id, content=decision.rejection_text())
 
+        if tool.location is ToolLocation.DESKTOP:
+            return self._desktop_result(tool, call, decision)
+
         await self._events.tool_started(call)
         result = await self._invoke(tool, call)
         await self._events.tool_finished(call, result)
         return result
 
+    def _desktop_result(
+        self, tool: Tool, call: ToolCall, decision: Decision | None
+    ) -> ToolResult:
+        # An approval with no output means a gate approved a call it could not run, which
+        # is what a background worker's gate does: nobody is at a desktop to run it.
+        if decision is None or decision.output is None:
+            return ToolResult(
+                tool_call_id=call.id, content=NO_DESKTOP.format(name=tool.name), failed=True
+            )
+        return ToolResult(
+            tool_call_id=call.id,
+            content=truncate(decision.output, self._max_output_chars),
+            failed=decision.failed,
+        )
+
     async def _invoke(self, tool: Tool, call: ToolCall) -> ToolResult:
+        if tool.handler is None:
+            return ToolResult(
+                tool_call_id=call.id, content=UNKNOWN_TOOL.format(name=call.name), failed=True
+            )
+
         try:
             if inspect.iscoroutinefunction(tool.handler):
                 output = await tool.handler(**call.args)
@@ -107,7 +144,9 @@ class Executor:
                 failed=True,
             )
 
-        return ToolResult(tool_call_id=call.id, content=str(output))
+        return ToolResult(
+            tool_call_id=call.id, content=truncate(str(output), self._max_output_chars)
+        )
 
 
 def _describe(exc: Exception) -> str:

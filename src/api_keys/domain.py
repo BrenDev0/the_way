@@ -8,6 +8,7 @@ class Provider(StrEnum):
     ANTHROPIC = "anthropic"
     OPENAI = "openai"
     GOHIGHLEVEL = "gohighlevel"
+    TAVILY = "tavily"
 
 
 LLM_PROVIDERS = frozenset({Provider.ANTHROPIC, Provider.OPENAI})

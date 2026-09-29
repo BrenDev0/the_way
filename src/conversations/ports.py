@@ -30,4 +30,6 @@ class ListMessagesForUserFn(Protocol):
     ) -> list[Message] | None: ...
 
 
-BuildKnowledgeContextFn = Callable[[UUID], Awaitable[str]]
+# Extra system blocks for a turn, and background-task news to relay in it.
+BuildContextFn = Callable[[Conversation], Awaitable[Sequence[str]]]
+DrainNoticesFn = Callable[[Conversation], Awaitable[str]]

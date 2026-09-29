@@ -23,6 +23,7 @@ dependencies = [
     "taskiq-fastapi>=0.5.0",
     "taskiq-redis>=1.2.3",
     "uvicorn>=0.53.0",
+    "httpx>=0.28.1",
 ]
 
 [dependency-groups]
