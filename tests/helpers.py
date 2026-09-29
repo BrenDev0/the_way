@@ -24,12 +24,22 @@ class FakeLLM:
         self.received: list[list[Message]] = []
         self.tools_received: list[tuple[type[BaseModel], ...]] = []
 
-    async def respond(self, messages: list[Message], tools: Sequence[type[BaseModel]] = ()) -> Completion:
+    async def respond(
+        self,
+        messages: list[Message],
+        tools: Sequence[type[BaseModel]] = (),
+        on_text=None,
+    ) -> Completion:
         self.received.append(list(messages))
         self.tools_received.append(tuple(tools))
         if not self.replies:
             raise AssertionError("FakeLLM was called more times than it has replies")
-        return self.replies.pop(0)
+        reply = self.replies.pop(0)
+        # streamed a word at a time, the way a real model's reply arrives
+        if on_text is not None and reply.text:
+            for word in reply.text.split(" "):
+                await on_text(word if word == reply.text.split(" ")[0] else f" {word}")
+        return reply
 
 
 def make_completion(

@@ -56,6 +56,13 @@ class RateLimitError(ApplicationError):
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
+class ServiceUnavailableError(ApplicationError):
+    default_status_code: ClassVar[int] = status.HTTP_503_SERVICE_UNAVAILABLE
+
+    def __init__(self, message: str = "Service temporarily unavailable", code: str = "service_unavailable") -> None:
+        super().__init__(message=message, code=code, status_code=self.default_status_code)
+
+
 class InternalServerError(ApplicationError):
     default_status_code: ClassVar[int] = status.HTTP_500_INTERNAL_SERVER_ERROR
 

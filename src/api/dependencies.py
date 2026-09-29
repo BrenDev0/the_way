@@ -6,6 +6,7 @@ from src.core.bucket.ports import BucketStore
 from src.core.cache.ports import CacheStore
 from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
+from src.core.events.ports import EventStream
 from src.core.exceptions import InternalServerError
 from src.core.sessions.config import SessionCookieConfig
 from src.core.sessions.tokens import SessionTokenService
@@ -48,3 +49,7 @@ def get_email_sender(request: Request) -> EmailSender:
 def get_bucket_store(request: Request) -> BucketStore:
     return _from_app_state(request, "bucket_store", "bucket_store_missing")
 
+
+
+def get_event_stream(request: Request) -> EventStream:
+    return _from_app_state(request, "event_stream", "event_stream_missing")

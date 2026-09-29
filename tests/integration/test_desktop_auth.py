@@ -228,6 +228,20 @@ def test_using_the_token_slides_its_expiry(client, email):
     assert after > before
 
 
+def test_the_desktop_tool_contract_lists_every_desktop_tool(client, email):
+    from src.desktop import tools as desktop_tools
+
+    token = desktop_login(client, email).json()["token"]
+    response = client.get(f"{DESKTOP}/desktop-tools", headers=bearer(token))
+
+    assert response.status_code == 200
+    by_name = {tool["name"]: tool for tool in response.json()}
+    assert set(by_name) == {schema.__name__ for schema in desktop_tools.SCHEMAS}
+    assert by_name["DeleteFile"]["requiresApproval"] is True
+    assert by_name["ReadFile"]["requiresApproval"] is False
+    assert by_name["ReadFile"]["parameters"]["required"] == ["file_path"]
+
+
 def test_organization_management_is_not_on_the_desktop_api():
     desktop_paths = [path for path in app.openapi()["paths"] if path.startswith(DESKTOP)]
 

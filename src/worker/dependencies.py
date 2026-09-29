@@ -8,6 +8,7 @@ from src.core.bucket.ports import BucketStore
 from src.core.cache.ports import CacheStore
 from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
+from src.core.events.ports import EventStream
 from src.core.sessions.tokens import SessionTokenService
 
 WorkerRequest = Annotated[Request, TaskiqDepends()]
@@ -35,3 +36,7 @@ def get_hashing_service(request: WorkerRequest) -> HashingService:
 
 def get_session_token_service(request: WorkerRequest) -> SessionTokenService:
     return api_dependencies.get_session_token_service(request)
+
+
+def get_event_stream(request: WorkerRequest) -> EventStream:
+    return api_dependencies.get_event_stream(request)

@@ -33,7 +33,23 @@ no request signature on this prefix, and it never accepts a cookie.
 
    `POST /api/desktop/v1/conversations/{id}/messages` → `{"message": "..."}`
 
-3. Poll `GET /api/desktop/v1/conversations/{id}` until `status` is no longer `running`:
+3. Follow the conversation's event stream, `GET /api/desktop/v1/conversations/{id}/events`
+   (server-sent events, same bearer token). It opens with a `status` event holding the
+   conversation exactly as `GET .../{id}` returns it, then relays, as they happen:
+
+   | event | data |
+   |---|---|
+   | `status` | the conversation, sent whenever the turn's state is saved |
+   | `text` | `{text}` — a piece of the assistant's reply as the model writes it |
+   | `message` | a message the turn added (assistant with any `toolCalls`, or a clipped tool result) |
+   | `tool.started` / `tool.finished` | `{id, name}` / `{id, name, failed}` for server-side tools |
+
+   Every relayed event carries an `id`. After a dropped connection, reconnect with
+   `Last-Event-ID: <last id seen>` and nothing is missed. A `: keep-alive` comment goes out
+   after 15 quiet seconds, so silence longer than that means the connection is dead. The
+   server ends each stream after 30 minutes; reconnect the same way. A `status` event is
+   only sent once its state is committed, so answering an `awaiting_client` right away is
+   safe. Act on the `status`:
 
    | status | meaning |
    |---|---|
@@ -82,7 +98,7 @@ no request signature on this prefix, and it never accepts a cookie.
    | `approved: false` | the user refused; nothing ran. `feedback` is optional and the model is told to follow it instead of retrying. |
    | `output` on a server call | refused with `tool_call_output_not_expected` |
 
-6. The server answers `202` with the conversation back in `running`; return to step 3.
+6. The server answers `202` with the conversation back in `running`; keep following the stream (reopen it with `Last-Event-ID` if you closed it while answering).
    One turn can pause several times.
 
 Outputs are capped at 60,000 characters on the server; send the full output and let it

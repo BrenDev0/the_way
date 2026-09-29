@@ -3,7 +3,7 @@ from uuid import UUID
 
 from src.background.use_cases import TASK_NOTICE, TASK_RELAYED
 from src.core.agents.domain import LoopState, LoopStatus
-from src.core.agents.loop import advance
+from src.core.agents.loop import LoopObserver, advance
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import Completion, Message
@@ -141,6 +141,7 @@ async def advance_turn(
     build_context_fn: BuildContextFn | None = None,
     max_iterations: int = config.MAX_ITERATIONS,
     drain_notices_fn: DrainNoticesFn | None = None,
+    observer: LoopObserver | None = None,
 ) -> ConversationStatus | None:
     conversation = await get_conversation_by_id_fn(conversation_id)
     if conversation is None or conversation.turn.status is not ConversationStatus.RUNNING:
@@ -178,6 +179,7 @@ async def advance_turn(
         executor,
         decisions=dict(conversation.turn.decisions) or None,
         max_iterations=max_iterations,
+        observer=observer,
     )
 
     await append_messages_fn(conversation_id, [*kept, *result.state.messages[len(opening) :]])

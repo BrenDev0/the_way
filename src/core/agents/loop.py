@@ -1,4 +1,7 @@
+from typing import Protocol
+
 from src.core.llm import domain as llm_domain
+from src.core.llm.domain import Message
 from src.core.llm.ports import LLM
 from src.core.tools.domain import (
     ClientActionRequired,
@@ -17,6 +20,15 @@ from .domain import (
 )
 
 
+class LoopObserver(Protocol):
+    """Watches a turn as it happens: reply text as the model writes it, and every message
+    the turn adds. Purely for telling someone -- nothing it does changes the turn."""
+
+    async def on_text(self, text: str) -> None: ...
+
+    async def on_message(self, message: Message) -> None: ...
+
+
 def conversation_size(state: LoopState) -> int:
     return sum(len(str(message.get("content", ""))) for message in state.messages)
 
@@ -28,6 +40,7 @@ async def advance(
     decisions: dict[str, Decision] | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     max_conversation_chars: int = DEFAULT_MAX_CONVERSATION_CHARS,
+    observer: LoopObserver | None = None,
 ) -> LoopResult:
     messages = list(state.messages)
     pending = state.pending_tool_calls
@@ -47,6 +60,12 @@ async def advance(
             **changes,
         )
 
+    async def append(*added: Message) -> None:
+        messages.extend(added)
+        if observer is not None:
+            for message in added:
+                await observer.on_message(message)
+
     while iterations < max_iterations:
         if pending:
             try:
@@ -55,7 +74,7 @@ async def advance(
                 requests = exc.requests
                 return LoopResult(status=LoopStatus.AWAITING_CLIENT, state=snapshot())
 
-            messages.extend(_result_messages(completed + results))
+            await append(*_result_messages(completed + results))
             pending = ()
             completed = ()
             requests = ()
@@ -65,10 +84,13 @@ async def advance(
         if conversation_size(snapshot()) > max_conversation_chars:
             return LoopResult(status=LoopStatus.CONVERSATION_LIMIT, state=snapshot())
 
-        completion = await llm.respond(messages, executor.schemas)
+        if observer is not None:
+            completion = await llm.respond(messages, executor.schemas, on_text=observer.on_text)
+        else:
+            completion = await llm.respond(messages, executor.schemas)
         iterations += 1
         usage = usage + completion.usage
-        messages.append(completion.message)
+        await append(completion.message)
 
         if not completion.tool_calls:
             return LoopResult(
@@ -83,7 +105,7 @@ async def advance(
         )
 
         if not gated:
-            messages.extend(_result_messages(await executor.execute(ungated)))
+            await append(*_result_messages(await executor.execute(ungated)))
             continue
 
         ungated_results = await executor.execute(ungated) if ungated else ()
@@ -95,10 +117,10 @@ async def advance(
             requests = exc.requests
             return LoopResult(status=LoopStatus.AWAITING_CLIENT, state=snapshot())
 
-        messages.extend(_result_messages(ungated_results + results))
+        await append(*_result_messages(ungated_results + results))
 
     return LoopResult(status=LoopStatus.ITERATION_LIMIT, state=snapshot())
 
 
-def _result_messages(results: tuple[ToolResult, ...]) -> list:
+def _result_messages(results: tuple[ToolResult, ...]) -> list[Message]:
     return [llm_domain.tool_result(result.tool_call_id, result.content) for result in results]

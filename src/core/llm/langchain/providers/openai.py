@@ -31,7 +31,8 @@ CATALOG = {spec.name: spec for spec in MODELS}
 def build(spec: ModelSpec, temperature: float, api_key: str) -> BaseChatModel:
     from langchain_openai import ChatOpenAI
 
-    kwargs: dict[str, Any] = {"model": spec.name, "api_key": api_key}
+    # without stream_usage a streamed reply carries no token counts at all
+    kwargs: dict[str, Any] = {"model": spec.name, "api_key": api_key, "stream_usage": True}
     if spec.accepts_temperature:
         kwargs["temperature"] = temperature
 

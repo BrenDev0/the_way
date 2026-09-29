@@ -15,6 +15,7 @@ from src.core.bucket.ports import BucketStore
 from src.core.bucket.unavailable import UnavailableBucketStore
 from src.core.cryptography.ports import EncryptionService
 from src.core.database.sqlalchemy.core import async_session_factory
+from src.core.events.ports import EventStream
 from src.core.llm.domain import Message
 from src.core.llm.ports import LLM
 from src.core.tasks.broker import broker
@@ -32,6 +33,7 @@ from . import prompt
 from . import tools as conversation_tools
 from . import use_cases as conversations_use_cases
 from .domain import Conversation, ConversationClient, ConversationStatus, TurnState
+from .events import ConversationEvents
 from .sqlalchemy import adapter
 
 READY_ATTEMPTS = 40
@@ -61,9 +63,16 @@ async def advance_conversation(
         BucketStore,
         TaskiqDepends(worker_dependencies.get_bucket_store),
     ],
+    event_stream: Annotated[
+        EventStream,
+        TaskiqDepends(worker_dependencies.get_event_stream),
+    ],
 ) -> str | None:
     return await run_turn(
-        conversation_id, encryption_service=encryption_service, bucket_store=bucket_store
+        conversation_id,
+        encryption_service=encryption_service,
+        bucket_store=bucket_store,
+        event_stream=event_stream,
     )
 
 
@@ -87,7 +96,9 @@ async def run_turn(
     llm: LLM | None = None,
     bucket_store: BucketStore | None = None,
     llm_factory: LLMFactory | None = None,
+    event_stream: EventStream | None = None,
 ) -> str | None:
+    events = ConversationEvents(event_stream, conversation_id) if event_stream else None
     async with async_session_factory() as session:
         try:
             if not await wait_until_running(session, conversation_id):
@@ -133,25 +144,37 @@ async def run_turn(
             async def append_messages_fn(cid: UUID, messages: Sequence[Message]):
                 return await adapter.append_messages(session, cid, messages)
 
+            saved: list[Conversation] = []
+
             async def save_turn_state_fn(cid: UUID, turn: TurnState):
-                return await adapter.save_turn_state(session, cid, turn)
+                updated = await adapter.save_turn_state(session, cid, turn)
+                if updated is not None:
+                    saved.append(updated)
+                return updated
 
             status = await conversations_use_cases.advance_turn(
                 conversation_id=conversation_id,
                 llm=llm,
-                executor=Executor(conversation_tools.build(context, desktop), SuspendGate()),
+                executor=Executor(conversation_tools.build(context, desktop), SuspendGate(), events),
                 get_conversation_by_id_fn=get_conversation_by_id_fn,
                 list_messages_fn=list_messages_fn,
                 append_messages_fn=append_messages_fn,
                 save_turn_state_fn=save_turn_state_fn,
                 build_context_fn=build_context_fn,
                 drain_notices_fn=drain_notices_fn,
+                observer=events,
             )
             await session.commit()
+            # Only once committed: a client that sees "awaiting_client" answers at once, and
+            # the answer must find the pause already in the database.
+            if events and saved:
+                await events.status(saved[-1])
             return status
         except Exception:
             await session.rollback()
-            await _mark_failed(conversation_id)
+            failed = await _mark_failed(conversation_id)
+            if events and failed:
+                await events.status(failed)
             raise
 
 
@@ -177,9 +200,10 @@ async def turn_context(context: ToolContext, desktop: bool) -> list[str]:
     return blocks
 
 
-async def _mark_failed(conversation_id: UUID) -> None:
+async def _mark_failed(conversation_id: UUID) -> Conversation | None:
     async with async_session_factory() as session:
-        await adapter.save_turn_state(
+        failed = await adapter.save_turn_state(
             session, conversation_id, TurnState(status=ConversationStatus.FAILED)
         )
         await session.commit()
+        return failed
