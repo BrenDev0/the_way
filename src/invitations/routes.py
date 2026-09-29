@@ -196,4 +196,4 @@ async def accept_invitation_route(
         accept_invitation_fn=accept_invitation_fn,
         hashing_service=hashing_service,
     )
-    return users_mapper.domain_to_user_response(user, encryption_service)
+    return users_mapper.domain_to_user_response(user, encryption_service, setup_complete=False)

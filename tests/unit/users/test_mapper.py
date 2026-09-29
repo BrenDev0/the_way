@@ -12,17 +12,26 @@ from src.users.sqlalchemy.models import UserRow
 def test_user_response_mapper_decrypts_email_and_carries_identifiers():
     user = make_user(encrypted_email="enc::someone@example.com")
 
-    response = users_mapper.domain_to_user_response(user, FakeEncryptionService())
+    response = users_mapper.domain_to_user_response(user, FakeEncryptionService(), setup_complete=True)
 
     assert response.id == user.id
     assert response.organization_id == user.organization_id
     assert response.email == "someone@example.com"
     assert response.created_at == user.created_at
+    assert response.setup_complete is True
+
+
+def test_user_response_serializes_setup_complete_in_camel_case():
+    user = make_user()
+
+    response = users_mapper.domain_to_user_response(user, FakeEncryptionService(), setup_complete=False)
+
+    assert response.model_dump(by_alias=True)["setupComplete"] is False
 
 
 def test_user_response_mapper_encrypted_email_never_leaks_into_the_response():
     user = make_user(encrypted_email="enc::someone@example.com")
-    response = users_mapper.domain_to_user_response(user, FakeEncryptionService())
+    response = users_mapper.domain_to_user_response(user, FakeEncryptionService(), setup_complete=True)
     assert not response.email.startswith("enc::")
 
 

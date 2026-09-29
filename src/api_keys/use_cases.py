@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from uuid import UUID
 
 from src.core.cryptography.ports import EncryptionService
@@ -97,6 +97,28 @@ async def delete_api_key(
         raise _not_found()
 
 
+def _holds_llm_credential(api_keys: Iterable[ApiKey]) -> bool:
+    return any(key.provider in config.PROVIDER_PRECEDENCE for key in api_keys)
+
+
+async def is_setup_complete(
+    user_id: UUID,
+    list_api_keys_for_user_fn: ListApiKeysForUserFn,
+) -> bool:
+    return _holds_llm_credential(await list_api_keys_for_user_fn(user_id))
+
+
+async def list_setup_complete_user_ids(
+    organization_id: UUID,
+    list_api_keys_fn: ListApiKeysFn,
+) -> set[UUID]:
+    return {
+        key.user_id
+        for key in await list_api_keys_fn(organization_id)
+        if key.provider in config.PROVIDER_PRECEDENCE
+    }
+
+
 async def resolve_llm_credential(
     user_id: UUID,
     list_api_keys_for_user_fn: ListApiKeysForUserFn,
@@ -109,7 +131,10 @@ async def resolve_llm_credential(
             return credential
 
     raise ConflictError(
-        message="No AI provider key has been issued to this user",
+        message=(
+            "Your account has not been set up yet. "
+            "Ask an owner or admin in your organization to issue you an AI provider key."
+        ),
         code="api_key_not_configured",
     )
 

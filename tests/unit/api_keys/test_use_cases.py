@@ -173,6 +173,49 @@ async def test_a_user_with_no_keys_is_refused(resolve):
     assert exc.value.code == "api_key_not_configured"
 
 
+async def setup_complete(*held):
+    async def list_api_keys_for_user_fn(_user_id):
+        return list(held)
+
+    return await api_keys_use_cases.is_setup_complete(
+        user_id=uuid4(),
+        list_api_keys_for_user_fn=list_api_keys_for_user_fn,
+    )
+
+
+async def test_a_user_with_no_keys_is_awaiting_setup():
+    assert await setup_complete() is False
+
+
+async def test_a_gohighlevel_key_alone_does_not_complete_setup():
+    assert await setup_complete(make_api_key(provider=Provider.GOHIGHLEVEL)) is False
+
+
+@pytest.mark.parametrize("provider", [Provider.ANTHROPIC, Provider.OPENAI])
+async def test_any_ai_key_completes_setup(provider):
+    assert await setup_complete(make_api_key(provider=provider)) is True
+
+
+async def test_setup_complete_ids_only_include_users_holding_an_ai_key():
+    organization_id = uuid4()
+    ready, ghl_only, other_ready = uuid4(), uuid4(), uuid4()
+
+    async def list_api_keys_fn(_organization_id, _user_id=None):
+        return [
+            make_api_key(user_id=ready, provider=Provider.ANTHROPIC),
+            make_api_key(user_id=ready, provider=Provider.GOHIGHLEVEL),
+            make_api_key(user_id=ghl_only, provider=Provider.GOHIGHLEVEL),
+            make_api_key(user_id=other_ready, provider=Provider.OPENAI),
+        ]
+
+    ids = await api_keys_use_cases.list_setup_complete_user_ids(
+        organization_id=organization_id,
+        list_api_keys_fn=list_api_keys_fn,
+    )
+
+    assert ids == {ready, other_ready}
+
+
 def test_the_stored_model_is_used_when_set():
     credential = make_api_key(provider=Provider.ANTHROPIC, model="claude-opus-5")
 

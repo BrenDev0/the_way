@@ -11,6 +11,7 @@ class UserResponse(ApiBaseModel):
     organization_id: UUID
     email: str
     role: Role
+    setup_complete: bool
     created_at: datetime
 
 

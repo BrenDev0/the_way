@@ -8,12 +8,15 @@ from .domain import Role, User
 from .schemas import UserResponse
 
 
-def domain_to_user_response(user: User, encryption_service: EncryptionService) -> UserResponse:
+def domain_to_user_response(
+    user: User, encryption_service: EncryptionService, setup_complete: bool
+) -> UserResponse:
     return UserResponse(
         id=user.id,
         organization_id=user.organization_id,
         email=encryption_service.decrypt(user.encrypted_email),
         role=user.role,
+        setup_complete=setup_complete,
         created_at=user.created_at,
     )
 

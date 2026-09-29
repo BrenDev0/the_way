@@ -3,6 +3,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response, status
 
 from src.api import dependencies as api_dependencies
+from src.api_keys import dependencies as api_keys_dependencies
+from src.api_keys import use_cases as api_keys_use_cases
+from src.api_keys.ports import ListApiKeysForUserFn
 from src.core.cache.ports import CacheStore
 from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
@@ -90,7 +93,7 @@ async def register_user_route(
         hashing_service=hashing_service,
         encryption_service=encryption_service,
     )
-    return users_mapper.domain_to_user_response(user, encryption_service)
+    return users_mapper.domain_to_user_response(user, encryption_service, setup_complete=False)
 
 
 @router.post("/login", response_model=AuthUserResponse)
@@ -104,6 +107,10 @@ async def login_user_route(
     create_session_fn: Annotated[
         CreateSessionFn,
         Depends(sessions_dependencies.provide_create_session_fn),
+    ],
+    list_api_keys_for_user_fn: Annotated[
+        ListApiKeysForUserFn,
+        Depends(api_keys_dependencies.provide_list_api_keys_for_user_fn),
     ],
     hashing_service: Annotated[HashingService, Depends(api_dependencies.get_hashing_service)],
     encryption_service: Annotated[
@@ -138,7 +145,13 @@ async def login_user_route(
         httponly=session_cookie_config.httponly,
         samesite=session_cookie_config.samesite,
     )
-    return AuthUserResponse(user=users_mapper.domain_to_user_response(user, encryption_service))
+    setup_complete = await api_keys_use_cases.is_setup_complete(
+        user_id=user.id,
+        list_api_keys_for_user_fn=list_api_keys_for_user_fn,
+    )
+    return AuthUserResponse(
+        user=users_mapper.domain_to_user_response(user, encryption_service, setup_complete)
+    )
 
 
 @router.post("/logout", response_model=LogoutResponse)
