@@ -414,6 +414,26 @@ async def request_download(
     return project_file, download_url
 
 
+async def read_file(
+    project: Project,
+    file_id: UUID,
+    get_file_fn: GetFileFn,
+    bucket_store: BucketStore,
+) -> tuple[ProjectFile, bytes]:
+    """A file's bytes, fetched by the server itself. A presigned URL is signed for the
+    bucket's address as the server sees it -- inside Docker that is a hostname no desktop
+    can resolve -- so a client that needs the file goes through here instead."""
+    from . import paths  # paths builds on this module
+
+    project_file = await _require_file(project, file_id, get_file_fn)
+    if project_file.size_bytes > config.MAX_CONTENT_BYTES:
+        raise ValidationError(
+            message=f"'{project_file.name}' is too large to open here; download it instead",
+            code="file_too_large_to_open",
+        )
+    return project_file, await paths.load_file(project, project_file, bucket_store)
+
+
 async def rename_file(
     project: Project,
     file_id: UUID,

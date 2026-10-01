@@ -29,10 +29,16 @@ from src.preferences import tools as preference_tools
 from src.users.sqlalchemy import adapter as users_adapter
 from src.worker import dependencies as worker_dependencies
 
-from . import prompt
+from . import config, prompt, relay
 from . import tools as conversation_tools
 from . import use_cases as conversations_use_cases
-from .domain import Conversation, ConversationClient, ConversationStatus, TurnState
+from .domain import (
+    Conversation,
+    ConversationClient,
+    ConversationStatus,
+    TurnContext,
+    TurnState,
+)
 from .events import ConversationEvents
 from .sqlalchemy import adapter
 
@@ -67,12 +73,18 @@ async def advance_conversation(
         EventStream,
         TaskiqDepends(worker_dependencies.get_event_stream),
     ],
+    voice: bool = False,
+    local_folder: str | None = None,
+    remote_folder: str | None = None,
 ) -> str | None:
     return await run_turn(
         conversation_id,
         encryption_service=encryption_service,
         bucket_store=bucket_store,
         event_stream=event_stream,
+        voice=voice,
+        local_folder=local_folder,
+        remote_folder=remote_folder,
     )
 
 
@@ -97,6 +109,9 @@ async def run_turn(
     bucket_store: BucketStore | None = None,
     llm_factory: LLMFactory | None = None,
     event_stream: EventStream | None = None,
+    voice: bool = False,
+    local_folder: str | None = None,
+    remote_folder: str | None = None,
 ) -> str | None:
     events = ConversationEvents(event_stream, conversation_id) if event_stream else None
     async with async_session_factory() as session:
@@ -130,8 +145,8 @@ async def run_turn(
             )
             desktop = conversation.client is ConversationClient.DESKTOP
 
-            async def build_context_fn(current: Conversation) -> Sequence[str]:
-                return await turn_context(context, desktop)
+            async def build_context_fn(current: Conversation) -> TurnContext:
+                return await turn_context(context, desktop, voice, local_folder, remote_folder)
 
             async def drain_notices_fn(current: Conversation) -> str:
                 return await background_tools.drain_notices(context)
@@ -166,6 +181,14 @@ async def run_turn(
                 observer=events,
             )
             await session.commit()
+            # Named before the turn is announced over: a client stops listening at idle, so
+            # the title has to ride on that last status to reach it.
+            if status is ConversationStatus.IDLE and (named := await _name(session, conversation_id, factory)):
+                saved.append(named)
+            # A task that ended while this turn ran is reported now, straight on: the turn
+            # it opens says "running", so a watcher carries on into the report.
+            if status is ConversationStatus.IDLE and await relay.start(session, conversation_id, event_stream):
+                return status
             # Only once committed: a client that sees "awaiting_client" answers at once, and
             # the answer must find the pause already in the database.
             if events and saved:
@@ -179,26 +202,56 @@ async def run_turn(
             raise
 
 
-async def turn_context(context: ToolContext, desktop: bool) -> list[str]:
-    """The system blocks after the prompt, most stable first: the CX workflow changes only
-    when a key is issued, the knowledge index when a document or skill does, and the
-    per-turn block every day."""
-    blocks = []
+async def turn_context(
+    context: ToolContext,
+    desktop: bool,
+    voice: bool = False,
+    local_folder: str | None = None,
+    remote_folder: str | None = None,
+) -> TurnContext:
+    """Most stable first: the CX workflow changes only when a key is issued and the
+    knowledge index when a document or skill does -- those go ahead of the history. The
+    rest can change any message, and goes after it."""
+    stable = []
     if crm_tools.available(context):
-        blocks.append(WORKFLOW)
-
-    blocks.append(await knowledge_tools.build_context(context.session, context.organization_id))
+        stable.append(WORKFLOW)
+    stable.append(await knowledge_tools.build_context(context.session, context.organization_id))
 
     now = datetime.now(UTC)
-    blocks.append(
-        prompt.turn_context(
-            date_line=f"{now:%A, %Y-%m-%d} UTC",
-            preferences=await preference_tools.context_block(context),
-            unavailable=catalog.unavailable(context),
-            desktop=desktop,
-        )
+    current = prompt.turn_context(
+        date_line=f"{now:%A, %Y-%m-%d} UTC",
+        preferences=await preference_tools.context_block(context),
+        unavailable=catalog.unavailable(context),
+        desktop=desktop,
+        voice=voice,
+        local_folder=local_folder,
+        remote_folder=remote_folder,
     )
-    return blocks
+    return TurnContext(stable=tuple(stable), current=current)
+
+
+async def _name(session: AsyncSession, conversation_id: UUID, factory: LLMFactory) -> Conversation | None:
+    """Names the conversation after its first exchange, with a cheap model. Best effort: a
+    placeholder title is no reason to fail a turn that has already succeeded."""
+    try:
+        conversation = await adapter.get_by_id(session, conversation_id)
+        if conversation is None or conversation.title not in config.PLACEHOLDER_TITLES:
+            return None
+
+        async def rename_fn(cid: UUID, title: str) -> Conversation | None:
+            return await adapter.rename(session, cid, title)
+
+        named = await conversations_use_cases.name_conversation(
+            conversation,
+            await adapter.list_messages(session, conversation_id),
+            await factory(config.TITLE_MODELS, config.TITLE_TEMPERATURE),
+            rename_fn,
+        )
+        await session.commit()
+        return named
+    except Exception:  # noqa: BLE001
+        await session.rollback()
+        return None
 
 
 async def _mark_failed(conversation_id: UUID) -> Conversation | None:

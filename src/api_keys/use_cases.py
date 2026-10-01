@@ -54,7 +54,7 @@ async def issue_api_key(
 ) -> ApiKey:
     if provider is Provider.GOHIGHLEVEL and not account_id:
         raise ValidationError(
-            message="GoHighLevel credentials need a location id",
+            message="CX credentials need a location id",
             code="api_key_account_id_required",
         )
 

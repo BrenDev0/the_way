@@ -260,6 +260,34 @@ async def test_a_background_notice_is_relayed_once_and_kept_as_relayed():
     assert len(kept) == 1 and kept[0].startswith("[already reported")
 
 
+async def test_a_turn_the_server_opened_to_report_a_task_starts_from_the_notice():
+    # the history ends on the assistant's own reply: nobody has written since
+    store = Store(
+        TurnState(status=ConversationStatus.RUNNING),
+        history=[llm_domain.user("haz el informe"), llm_domain.assistant("Lo inicié en segundo plano.")],
+    )
+    llm = FakeLLM("Tu informe está listo en Borradores.")
+
+    async def drain(conversation):
+        return "[t1] informe -- done: Files in .the_way/tasks/informe/: index.html."
+
+    await use_cases.advance_turn(
+        store.conversation.id,
+        llm,
+        Executor(TOOLS, SuspendGate()),
+        store.get_by_id,
+        store.list_messages,
+        store.append,
+        store.save,
+        drain_notices_fn=drain,
+    )
+
+    opening = llm.received[0][-1]
+    assert opening["role"] == "user" and "Automatic message from the system" in opening["content"]
+    # what is kept is the record of it, and the reply -- never words put in the user's mouth
+    assert [m["role"] for m in store.messages[2:]] == ["system", "assistant"]
+
+
 async def test_a_turn_pausing_on_a_desktop_call_waits_for_the_client():
     store = Store(TurnState(status=ConversationStatus.RUNNING), history=[llm_domain.user("hi")])
 

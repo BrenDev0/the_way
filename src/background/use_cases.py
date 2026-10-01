@@ -3,6 +3,7 @@ from collections.abc import Sequence
 from uuid import UUID
 
 from src.core.exceptions import ApplicationError, NotFoundError
+from src.projects import config as projects_config
 from src.projects.domain import Folder, ProjectFile
 from src.projects.files import ProjectFiles
 
@@ -24,6 +25,15 @@ TASK_NOTICE = (
     "result does not contain the requested deliverable, say so plainly.\n{news}"
 )
 
+# Heads the notice when the server opened the turn itself to report a finished task:
+# the user did not write it and is not waiting on a question.
+AUTOMATIC = (
+    "[Automatic message from the system, not from the user: a background task you started "
+    "has finished. Tell the user about it now, in their language, without waiting to be "
+    "asked -- briefly, with what was produced and where it is. Do not ask a question unless "
+    "the result needs a decision from them.]"
+)
+
 TASK_RELAYED = (
     "[already reported to the user -- do not announce this again] A background task "
     "finished earlier and its result was passed on. Kept only so you can refer back to "
@@ -37,6 +47,18 @@ def _not_found() -> NotFoundError:
 
 def task_path(task: BackgroundTask) -> str:
     return f"{config.TASKS_FOLDER}/{task.folder}"
+
+
+def delivery_target(task: BackgroundTask) -> tuple[str, str] | None:
+    """Where the finished files go: the folder the user named, or for work sent to the
+    drafts project, a folder of the task's own -- so one draft never lands on another."""
+    if not task.deliver_project:
+        return None
+    if task.deliver_path and task.deliver_path.strip("/."):
+        return task.deliver_project, task.deliver_path
+    if task.deliver_project.strip().lower() == projects_config.DRAFTS_PROJECT.lower():
+        return task.deliver_project, task.folder
+    return task.deliver_project, "."
 
 
 async def get_task(

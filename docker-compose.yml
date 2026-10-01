@@ -69,10 +69,22 @@ services:
       retries: 30
 
 
+  # Project files' bytes live here; the database only lists them. S3Mock keeps everything
+  # inside the container unless told otherwise, so without this volume every rebuild or
+  # recreate wiped the files while their entries stayed -- listed, and gone.
   s3:
     image: adobe/s3mock:latest
+    restart: unless-stopped
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_ROOT: /s3mockroot
+      COM_ADOBE_TESTING_S3MOCK_STORE_RETAIN_FILES_ON_EXIT: "true"
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ${BUCKET_NAME}
     ports:
       - "9090:9090"
+    volumes:
+      # this exact path: the image runs as a non-root user, and a named volume is only
+      # writable for it at a directory that already exists with its ownership
+      - s3_data:/s3mockroot
 
   s3-bucket:
     image: curlimages/curl:latest
@@ -141,3 +153,4 @@ services:
 volumes:
   postgres_data:
   redis_queue_data:
+  s3_data:

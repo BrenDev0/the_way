@@ -20,6 +20,7 @@ from .tool_schemas import (
     ListProjects,
     MoveProjectPath,
     ReadProjectFile,
+    RenameProjectPath,
     WriteProjectFile,
 )
 
@@ -172,6 +173,27 @@ def build(context: ToolContext) -> dict[str, Tool]:
         landed = await files.move(target, source_path, destination_path)
         return f"Moved {target.name}/{source_path} to {target.name}/{landed}"
 
+    async def rename_project_path(project: str, path: str, new_name: str) -> str:
+        name = new_name.strip()
+        if not name or "/" in name or "\\" in name:
+            return "new_name must be a name, not a path. To move it elsewhere, use MoveProjectPath."
+
+        target = await files.project(project)
+        parts = [part for part in path.strip("/").split("/") if part]
+        if not parts:
+            return "Give the path of the file or folder to rename, not the project itself."
+        destination = "/".join([*parts[:-1], name])
+
+        # A move onto an existing folder would put this inside it, not rename it.
+        # A case-only rename finds the source itself there, which is fine.
+        existing = await files.entry(target, destination)
+        source = await files.entry(target, path)
+        if existing is not None and (source is None or existing.id != source.id):
+            return f"{target.name}/{destination} already exists. Pick another name or ask the user."
+
+        landed = await files.move(target, path, destination)
+        return f"Renamed {target.name}/{path.strip('/')} to {target.name}/{landed}"
+
     async def delete_project_path(project: str, path: str) -> str:
         target = await files.project(project)
         removed = await files.delete(target, path)
@@ -204,10 +226,18 @@ def build(context: ToolContext) -> dict[str, Tool]:
                 f"move {project}/{source_path} to {project}/{destination_path}"
             ),
         ),
+        RenameProjectPath.__name__: Tool(
+            schema=RenameProjectPath,
+            handler=rename_project_path,
+            requires_approval=True,
+            describe=lambda project, path, new_name: f"rename {project}/{path} to {new_name}",
+        ),
         DeleteProjectPath.__name__: Tool(
             schema=DeleteProjectPath,
             handler=delete_project_path,
             requires_approval=True,
+            # a deletion cannot be undone, so it is asked even in the client's auto mode
+            always_ask=True,
             describe=lambda project, path: f"delete {project}/{path}",
         ),
     }

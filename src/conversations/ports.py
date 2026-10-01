@@ -4,7 +4,7 @@ from uuid import UUID
 
 from src.core.llm.domain import Message
 
-from .domain import Conversation, ConversationCreate, TurnState
+from .domain import Conversation, ConversationCreate, TurnContext, TurnState
 
 CreateConversationFn = Callable[[ConversationCreate], Awaitable[Conversation]]
 GetConversationByIdFn = Callable[[UUID], Awaitable[Conversation | None]]
@@ -12,6 +12,7 @@ ListMessagesFn = Callable[[UUID], Awaitable[list[Message]]]
 ListConversationsForUserFn = Callable[[UUID], Awaitable[Sequence[Conversation]]]
 SaveTurnStateFn = Callable[[UUID, TurnState], Awaitable[Conversation | None]]
 AppendMessagesFn = Callable[[UUID, Sequence[Message]], Awaitable[int]]
+RenameConversationFn = Callable[[UUID, str], Awaitable[Conversation | None]]
 
 
 class GetConversationForUserFn(Protocol):
@@ -30,6 +31,6 @@ class ListMessagesForUserFn(Protocol):
     ) -> list[Message] | None: ...
 
 
-# Extra system blocks for a turn, and background-task news to relay in it.
-BuildContextFn = Callable[[Conversation], Awaitable[Sequence[str]]]
+# What a turn is told besides the conversation, and background-task news to relay in it.
+BuildContextFn = Callable[[Conversation], Awaitable[TurnContext]]
 DrainNoticesFn = Callable[[Conversation], Awaitable[str]]

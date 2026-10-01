@@ -11,7 +11,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from uuid import UUID
 
-from src.core.bucket.domain import BucketError
+from src.core.bucket.domain import BucketError, BucketObjectMissing
 from src.core.bucket.ports import BucketStore
 from src.core.exceptions import (
     ConflictError,
@@ -213,6 +213,15 @@ async def load_file(
             await bucket_store.get(
                 keys.file_key(project.organization_id, project_file.id), destination
             )
+        except BucketObjectMissing as exc:
+            # listed, but its bytes are gone from the store: no retry will bring them back
+            raise NotFoundError(
+                message=(
+                    f"'{project_file.name}' is listed but its content is no longer in "
+                    "storage. Recreate it, or delete the entry."
+                ),
+                code="file_content_missing",
+            ) from exc
         except BucketError as exc:
             raise _unavailable() from exc
         return destination.read_bytes() if destination.exists() else b""

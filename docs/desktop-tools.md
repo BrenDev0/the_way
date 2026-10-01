@@ -131,6 +131,7 @@ absolute paths, symlinks out). Return that refusal as a failed output, never run
 | `UpdateFile` | `file_path`, `old_string`, `new_string`, `replace_all=false` | **yes** | `old_string` must occur; if it occurs more than once and not `replace_all`, refuse and say how many times. Show the user the diff in the approval. |
 | `CopyPath` | `source`, `destination`, `overwrite=false` | – | A file copied onto an existing folder lands inside it under its own name. Refuse copying a folder into itself. |
 | `MovePath` | `source`, `destination`, `overwrite=false` | **yes** | Same conventions as `CopyPath`. Refuse moving the open folder itself. |
+| `RenamePath` | `path`, `new_name` | **yes** | Same folder, new name. `new_name` is a name, not a path. Refuse when the name is taken (a case-only change is fine) and refuse the open folder itself. |
 | `DeleteFile` | `file_path` | **yes** | Refuse a directory (point to `DeleteDir`). |
 | `DeleteDir` | `dir_path`, `recursive=false` | **yes** | Non-recursive refuses a non-empty folder. Refuse the open folder itself. |
 
@@ -175,10 +176,12 @@ For reference — these need no desktop code. The server runs them, and only the
 |---|---|---|
 | knowledge | `ReadKnowledgeDocument`, `ReadSkill` | – |
 | projects | `ListProjects`, `CreateProject`, `ListProjectFolder`, `FindProjectFiles`, `ReadProjectFile`, `WriteProjectFile`, `CreateProjectFolder`, `CopyProjectPath` | – |
-| projects | `EditProjectFile`, `MoveProjectPath`, `DeleteProjectPath` | yes |
+| projects | `EditProjectFile`, `MoveProjectPath`, `RenameProjectPath`, `DeleteProjectPath` | yes |
 | CX (needs a GoHighLevel key) | `SearchCXOperations`, `DescribeCXOperation`, `ExecuteCXOperation`, `FetchCXDataset`, `QueryCXDataset` | – |
-| web (needs a Tavily key) | `WebSearch`, `MapWebPages`, `ExtractWebPages`, `CrawlWebPages` | – |
-| pages | `BuildHtmlPage` | – |
+| web (needs a Tavily key) | `WebSearch`, `MapWebPages`, `ExtractWebPages`, `CrawlWebPages`, `WebResearch` | – |
+| pages | `BuildHtmlPage`, `HtmlToPdf`, `HtmlToPng` | – |
+| PDF and image edits | `ReadPdf`, `EditPdfPages`, `MergePdfs`, `PdfToImages`, `ImagesToPdf`, `InspectImage`, `TransformImage`, `AddTextToImage`, `OverlayImage` | – (each writes a new file; replacing one takes `overwrite`) |
+| images (needs an OpenAI key) | `GenerateImages`, `EditImage` | **always**, even in background tasks (they pause until answered, up to 7 days); the approval carries `choices.model` and the answer `args.model` |
 | background | `StartBackgroundTask`, `CheckBackgroundTask`, `DeliverTask` | – |
 | memory | `SearchConversationHistory` | – |
 | memory | `RememberPreference` | yes |

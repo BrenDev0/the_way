@@ -4,6 +4,7 @@ from uuid import UUID
 from src.core.database.sqlalchemy.core import async_session_factory
 from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool
+from src.projects import config as projects_config
 from src.projects.files import ProjectFiles
 
 from . import use_cases as background_use_cases
@@ -42,10 +43,12 @@ def build(
         deliver_to_project: str | None = None,
         deliver_to_path: str | None = None,
     ) -> str:
-        if deliver_to_project:
-            # checked now, while someone can still answer -- a wrong name found after the
-            # work is done means a finished deliverable with nowhere to go
-            await files.project(deliver_to_project)
+        # Unless the user named a folder, finished work goes to the drafts project rather
+        # than being left in the workspace they never browse.
+        deliver_to_project = (deliver_to_project or "").strip() or projects_config.DRAFTS_PROJECT
+        # checked now, while someone can still answer -- a wrong name found after the work
+        # is done means a finished deliverable with nowhere to go
+        await files.project(deliver_to_project)
 
         # Committed in its own session, not the turn's: the worker picks the task up in
         # seconds, and the turn may not commit for minutes.
@@ -66,17 +69,11 @@ def build(
 
         await enqueue(task.id)
 
-        started = (
-            f"Started background task {task.id}: {description}. Working files go to "
-            f".the_way/{background_use_cases.task_path(task)}/"
-        )
-        if deliver_to_project:
-            where = f"{deliver_to_project}/{(deliver_to_path or '').strip('/') or '.'}"
-            return f"{started}, and the finished files will be delivered to {where} automatically."
+        project, path = background_use_cases.delivery_target(task) or (deliver_to_project, ".")
         return (
-            f"{started}. No delivery folder was set, so the output will stay in the "
-            f"'.the_way' workspace, which the user does not browse -- tell them that, and ask "
-            f"where they want it so you can call DeliverTask with id {task.id}."
+            f"Started background task {task.id}: {description}. Working files go to "
+            f".the_way/{background_use_cases.task_path(task)}/, and the finished files will "
+            f"be delivered to {project}/{path.strip('/.') or '.'} automatically."
         )
 
     async def check_background_task(task_id: str) -> str:
@@ -105,6 +102,11 @@ def build(
 
         if task.status is TaskStatus.RUNNING:
             return f"Task {task_id} is still running. Wait for it to finish before delivering."
+        if task.status is TaskStatus.NEEDS_APPROVAL:
+            return (
+                f"Task {task_id} is waiting for the user to approve a step (an image, say) in "
+                "the app. It carries on once they answer; deliver it after that."
+            )
 
         delivered = await background_use_cases.deliver(files, task, project, path)
         if task.status is not TaskStatus.DONE:

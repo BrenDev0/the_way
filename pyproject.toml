@@ -24,6 +24,10 @@ dependencies = [
     "taskiq-redis>=1.2.3",
     "uvicorn>=0.53.0",
     "httpx>=0.28.1",
+    "openai>=1.0",
+    "weasyprint>=66.0",
+    "pypdfium2>=4.30.0",
+    "pillow>=11.0.0",
 ]
 
 [dependency-groups]
@@ -39,7 +43,7 @@ dev = [
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["aioboto3.*", "botocore.*"]
+module = ["aioboto3.*", "botocore.*", "weasyprint.*", "pypdfium2.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

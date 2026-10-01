@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from src.background.use_cases import TASK_NOTICE, TASK_RELAYED
+from src.background.use_cases import AUTOMATIC, TASK_NOTICE, TASK_RELAYED
 from src.core.agents.domain import LoopState, LoopStatus
 from src.core.agents.loop import LoopObserver, advance
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
@@ -31,6 +31,7 @@ from .ports import (
     ListConversationsForUserFn,
     ListMessagesFn,
     ListMessagesForUserFn,
+    RenameConversationFn,
     SaveTurnStateFn,
 )
 
@@ -148,14 +149,14 @@ async def advance_turn(
         return None
 
     history = await list_messages_fn(conversation_id)
+    context = await build_context_fn(conversation) if build_context_fn is not None else None
 
-    # Static first, volatile last: the system prompt is a cacheable prefix only for as long
-    # as nothing ahead of it changes between turns.
+    # Static first, volatile last: a provider caches the prompt up to the first byte that
+    # differs from the last request, so what changes between turns must not sit ahead of
+    # the history -- there it would re-bill the whole conversation each time it changed.
     opening = [llm_domain.system(prompt.SYSTEM)]
-    if build_context_fn is not None:
-        opening += [
-            llm_domain.system(block) for block in await build_context_fn(conversation) if block
-        ]
+    if context is not None:
+        opening += [llm_domain.system(block) for block in context.stable if block]
     opening.extend(history)
 
     # A background task that finished since the last turn is relayed in this reply. Only
@@ -163,8 +164,22 @@ async def advance_turn(
     kept: list[Message] = []
     news = await drain_notices_fn(conversation) if drain_notices_fn is not None else ""
     if news:
-        opening.append(llm_domain.system(TASK_NOTICE.format(news=news)))
+        notice = TASK_NOTICE.format(news=news)
+        # A turn the server started itself to report a finished task has no new user
+        # message: the history ends on the assistant's last reply, which some providers
+        # refuse to continue. The notice is put as the turn's opening line instead -- not
+        # kept, so the user never sees words they did not write.
+        relaying = not history or history[-1].get("role") == "assistant"
+        opening.append(llm_domain.user(f"{AUTOMATIC}\n\n{notice}") if relaying else llm_domain.system(notice))
         kept.append(llm_domain.system(TASK_RELAYED.format(news=news)))
+
+    # The date, the folder, voice... come after the history, and are kept in it: what is
+    # sent stays the stored conversation plus what is new, which the next request finds
+    # unchanged. Said again only when it changed, so an unchanged day adds nothing.
+    if context is not None and context.current and _says_anew(history, context.current):
+        current = llm_domain.system(context.current)
+        opening.append(current)
+        kept.append(current)
 
     result = await advance(
         LoopState(
@@ -196,6 +211,88 @@ async def advance_turn(
         ),
     )
     return status
+
+
+async def name_conversation(
+    conversation: Conversation,
+    history: Sequence[Message],
+    llm: LLM,
+    rename_fn: RenameConversationFn,
+) -> Conversation | None:
+    """Names a conversation after its first exchange, if it still has a placeholder title
+    and has one: a user message and a reply to it. None when nothing changed."""
+    if conversation.title not in config.PLACEHOLDER_TITLES:
+        return None
+    exchange = _first_exchange(history)
+    if exchange is None:
+        return None
+
+    user_text, assistant_text = exchange
+    completion = await llm.respond([
+        llm_domain.system(prompt.TITLE_SYSTEM),
+        llm_domain.user(
+            prompt.TITLE_USER.format(
+                user=user_text[: config.TITLE_EXCERPT_CHARS],
+                assistant=assistant_text[: config.TITLE_EXCERPT_CHARS],
+            )
+        ),
+    ])
+    title = _clean_title(completion.text)
+    if not title or title in config.PLACEHOLDER_TITLES:
+        return None
+    return await rename_fn(conversation.id, title)
+
+
+def _text(content: object) -> str:
+    """A message's words: OpenAI stores a string, Anthropic a list of typed blocks."""
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        return "".join(
+            str(block.get("text", "")) for block in content
+            if isinstance(block, dict) and block.get("type") in (None, "text")
+        ).strip()
+    return ""
+
+
+def _first_exchange(history: Sequence[Message]) -> tuple[str, str] | None:
+    """The user's first message and the first reply with words in it, after it."""
+    user_text = ""
+    for message in history:
+        role = message.get("role")
+        if role == "user" and not user_text:
+            user_text = _text(message.get("content"))
+        elif role == "assistant" and user_text and (reply := _text(message.get("content"))):
+            return user_text, reply
+    return None
+
+
+def _clean_title(text: str) -> str:
+    title = " ".join(text.split())
+    for prefix in ("Title:", "Título:"):
+        if title.lower().startswith(prefix.lower()):
+            title = title[len(prefix):]
+    # quotes and a final period in either order -- '"Banner".' as well as '"Banner."'
+    title = title.strip().rstrip(".").strip("\"'`*#« »“”").rstrip(".").strip()
+    if len(title) > config.MAX_TITLE_CHARS:
+        title = title[: config.MAX_TITLE_CHARS - 1].rstrip() + "…"
+    return title
+
+
+def _says_anew(history: Sequence[Message], current: str) -> bool:
+    """Whether the turn's context must be said again: it differs from the last said, and
+    the history does not end on tool calls -- their results must follow them directly."""
+    if history and history[-1].get("role") == "assistant" and history[-1].get("tool_calls"):
+        return False
+    said = next(
+        (
+            m.get("content")
+            for m in reversed(history)
+            if m.get("role") == "system" and str(m.get("content", "")).startswith(prompt.CONTEXT_HEADER)
+        ),
+        None,
+    )
+    return said != current
 
 
 async def resolve_tool_calls(
@@ -253,6 +350,7 @@ async def resolve_tool_calls(
             feedback=resolution.feedback,
             output=resolution.output,
             failed=resolution.failed,
+            args=resolution.args,
         )
 
     missing = [call_id for call_id in pending if call_id not in decisions]

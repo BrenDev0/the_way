@@ -1,7 +1,8 @@
 from typing import Annotated
+from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 
 from src.api import dependencies as api_dependencies
 from src.auth import dependencies as auth_dependencies
@@ -348,6 +349,30 @@ async def request_download_route(
         file=mapper.domain_to_file_response(project_file),
         download_url=download_url,
         expires_in_seconds=config.DOWNLOAD_URL_TTL_SECONDS,
+    )
+
+
+@router.get("/{project_id}/files/{file_id}/content")
+async def file_content_route(
+    file_id: UUID,
+    project: OwnedProject,
+    bucket_store: Bucket,
+    get_file_fn: GetFile,
+) -> Response:
+    """The file itself, with its own content type -- for opening it in the app or saving it,
+    from wherever the client is: the server fetches it from the bucket."""
+    project_file, content = await projects_use_cases.read_file(
+        project=project, file_id=file_id, get_file_fn=get_file_fn, bucket_store=bucket_store
+    )
+    return Response(
+        content=content,
+        media_type=project_file.content_type or "application/octet-stream",
+        headers={
+            "Content-Disposition": f"inline; filename*=UTF-8''{quote(project_file.name)}",
+            # it is opened inside the app; nothing it contains should run as a page of ours
+            "X-Content-Type-Options": "nosniff",
+            "Cache-Control": "private, no-store",
+        },
     )
 
 

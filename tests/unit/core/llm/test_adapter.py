@@ -150,6 +150,23 @@ async def test_usage_is_extracted():
     assert completion.usage == TokenUsage(input_tokens=10, output_tokens=4, total_tokens=14)
 
 
+async def test_the_cached_share_of_the_input_is_extracted():
+    model = FakeChatModel(
+        AIMessage(
+            content="hi",
+            usage_metadata={
+                "input_tokens": 1000, "output_tokens": 4, "total_tokens": 1004,
+                "input_token_details": {"cache_read": 900, "cache_creation": 80},
+            },
+        )
+    )
+
+    completion = await LangchainLLM(model).respond(conversation())
+
+    assert completion.usage.cache_read_tokens == 900
+    assert completion.usage.cache_write_tokens == 80
+
+
 async def test_missing_usage_is_zeroed():
     completion = await LangchainLLM(FakeChatModel(AIMessage(content="hi"))).respond(conversation())
 

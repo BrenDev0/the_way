@@ -1,9 +1,10 @@
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import Message, TokenUsage
 from src.core.llm.ports import LLM
+from src.core.tools.domain import Decision
 from src.core.tools.ports import ToolExecutor
 
 from .domain import DEFAULT_MAX_ITERATIONS, LoopState, LoopStatus
@@ -33,6 +34,14 @@ class AssistantRun:
     usage: TokenUsage = field(default_factory=TokenUsage)
 
 
+@dataclass(frozen=True)
+class Suspended:
+    """The run stopped on calls only the user can answer. `state` is everything needed to
+    carry on exactly where it stopped, once they have."""
+
+    state: LoopState
+
+
 async def run_assistant(
     llm: LLM,
     executor: ToolExecutor,
@@ -41,18 +50,41 @@ async def run_assistant(
 ) -> AssistantRun:
     """Run one assistant to completion with nobody watching. The executor's gate decides
     what happens to gated calls; a sub-assistant is never handed a suspending one."""
-    result = await advance(
-        LoopState(messages=list(messages)), llm, executor, max_iterations=max_iterations
+    outcome = await continue_assistant(
+        llm, executor, LoopState(messages=list(messages)), max_iterations=max_iterations
     )
+    if isinstance(outcome, Suspended):  # only a suspending gate gets here
+        return await _unfinished(llm, executor, outcome.state)
+    return outcome
+
+
+async def continue_assistant(
+    llm: LLM,
+    executor: ToolExecutor,
+    state: LoopState,
+    decisions: Mapping[str, Decision] | None = None,
+    max_iterations: int = DEFAULT_MAX_ITERATIONS,
+) -> AssistantRun | Suspended:
+    """Runs an assistant from `state` -- a fresh start, or a run resumed with the user's
+    `decisions` -- until it finishes, runs out of steps, or suspends on the user."""
+    result = await advance(
+        state, llm, executor, decisions=dict(decisions) if decisions else None,
+        max_iterations=max_iterations,
+    )
+    if result.is_suspended:
+        return Suspended(result.state)
 
     if result.status is LoopStatus.COMPLETED:
         return AssistantRun(text=result.text, finished=True, usage=result.state.usage)
+    return await _unfinished(llm, executor, result.state)
 
-    account = await _wrap_up(llm, executor, result.state.messages)
+
+async def _unfinished(llm: LLM, executor: ToolExecutor, state: LoopState) -> AssistantRun:
+    account = await _wrap_up(llm, executor, state.messages)
     return AssistantRun(
-        text=account or NO_ACCOUNT.format(steps=result.state.iterations_used),
+        text=account or NO_ACCOUNT.format(steps=state.iterations_used),
         finished=False,
-        usage=result.state.usage,
+        usage=state.usage,
     )
 
 

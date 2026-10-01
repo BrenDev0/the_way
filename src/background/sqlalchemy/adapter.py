@@ -58,6 +58,12 @@ async def finish(
     return mapper.row_to_domain(row)
 
 
+async def set_status(session: AsyncSession, task_id: UUID, status: TaskStatus) -> None:
+    await session.execute(
+        update(BackgroundTaskRow).where(BackgroundTaskRow.id == task_id).values(status=status)
+    )
+
+
 async def list_unreported(
     session: AsyncSession, conversation_id: UUID
 ) -> Sequence[BackgroundTask]:
@@ -65,7 +71,8 @@ async def list_unreported(
         select(BackgroundTaskRow)
         .where(
             BackgroundTaskRow.conversation_id == conversation_id,
-            BackgroundTaskRow.status != TaskStatus.RUNNING,
+            # still under way, or waiting on the user: not news yet
+            BackgroundTaskRow.status.not_in([TaskStatus.RUNNING, TaskStatus.NEEDS_APPROVAL]),
             BackgroundTaskRow.reported.is_(False),
         )
         .order_by(BackgroundTaskRow.updated_at)

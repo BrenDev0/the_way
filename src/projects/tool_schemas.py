@@ -110,6 +110,18 @@ class MoveProjectPath(BaseModel):
     )
 
 
+class RenameProjectPath(BaseModel):
+    """Rename a file or folder where it is, keeping it in the same folder. Use this when the
+    user wants a new name; use MoveProjectPath to put it somewhere else."""
+
+    project: str = Field(description=PROJECT)
+    path: str = Field(description="The existing file or folder to rename")
+    new_name: str = Field(
+        description="The new name only, not a path -- for example 'informe-final.html'. Keep "
+        "the file's extension unless the user asked to change it."
+    )
+
+
 class DeleteProjectPath(BaseModel):
     """Delete a file, or a folder and everything inside it, from a project."""
 

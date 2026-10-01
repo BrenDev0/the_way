@@ -11,3 +11,8 @@ class RemoteObject:
 
 class BucketError(Exception):
     pass
+
+
+class BucketObjectMissing(BucketError):
+    """The bucket answered, and the object is not there -- unlike a bucket that cannot be
+    reached, trying again will not bring it back."""

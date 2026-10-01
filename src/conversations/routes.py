@@ -176,7 +176,7 @@ async def send_message_route(
     )
 
     await conversation_events.ConversationEvents(event_stream, conversation.id).status(conversation)
-    await advance_conversation.kiq(conversation.id)  # type: ignore[call-overload]
+    await advance_conversation.kiq(conversation.id, voice=payload.voice, local_folder=payload.local_folder, remote_folder=payload.remote_folder)  # type: ignore[call-overload]
 
     return mapper.domain_to_conversation_response(conversation)
 
@@ -209,7 +209,7 @@ async def resolve_tool_calls_route(
     )
 
     await conversation_events.ConversationEvents(event_stream, conversation.id).status(conversation)
-    await advance_conversation.kiq(conversation.id)  # type: ignore[call-overload]
+    await advance_conversation.kiq(conversation.id, voice=payload.voice, local_folder=payload.local_folder, remote_folder=payload.remote_folder)  # type: ignore[call-overload]
 
     return mapper.domain_to_conversation_response(conversation)
 

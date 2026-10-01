@@ -31,6 +31,8 @@ def row_to_domain(row: ConversationRow) -> Conversation:
                 input_tokens=row.input_tokens,
                 output_tokens=row.output_tokens,
                 total_tokens=row.total_tokens,
+                cache_read_tokens=row.cache_read_tokens or 0,
+                cache_write_tokens=row.cache_write_tokens or 0,
             ),
             pending_requests=tuple(_to_request(c) for c in pending),
             decisions={
@@ -57,6 +59,8 @@ def domain_create_to_row(conversation: ConversationCreate) -> ConversationRow:
         input_tokens=0,
         output_tokens=0,
         total_tokens=0,
+        cache_read_tokens=0,
+        cache_write_tokens=0,
     )
 
 
@@ -74,6 +78,8 @@ def apply_turn_state(row: ConversationRow, turn: TurnState) -> None:
     row.input_tokens = turn.usage.input_tokens
     row.output_tokens = turn.usage.output_tokens
     row.total_tokens = turn.usage.total_tokens
+    row.cache_read_tokens = turn.usage.cache_read_tokens
+    row.cache_write_tokens = turn.usage.cache_write_tokens
 
 
 def message_row_to_domain(row: MessageRow) -> Message:
@@ -102,6 +108,12 @@ def _from_tool_call(call: ToolCall, request: ClientRequest | None) -> dict[str, 
         data["location"] = str(request.location)
         data["requires_approval"] = request.requires_approval
         data["detail"] = request.detail
+        if request.choices:
+            data["choices"] = {name: list(values) for name, values in request.choices.items()}
+        if isinstance(request.preview, str):
+            data["preview"] = request.preview
+        if request.always_ask:
+            data["always_ask"] = True
     return data
 
 
@@ -115,6 +127,9 @@ def _to_request(data: dict[str, Any]) -> ClientRequest:
         location=ToolLocation(data.get("location", ToolLocation.SERVER)),
         requires_approval=data.get("requires_approval", True),
         detail=data.get("detail"),
+        preview=data.get("preview"),
+        always_ask=data.get("always_ask", False),
+        choices={name: tuple(values) for name, values in (data.get("choices") or {}).items()},
     )
 
 
@@ -140,6 +155,7 @@ def _from_decision(decision: Decision) -> dict[str, Any]:
         "feedback": decision.feedback,
         "output": decision.output,
         "failed": decision.failed,
+        "args": dict(decision.args),
     }
 
 
@@ -149,4 +165,5 @@ def _to_decision(data: dict[str, Any]) -> Decision:
         feedback=data.get("feedback", ""),
         output=data.get("output"),
         failed=data.get("failed", False),
+        args=data.get("args") or {},
     )

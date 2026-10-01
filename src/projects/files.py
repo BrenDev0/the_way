@@ -105,8 +105,8 @@ class ProjectFiles:
             if project.name.lower() == wanted:
                 return project
 
-        if wanted == config.WORKSPACE_PROJECT:
-            return await self.create_project(config.WORKSPACE_PROJECT)
+        if wanted in config.AUTO_CREATED_PROJECTS:
+            return await self.create_project(config.AUTO_CREATED_PROJECTS[wanted])
 
         names = ", ".join(project.name for project in held) or "none yet"
         raise NotFoundError(
@@ -138,13 +138,15 @@ class ProjectFiles:
     async def tree(self, project: Project) -> list[tuple[str, Folder | ProjectFile]]:
         return await paths.list_paths(project, self._list_tree)
 
-    async def read_bytes(self, project: Project, path: str) -> tuple[ProjectFile, bytes]:
+    async def read_bytes(
+        self, project: Project, path: str, limit: int = config.MAX_TOOL_FILE_BYTES
+    ) -> tuple[ProjectFile, bytes]:
         project_file = await self.file(project, path)
-        if project_file.size_bytes > config.MAX_TOOL_FILE_BYTES:
+        if project_file.size_bytes > limit:
             raise ValidationError(
                 message=(
                     f"'{path}' is {project_file.size_bytes:,} bytes, over the "
-                    f"{config.MAX_TOOL_FILE_BYTES:,} byte limit for reading it here"
+                    f"{limit:,} byte limit for reading it here"
                 ),
                 code="project_file_too_large",
             )

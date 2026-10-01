@@ -39,7 +39,7 @@ class LangchainLLM:
         tools: Sequence[type[BaseModel]],
         on_text: TextListener | None = None,
     ) -> AIMessage:
-        converted = convert_to_messages(messages)
+        converted = convert_to_messages(_canonical(messages))
         model: Runnable = self._model.bind_tools(list(tools)) if tools else self._model
 
         # Streamed whenever someone is listening, so the reply appears as it is written.
@@ -60,6 +60,18 @@ class LangchainLLM:
                 code="llm_empty_response",
             )
         return cast("AIMessage", result)
+
+
+def _canonical(value: Any) -> Any:
+    """Every dict's keys in one order. The provider caches the prompt up to its first
+    differing byte, and the stored history comes back from the database (JSONB) with its
+    keys reordered -- tool arguments sent as {path, content} in a turn would be resent as
+    {content, path} the next, and everything after the first tool call billed again."""
+    if isinstance(value, dict):
+        return {key: _canonical(value[key]) for key in sorted(value)}
+    if isinstance(value, list):
+        return [_canonical(item) for item in value]
+    return value
 
 
 def _chunk_text(content: Any) -> str:
@@ -88,8 +100,12 @@ def _tool_call(call: LangchainToolCall) -> ToolCall:
 
 def _usage(result: AIMessage) -> TokenUsage:
     usage = getattr(result, "usage_metadata", None) or {}
+    # Both providers report the cached share here; OpenAI never reports a write.
+    details = usage.get("input_token_details") or {}
     return TokenUsage(
         input_tokens=usage.get("input_tokens", 0),
         output_tokens=usage.get("output_tokens", 0),
         total_tokens=usage.get("total_tokens", 0),
+        cache_read_tokens=details.get("cache_read") or 0,
+        cache_write_tokens=details.get("cache_creation") or 0,
     )

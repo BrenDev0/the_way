@@ -14,6 +14,7 @@ from src.projects.management.routes import router as projects_management_router
 from src.projects.routes import router as projects_router
 from src.skills.routes import router as skills_router
 from src.users.routes import router as users_router
+from src.voice.routes import router as voice_router
 
 router = APIRouter(dependencies=[Depends(signing.verify_request_signature)])
 router.include_router(api_keys_router, prefix="/api-keys")
@@ -30,3 +31,4 @@ router.include_router(projects_management_router, prefix="/projects/management")
 router.include_router(projects_router, prefix="/projects")
 router.include_router(skills_router, prefix="/skills")
 router.include_router(users_router, prefix="/users")
+router.include_router(voice_router, prefix="/voice")

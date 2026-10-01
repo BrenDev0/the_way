@@ -6,6 +6,9 @@ from uuid import UUID
 
 class TaskStatus(StrEnum):
     RUNNING = "running"
+    # Stopped on a call only the user can approve; its run is saved and carries on once
+    # they answer (paused.py). Fits the 16-character status column.
+    NEEDS_APPROVAL = "needs_approval"
     DONE = "done"
     FAILED = "failed"
 

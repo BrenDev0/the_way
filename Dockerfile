@@ -9,6 +9,14 @@ ENV PYTHONUNBUFFERED=1 \
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
+# WeasyPrint lays out text with Pango (HTML to PDF and PNG). The fonts are fallbacks for a
+# page whose web fonts cannot be fetched, so it still renders legibly.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fontconfig \
+        fonts-dejavu-core fonts-liberation \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY pyproject.toml uv.lock ./

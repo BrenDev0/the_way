@@ -19,6 +19,7 @@ from .schemas import (
     ReadBrowserPage,
     ReadFile,
     ReadWhatsappChat,
+    RenamePath,
     SearchCode,
     SearchFile,
     SendWhatsappMessage,
@@ -38,6 +39,7 @@ FILES: tuple[type[BaseModel], ...] = (
     UpdateFile,
     CopyPath,
     MovePath,
+    RenamePath,
     DeleteFile,
     DeleteDir,
 )
@@ -66,6 +68,7 @@ REQUIRES_APPROVAL: frozenset[type[BaseModel]] = frozenset(
     {
         UpdateFile,
         MovePath,
+        RenamePath,
         DeleteFile,
         DeleteDir,
         UploadToProject,
@@ -78,6 +81,10 @@ REQUIRES_APPROVAL: frozenset[type[BaseModel]] = frozenset(
 
 SCHEMAS: tuple[type[BaseModel], ...] = FILES + TRANSFER + BROWSER
 
+# Asked even when the user has the app approve everything else on its own (auto mode):
+# a deletion cannot be undone.
+ALWAYS_ASK: frozenset[type[BaseModel]] = frozenset({DeleteFile, DeleteDir})
+
 
 def build() -> dict[str, Tool]:
     return {
@@ -85,6 +92,7 @@ def build() -> dict[str, Tool]:
             schema=schema,
             location=ToolLocation.DESKTOP,
             requires_approval=schema in REQUIRES_APPROVAL,
+            always_ask=schema in ALWAYS_ASK,
         )
         for schema in SCHEMAS
     }

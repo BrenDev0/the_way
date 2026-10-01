@@ -19,6 +19,7 @@ from src.desktop.routes import router as desktop_tools_router
 from src.preferences.routes import router as preferences_router
 from src.projects.routes import router as projects_router
 from src.users.routes import router as users_router
+from src.voice.routes import router as voice_router
 
 router = APIRouter()
 router.include_router(desktop_auth_router, prefix="/auth")
@@ -29,3 +30,4 @@ router.include_router(desktop_tools_router, prefix="/desktop-tools")
 router.include_router(preferences_router, prefix="/preferences")
 router.include_router(projects_router, prefix="/projects")
 router.include_router(users_router, prefix="/users")
+router.include_router(voice_router, prefix="/voice")

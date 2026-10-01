@@ -45,6 +45,8 @@ class ToolResolution:
     feedback: str = ""
     output: str | None = None
     failed: bool = False
+    # The approver's picks among the tool's choices -- the image model, say.
+    args: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -57,6 +59,18 @@ class Conversation:
     created_at: datetime
     updated_at: datetime
     client: ConversationClient = ConversationClient.DESKTOP
+
+
+@dataclass(frozen=True)
+class TurnContext:
+    """What a turn is told besides the conversation, split by how often it changes --
+    which decides where it goes, since a provider caches the prompt only up to the first
+    byte that differs from the last request."""
+
+    # Ahead of the history: the CX workflow, the knowledge index. Rarely changes.
+    stable: tuple[str, ...] = ()
+    # After the history: the date, the working folder, voice, preferences.
+    current: str = ""
 
 
 @dataclass

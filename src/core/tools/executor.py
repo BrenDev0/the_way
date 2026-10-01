@@ -16,6 +16,7 @@ from .domain import (
     Tool,
     ToolLocation,
     ToolResult,
+    chosen_args,
     truncate,
 )
 from .ports import ApprovalGate, ToolEvents
@@ -99,6 +100,8 @@ class Executor:
             requires_approval=tool.requires_approval,
             preview=_build(tool.preview, call.args),
             detail=_build(tool.describe, call.args),
+            choices=tool.choices,
+            always_ask=tool.always_ask,
         )
 
     async def _run(self, call: ToolCall, decision: Decision | None) -> ToolResult:
@@ -116,6 +119,8 @@ class Executor:
         if tool.location is ToolLocation.DESKTOP:
             return self._desktop_result(tool, call, decision)
 
+        # what the approver picked (the model, say) replaces what was asked for
+        call = ToolCall(id=call.id, name=call.name, args=chosen_args(tool, call, decision))
         await self._events.tool_started(call)
         running = _current_call.set(call.id)
         try:

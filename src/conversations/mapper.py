@@ -34,6 +34,9 @@ def request_to_response(request: ClientRequest) -> PendingToolCallResponse:
         location=request.location,
         requires_approval=request.requires_approval,
         detail=request.detail,
+        choices={name: list(values) for name, values in request.choices.items()},
+        preview=request.preview if isinstance(request.preview, str) else None,
+        always_ask=request.always_ask,
     )
 
 
@@ -44,6 +47,7 @@ def resolution_request_to_domain(request: ToolResolutionRequest) -> ToolResoluti
         feedback=request.feedback,
         output=request.output,
         failed=request.failed,
+        args=dict(request.args),
     )
 
 

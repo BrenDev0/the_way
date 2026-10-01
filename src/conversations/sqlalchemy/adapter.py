@@ -2,10 +2,15 @@ from collections.abc import Sequence
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Text, cast, delete, func, or_, select
+from sqlalchemy import Text, cast, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.conversations.domain import Conversation, ConversationCreate, TurnState
+from src.conversations.domain import (
+    Conversation,
+    ConversationCreate,
+    ConversationStatus,
+    TurnState,
+)
 from src.core.llm.domain import Message
 
 from . import mapper
@@ -43,6 +48,16 @@ async def get_by_id(session: AsyncSession, conversation_id: UUID) -> Conversatio
     row = result.scalar_one_or_none()
 
     return mapper.row_to_domain(row) if row else None
+
+
+async def rename(session: AsyncSession, conversation_id: UUID, title: str) -> Conversation | None:
+    row = await session.get(ConversationRow, conversation_id)
+    if row is None:
+        return None
+    row.title = title
+    await session.flush()
+    await session.refresh(row)
+    return mapper.row_to_domain(row)
 
 
 async def list_messages(session: AsyncSession, conversation_id: UUID) -> list[Message]:
@@ -125,6 +140,20 @@ async def search_messages(
         .limit(limit)
     )
     return [(mapper.message_row_to_domain(row), row.created_at) for row in result.scalars().all()]
+
+
+async def claim_if_idle(session: AsyncSession, conversation_id: UUID) -> Conversation | None:
+    """Starts a turn on a conversation only if nothing is happening on it -- in one
+    statement, so two things that both find it idle cannot both start one."""
+    result = await session.execute(
+        update(ConversationRow)
+        .where(ConversationRow.id == conversation_id, ConversationRow.status == ConversationStatus.IDLE)
+        .values(status=ConversationStatus.RUNNING, iterations_used=0)
+        .returning(ConversationRow.id)
+    )
+    if result.scalar_one_or_none() is None:
+        return None
+    return await get_by_id(session, conversation_id)
 
 
 async def save_turn_state(

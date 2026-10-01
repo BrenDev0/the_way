@@ -117,6 +117,17 @@ class MovePath(BaseModel):
     overwrite: bool = Field(default=False, description="If true, replace anything already there")
 
 
+class RenamePath(BaseModel):
+    """Rename a file or directory on the user's computer where it is, keeping it in the
+    same folder. Use MovePath to put it somewhere else."""
+
+    path: str = Field(description=f"The existing file or directory. {LOCAL}")
+    new_name: str = Field(
+        description="The new name only, not a path -- for example 'informe-final.docx'. Keep "
+        "the file's extension unless the user asked to change it."
+    )
+
+
 class DeleteFile(BaseModel):
     """Delete a file on the user's computer."""
 

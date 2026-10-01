@@ -17,6 +17,8 @@ text is not streamed: it is working-out for the tool, not an answer to the user.
 
   task.started  a background task this conversation started began working
   task.finished it ended, with its status -- its tool.* events carry its taskId
+  task.needs_approval  it stopped on calls only the user can approve (pendingApproval);
+                it carries on once they answer at POST /background-tasks/{id}/approvals
 """
 
 import re
@@ -29,7 +31,7 @@ from src.core.events import sse
 from src.core.events.domain import EventStreamUnavailable
 from src.core.events.ports import EventStream
 from src.core.llm.domain import Message, ToolCall
-from src.core.tools.domain import ToolResult
+from src.core.tools.domain import ClientRequest, ToolResult
 from src.core.tools.executor import current_call
 
 from . import mapper
@@ -153,4 +155,19 @@ class ConversationEvents:
     async def task_finished(self, task_id: UUID, description: str, status: str) -> None:
         await self._publish(
             "task.finished", {"taskId": str(task_id), "description": description, "status": status}
+        )
+
+    async def task_needs_approval(
+        self, task_id: UUID, description: str, requests: tuple[ClientRequest, ...]
+    ) -> None:
+        await self._publish(
+            "task.needs_approval",
+            {
+                "taskId": str(task_id),
+                "description": description,
+                "pendingApproval": [
+                    mapper.request_to_response(request).model_dump(mode="json", by_alias=True)
+                    for request in requests
+                ],
+            },
         )

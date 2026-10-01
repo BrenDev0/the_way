@@ -3,6 +3,7 @@ from uuid import UUID
 
 from pydantic import Field
 
+from src.conversations.schemas import PendingToolCallResponse, ToolResolutionRequest
 from src.core.schemas import ApiBaseModel
 
 from .domain import TaskStatus
@@ -20,3 +21,12 @@ class BackgroundTaskResponse(ApiBaseModel):
     deliver_path: str | None = Field(min_length=0)
     created_at: datetime
     updated_at: datetime
+    # While status is needs_approval: the calls the task is waiting on the user for.
+    pending_approval: list[PendingToolCallResponse] = Field(default_factory=list)
+
+
+class ApproveTaskRequest(ApiBaseModel):
+    """The user's answer to every call the task is waiting on. Same shape as a turn's
+    tool results; `output` does not apply, since the server runs these calls itself."""
+
+    resolutions: list[ToolResolutionRequest]

@@ -152,6 +152,38 @@ async def test_move_renames_and_relocates(db_session, owner, bucket):
     assert "draft.md" not in await run(tools, "ListProjectFolder", project="Website")
 
 
+async def test_rename_keeps_a_file_or_folder_where_it_is(db_session, owner, bucket):
+    tools = project_tools.build(context_for(db_session, owner, bucket))
+    await run(tools, "CreateProject", name="Website")
+    await run(tools, "WriteProjectFile", project="Website", path="docs/draft.md", content="text")
+
+    result = await run(tools, "RenameProjectPath", project="Website", path="docs/draft.md", new_name="final.md")
+    await run(tools, "RenameProjectPath", project="Website", path="docs", new_name="published")
+
+    assert "Renamed Website/docs/draft.md" in result
+    assert await run(tools, "ReadProjectFile", project="Website", path="published/final.md") == "text"
+
+
+async def test_rename_will_not_land_inside_a_folder_that_has_the_name(db_session, owner, bucket):
+    tools = project_tools.build(context_for(db_session, owner, bucket))
+    await run(tools, "CreateProject", name="Website")
+    await run(tools, "WriteProjectFile", project="Website", path="a/one.md", content="1")
+    await run(tools, "WriteProjectFile", project="Website", path="b/two.md", content="2")
+
+    result = await run(tools, "RenameProjectPath", project="Website", path="a", new_name="b")
+
+    assert "already exists" in result
+    assert await run(tools, "ReadProjectFile", project="Website", path="a/one.md") == "1"
+
+
+async def test_the_drafts_project_appears_the_first_time_it_is_used(db_session, owner, bucket):
+    tools = project_tools.build(context_for(db_session, owner, bucket))
+
+    await run(tools, "WriteProjectFile", project="Borradores", path="nota.md", content="hola")
+
+    assert "Borradores" in await run(tools, "ListProjects")
+
+
 async def test_delete_removes_the_folder_and_its_objects(db_session, owner, bucket):
     tools = project_tools.build(context_for(db_session, owner, bucket))
     await run(tools, "CreateProject", name="Website")

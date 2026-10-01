@@ -48,7 +48,7 @@ def test_desktop_tools_have_no_server_handler():
 
 @pytest.mark.parametrize(
     "name",
-    ["UpdateFile", "MovePath", "DeleteFile", "DeleteDir", "SendWhatsappMessage", "UploadToProject"],
+    ["UpdateFile", "MovePath", "RenamePath", "DeleteFile", "DeleteDir", "SendWhatsappMessage", "UploadToProject"],
 )
 def test_desktop_calls_that_change_or_send_need_approval(name):
     assert desktop_tools.build()[name].requires_approval is True
@@ -92,7 +92,7 @@ def test_owners_and_admins_can_and_are_asked_first(role):
 
 
 @pytest.mark.parametrize(
-    "name", ["EditProjectFile", "MoveProjectPath", "DeleteProjectPath", "RememberPreference"]
+    "name", ["EditProjectFile", "MoveProjectPath", "RenameProjectPath", "DeleteProjectPath", "RememberPreference"]
 )
 def test_server_calls_that_change_things_need_approval(name):
     assert conversation_tools.build(context(), desktop=False)[name].requires_approval is True
@@ -109,3 +109,43 @@ def test_the_background_worker_cannot_reach_destructive_or_desktop_tools():
     assert not worker & {schema.__name__ for schema in desktop_tools.SCHEMAS}
     assert "RememberPreference" not in worker
     assert {"WriteProjectFile", "FetchCXDataset", "BuildHtmlPage"} <= worker
+
+
+def test_image_tools_come_with_an_openai_key_and_always_ask_with_a_model_menu():
+    without = conversation_tools.build(context(), desktop=False)
+    with_key = conversation_tools.build(context(openai={"secret": "sk"}), desktop=False)
+
+    assert "GenerateImages" not in without
+    assert any("image generation" in item for item in catalog.unavailable(context()))
+    for name in ("GenerateImages", "EditImage"):
+        tool = with_key[name]
+        assert tool.requires_approval and tool.always_ask
+        assert tool.choices == {"model": ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst")}
+        assert name in background_config.TOOLS  # the worker gets them, and suspends on them
+
+
+def test_deletions_ask_even_in_auto_mode_and_messages_do_not():
+    server = conversation_tools.build(context(), desktop=True)
+
+    assert server["DeleteProjectPath"].always_ask
+    assert server["DeleteFile"].always_ask and server["DeleteDir"].always_ask
+    assert not server["SendWhatsappMessage"].always_ask
+    assert not server["MoveProjectPath"].always_ask
+
+
+async def test_an_image_call_reaches_the_client_marked_to_ask_even_in_auto_mode():
+    from src.conversations import mapper
+    from src.core.llm.domain import ToolCall
+    from src.core.tools.executor import Executor
+    from src.core.tools.gates import SuspendGate
+
+    tools = conversation_tools.build(context(openai={"secret": "sk"}), desktop=False)
+    executor = Executor(tools, SuspendGate())
+    image = ToolCall(id="call-image", name="GenerateImages", args={"project": "B", "images": [{"prompt": "x", "output_path": "a.png"}]})
+    edit = ToolCall(id="call-edit", name="EditProjectFile", args={"project": "B", "path": "a.md", "old_string": "a", "new_string": "b"})
+
+    with pytest.raises(Exception) as stopped:
+        await executor.execute([image, edit])
+
+    asked = {r.call.id: mapper.request_to_response(r).always_ask for r in stopped.value.requests}  # type: ignore[attr-defined]
+    assert asked == {"call-image": True, "call-edit": False}

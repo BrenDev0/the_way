@@ -28,14 +28,19 @@ class StartBackgroundTask(BaseModel):
             "Project where the finished files should be delivered, exactly as ListProjects "
             "shows it. The worker always does its work in the '.the_way' workspace, which "
             "the user does not browse; whatever it produces is copied here automatically "
-            "the moment the task succeeds. ASK the user where they want it before starting "
-            "any task that produces files they will want to see. Leave it unset only for "
-            "work with no deliverable."
+            "the moment the task succeeds. Set it ONLY when the user said where they want "
+            "this, or a standing preference names a place. Left unset, the files go to the "
+            "'Borradores' (drafts) project, in a folder named after the task -- do not ask "
+            "the user where to put things."
         ),
     )
     deliver_to_path: str | None = Field(
         default=None,
-        description="Folder inside deliver_to_project, for example 'reports'. Created if missing.",
+        description=(
+            "Folder inside deliver_to_project, for example 'reports'. Created if missing. "
+            "To revise a file delivered earlier, give that file's project and folder so the "
+            "revision replaces it."
+        ),
     )
 
 

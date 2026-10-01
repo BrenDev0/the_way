@@ -107,6 +107,17 @@ layouts from ones that drift.
 - Icons, if used, are inline SVG with stroke-width 1.5 and currentColor. Never emoji.
 - Print stylesheet for reports: @media print { } that drops backgrounds, forces black ink,
   and sets page-break-inside: avoid on tables and figures.
+- Every page may be converted to PDF or PNG, where there is no viewport and nothing
+  scrolls. So that it survives paper unchanged:
+  - Size sections by their content. Never height: 100vh or a fixed height on anything
+    that holds text; a hero that should be tall gets min-height in rem, not vh.
+  - No fixed or minimum widths wider than the content needs: max-width plus width: 100%,
+    never width: 1200px or min-width on a layout container.
+  - Grid and flex children that hold text get min-width: 0, so a long word or a wide table
+    wraps instead of pushing the layout past the edge. Wide tables sit in a wrapper that
+    lets them shrink, and their cells wrap.
+  - No overflow: hidden on html, body or a section of text -- only on decorative shapes.
+  - No position: fixed or sticky for anything the reader needs.
 
 --- 7. BANNED (these are what "plain" is made of) ---
 - Arial / Helvetica / Times / default serif as the primary face

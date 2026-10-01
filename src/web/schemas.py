@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -47,4 +49,25 @@ class CrawlWebPages(BaseModel):
     instructions: str = Field(
         description="What to look for while crawling, in plain language, for example "
         "'collect every listing page with price and square footage'"
+    )
+
+
+class WebResearch(BaseModel):
+    """Run a deep multi-step research agent on a topic. It searches, reads sources, and
+    returns a synthesised answer with citations.
+
+    VERY SLOW -- typically several minutes, far longer than WebSearch. If you are the main
+    assistant, do not call this directly: call StartBackgroundTask and put the research
+    topic in its task instructions, then tell the user it is running. If you are already
+    running as a background worker, call this directly -- it is the right tool for
+    producing a well-sourced report."""
+
+    topic: str = Field(
+        description="The research question or topic, stated in full with any constraints on "
+        "scope, timeframe, region, or language"
+    )
+    depth: Literal["auto", "mini", "pro"] = Field(
+        default="auto",
+        description="'mini' for a targeted question, 'pro' for a comprehensive, multi-angle "
+        "report, 'auto' to let the researcher decide.",
     )

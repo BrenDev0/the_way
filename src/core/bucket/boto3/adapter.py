@@ -7,7 +7,7 @@ import aioboto3
 from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
-from src.core.bucket.domain import BucketError, RemoteObject
+from src.core.bucket.domain import BucketError, BucketObjectMissing, RemoteObject
 
 CONNECT_TIMEOUT = 15
 READ_TIMEOUT = 60
@@ -187,7 +187,7 @@ class _wrapped:
 
         if isinstance(exc, ClientError):
             if self._missing and _code(exc) in MISSING_CODES:
-                raise BucketError(self._missing) from exc
+                raise BucketObjectMissing(self._missing) from exc
             raise BucketError(f"Failed {self._doing}: {_reason(exc)}") from exc
 
         if isinstance(exc, BotoCoreError):
