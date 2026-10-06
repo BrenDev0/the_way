@@ -36,6 +36,12 @@ class Settings(BaseSettings):
     TASKIQ_RESULT_TTL_SECONDS: int = 60 * 60
     TASKIQ_STREAM_NAME: str = "taskiq:stream"
     TASKIQ_CONSUMER_GROUP: str = "taskiq:workers"
+    # How long XREADGROUP waits on Redis for a message, and how long a read on that socket
+    # may take. The read must outlast the wait by a wide margin: redis-py's default (5s)
+    # left 3s, and one stretch of synchronous work in a task was enough to time the read
+    # out -- which kills the worker process and the turn it was running.
+    TASKIQ_XREAD_BLOCK_MS: int = 2000
+    TASKIQ_SOCKET_TIMEOUT_SECONDS: float = 60
 
     def taskiq_result_backend_url(self) -> str:
         return self.TASKIQ_RESULT_BACKEND_URL or self.TASKIQ_BROKER_URL
@@ -48,13 +54,30 @@ class Settings(BaseSettings):
     BUCKET_NAME: str | None = None
     BUCKET_PREFIX: str = "the_way"
     BUCKET_ENDPOINT: str | None = None
+    # The bucket's address as a client reaches it, which presigned URLs are signed for.
+    # Inside Docker the server reaches the bucket at a name no client can resolve
+    # (http://s3:9090); locally this is http://localhost:9090, deployed the bucket's real
+    # address. Unset, URLs are signed for BUCKET_ENDPOINT -- right for real S3.
+    BUCKET_PUBLIC_ENDPOINT: str | None = None
     BUCKET_REGION: str | None = None
     BUCKET_ACCESS_KEY_ID: str | None = None
     BUCKET_SECRET_ACCESS_KEY: str | None = None
 
     CORS_ALLOWED_ORIGINS: list[str] = []
 
+    # The API's address as clients reach it (http://localhost:8000 locally). An image an
+    # HTML page uses is linked through it, so the page shows it wherever it is opened.
+    # Unset, pages keep their relative image paths: they still export with their images,
+    # but show none when opened.
+    PUBLIC_API_URL: str | None = None
+    # Signs those image links. They never expire -- the page that holds one must keep
+    # working -- so changing this breaks every link already written. Unset, the request
+    # signing secret is used.
+    FILE_LINK_SECRET: str | None = None
+
     INVITATION_ACCEPT_URL: str | None = None
+    BUCKET_PUBLIC_ENDPOINT: str
+    PUBLIC_API_URL: str
 
     def require_invitation_accept_url(self) -> str:
         if not self.INVITATION_ACCEPT_URL:

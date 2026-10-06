@@ -13,6 +13,8 @@ class HtmlToPdf(BaseModel):
     BuildHtmlPage, then convert it with this -- never hand-write a PDF any other way. The
     converter fixes the usual screen-to-paper problems itself (screen-height sections,
     content wider than the paper), scaling the page down to fit rather than cutting it off.
+    Images that are files in the project are put inside the PDF; if any could not be
+    found, the result says which -- read it before telling the user the images are in.
     An existing file at the output path is replaced."""
 
     project: str = Field(description=PROJECT)

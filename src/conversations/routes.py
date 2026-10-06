@@ -14,10 +14,13 @@ from src.core.database.sqlalchemy import dependencies as db_dependencies
 from src.core.events import sse
 from src.core.events.domain import EventStreamUnavailable
 from src.core.events.ports import EventStream
-from src.core.exceptions import ServiceUnavailableError
+from src.core.bucket.ports import BucketStore
+from src.core.exceptions import ServiceUnavailableError, ValidationError
+from src.projects import config as projects_config
+from src.projects.files import ProjectFiles
 from src.users.domain import Role, User
 
-from . import config, mapper
+from . import attachments, config, mapper
 from . import dependencies as conversations_dependencies
 from . import events as conversation_events
 from . import use_cases as conversations_use_cases
@@ -31,11 +34,14 @@ from .ports import (
     SaveTurnStateFn,
 )
 from .schemas import (
+    AttachmentUploadRequest,
+    AttachmentUploadResponse,
     ConversationResponse,
     CreateConversationRequest,
     DeleteConversationResponse,
     MessageResponse,
     ResolveToolCallsRequest,
+    ResumeTurnRequest,
     SendMessageRequest,
 )
 from .tasks import advance_conversation
@@ -47,6 +53,18 @@ CurrentUser = Annotated[
     Depends(auth_dependencies.require_role(Role.OWNER, Role.ADMIN, Role.MEMBER)),
 ]
 Events = Annotated[EventStream, Depends(api_dependencies.get_event_stream)]
+
+
+def _files(
+    current_user: CurrentUser,
+    session: Annotated[AsyncSession, Depends(db_dependencies.get_db_session)],
+    bucket_store: Annotated[BucketStore, Depends(api_dependencies.get_bucket_store)],
+) -> ProjectFiles:
+    return ProjectFiles(session, current_user.organization_id, current_user.id, bucket_store)
+
+
+# The user's projects, for attaching files to a message.
+Files = Annotated[ProjectFiles, Depends(_files)]
 
 
 @router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
@@ -66,6 +84,36 @@ async def start_conversation_route(
         client=payload.client,
     )
     return mapper.domain_to_conversation_response(conversation)
+
+
+@router.post(
+    "/attachments",
+    response_model=AttachmentUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def request_attachment_route(
+    payload: AttachmentUploadRequest,
+    current_user: CurrentUser,
+    files: Files,
+) -> AttachmentUploadResponse:
+    """A place for a file the user is attaching to a message: their drafts project, in
+    adjuntos/. Upload to the returned URL, complete it, then send its id with the message."""
+    if payload.size_bytes > config.MAX_ATTACHMENT_BYTES:
+        raise ValidationError(
+            message=f"Attachments are limited to {config.MAX_ATTACHMENT_BYTES // (1024 * 1024)} MB",
+            code="attachment_too_large",
+        )
+    project = await files.project(projects_config.DRAFTS_PROJECT)
+    project_file, upload_url = await files.upload_ticket(
+        project, config.ATTACHMENTS_FOLDER, payload.name, payload.content_type, payload.size_bytes
+    )
+    return AttachmentUploadResponse(
+        file_id=project_file.id,
+        project_id=project.id,
+        project=project.name,
+        path=f"{config.ATTACHMENTS_FOLDER}/{project_file.name}",
+        upload_url=upload_url,
+    )
 
 
 @router.get("", response_model=list[ConversationResponse])
@@ -160,6 +208,7 @@ async def send_message_route(
         Depends(api_keys_dependencies.provide_list_api_keys_for_user_fn),
     ],
     event_stream: Events,
+    files: Files,
 ) -> ConversationResponse:
     await api_keys_use_cases.resolve_llm_credential(
         user_id=current_user.id,
@@ -173,12 +222,38 @@ async def send_message_route(
         get_conversation_for_user_fn=get_conversation_for_user_fn,
         append_messages_fn=append_messages_fn,
         save_turn_state_fn=save_turn_state_fn,
+        attachments=await _attachment_blocks(files, payload.attachments),
     )
 
     await conversation_events.ConversationEvents(event_stream, conversation.id).status(conversation)
     await advance_conversation.kiq(conversation.id, voice=payload.voice, local_folder=payload.local_folder, remote_folder=payload.remote_folder)  # type: ignore[call-overload]
 
     return mapper.domain_to_conversation_response(conversation)
+
+
+async def _attachment_blocks(files: ProjectFiles, file_ids: list[UUID]) -> list[dict]:
+    """A reference for each attached file, once it is known to be the user's own and
+    finished uploading. One that is not refuses the message rather than dropping it: the
+    user is talking about that file."""
+    blocks: list[dict] = []
+    for file_id in dict.fromkeys(file_ids):
+        found = await files.owned_file(file_id)
+        if found is None:
+            raise ValidationError(
+                message="An attached file was not found, or has not finished uploading",
+                code="attachment_not_found",
+            )
+        project_file, project, path = found
+        blocks.append({
+            "type": attachments.ATTACHMENT,
+            "file_id": str(project_file.id),
+            "project": project.name,
+            "path": path,
+            "name": project_file.name,
+            "content_type": project_file.content_type,
+            "size_bytes": project_file.size_bytes,
+        })
+    return blocks
 
 
 @router.post(
@@ -204,6 +279,40 @@ async def resolve_tool_calls_route(
         conversation_id=conversation_id,
         user_id=current_user.id,
         resolutions=[mapper.resolution_request_to_domain(r) for r in payload.resolutions],
+        get_conversation_for_user_fn=get_conversation_for_user_fn,
+        save_turn_state_fn=save_turn_state_fn,
+    )
+
+    await conversation_events.ConversationEvents(event_stream, conversation.id).status(conversation)
+    await advance_conversation.kiq(conversation.id, voice=payload.voice, local_folder=payload.local_folder, remote_folder=payload.remote_folder)  # type: ignore[call-overload]
+
+    return mapper.domain_to_conversation_response(conversation)
+
+
+@router.post(
+    "/{conversation_id}/resume",
+    response_model=ConversationResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def resume_turn_route(
+    conversation_id: UUID,
+    payload: ResumeTurnRequest,
+    current_user: CurrentUser,
+    get_conversation_for_user_fn: Annotated[
+        GetConversationForUserFn,
+        Depends(conversations_dependencies.provide_get_conversation_for_user_fn),
+    ],
+    save_turn_state_fn: Annotated[
+        SaveTurnStateFn,
+        Depends(conversations_dependencies.provide_save_turn_state_fn),
+    ],
+    event_stream: Events,
+) -> ConversationResponse:
+    """Carries on a paused turn from where it stopped. 409 conversation_not_paused when
+    there is nothing paused to resume."""
+    conversation = await conversations_use_cases.resume_turn(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
         get_conversation_for_user_fn=get_conversation_for_user_fn,
         save_turn_state_fn=save_turn_state_fn,
     )

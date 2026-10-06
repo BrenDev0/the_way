@@ -1,7 +1,32 @@
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any
 
 Message = dict[str, Any]
+
+
+class UnavailableReason(StrEnum):
+    RATE_LIMIT = "rate_limit"
+    # the account is out of credit or over its spending limit
+    QUOTA = "quota"
+    TIMEOUT = "timeout"
+    # the provider failed or could not be reached: a 5xx, overloaded, a dropped connection
+    PROVIDER_ERROR = "provider_error"
+    # the key was refused: revoked, mistyped, or not allowed this model
+    CREDENTIALS = "credentials"
+
+
+class LLMUnavailable(Exception):
+    """The provider could not answer, for a reason that passes or that the user can fix.
+    Never the request's fault: the same request, sent again later, can succeed -- so the
+    work that led to it is kept, not thrown away."""
+
+    def __init__(self, reason: UnavailableReason, detail: str = "", retry_after: float | None = None) -> None:
+        super().__init__(detail or reason)
+        self.reason = reason
+        self.detail = detail
+        # seconds the provider asked to wait, when it said
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)

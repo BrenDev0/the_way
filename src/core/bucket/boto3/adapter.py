@@ -23,6 +23,7 @@ class Boto3BucketStore:
         access_key: str | None = None,
         secret_key: str | None = None,
         endpoint_url: str | None = None,
+        public_endpoint_url: str | None = None,
     ):
         if not bucket:
             raise BucketError("No bucket configured -- set BUCKET_NAME in your .env.")
@@ -40,8 +41,17 @@ class Boto3BucketStore:
             config=Config(connect_timeout=CONNECT_TIMEOUT, read_timeout=READ_TIMEOUT),
         )
 
+        # A presigned URL carries the host it was signed for, so it is signed for the
+        # address the client will use -- which inside Docker is not the server's.
+        self._signing_options = (
+            {**self._options, "endpoint_url": public_endpoint_url}
+            if public_endpoint_url and public_endpoint_url != endpoint_url
+            else None
+        )
+
         self._stack = AsyncExitStack()
         self._client = None
+        self._signing_client = None
         self._opening = asyncio.Lock()
 
     @property
@@ -59,6 +69,21 @@ class Boto3BucketStore:
                 )
 
         return self._client
+
+    async def _signer(self):
+        """The client presigned URLs are made with. Signing is local -- it never connects."""
+        if self._signing_options is None:
+            return await self._s3()
+        if self._signing_client is not None:
+            return self._signing_client
+
+        async with self._opening:
+            if self._signing_client is None:
+                self._signing_client = await self._stack.enter_async_context(
+                    self._session.client("s3", **self._signing_options)
+                )
+
+        return self._signing_client
 
     async def put(self, key: str, source: Path) -> RemoteObject:
         client = await self._s3()
@@ -129,7 +154,7 @@ class Boto3BucketStore:
             )
 
     async def presign_put(self, key: str, content_type: str, expires_in: int) -> str:
-        client = await self._s3()
+        client = await self._signer()
 
         with _wrapped(f"preparing an upload for {key}"):
             return await client.generate_presigned_url(
@@ -141,7 +166,7 @@ class Boto3BucketStore:
     async def presign_get(
         self, key: str, expires_in: int, download_name: str | None = None
     ) -> str:
-        client = await self._s3()
+        client = await self._signer()
         params = {"Bucket": self._bucket, "Key": key}
         if download_name:
             params["ResponseContentDisposition"] = (
@@ -156,6 +181,7 @@ class Boto3BucketStore:
     async def aclose(self) -> None:
         await self._stack.aclose()
         self._client = None
+        self._signing_client = None
 
 
 def _set(**options) -> dict:

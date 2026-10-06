@@ -17,6 +17,13 @@ UPLOAD_URL_TTL_SECONDS = 60 * 15
 # saved by the desktop app. A bigger file is still reachable by its presigned URL.
 MAX_CONTENT_BYTES = 200 * 1024 * 1024
 DOWNLOAD_URL_TTL_SECONDS = 60 * 5
+# All the images one exported page may carry inside it, together.
+MAX_EMBEDDED_IMAGES_BYTES = 40 * 1024 * 1024
+# What an image link redirects to lives this long; the link itself never expires.
+IMAGE_URL_TTL_SECONDS = 60 * 15
+# A browser may reuse the redirect for this long -- well inside the URL's own life, so
+# it never follows one that has already expired.
+IMAGE_REDIRECT_CACHE_SECONDS = 60 * 5
 
 # Each user's own workspace, created the first time something needs it: background task
 # output, fetched CX datasets and the brand override live here, the way they lived under

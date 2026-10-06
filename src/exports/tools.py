@@ -16,6 +16,14 @@ UNAVAILABLE = (
 )
 
 
+MISSING_IMAGES = (
+    " WARNING: {count} image(s) the page uses are NOT in it, because they could not be "
+    "found in the project: {images}. Point each at an image file in the project by its "
+    "path from the page (e.g. ../photos/cat.png), then convert again. Do not tell the user "
+    "the images are included until a conversion reports none missing."
+)
+
+
 def _output(path: str, output_path: str | None, suffix: str) -> str:
     if output_path and output_path.strip("/"):
         return output_path.strip("/")
@@ -40,7 +48,10 @@ def build(context: ToolContext) -> dict[str, Tool]:
 
         target = await files.project(project)
         _, raw = await files.read_bytes(target, path)
-        html = raw.decode("utf-8", errors="replace")
+        # The renderer loads nothing from an address, so the page's images go inside it.
+        # One that cannot be found is said plainly below: left out silently, it was
+        # reported as fixed when the PDF had none.
+        html, missing = await files.embed_images(target, path, raw.decode("utf-8", errors="replace"))
 
         try:
             rendered = await asyncio.wait_for(
@@ -66,7 +77,10 @@ def build(context: ToolContext) -> dict[str, Tool]:
                 f"scaled to {rendered.zoom:.0%} so content wider than the page fits instead "
                 "of being cut off"
             )
-        return f"Saved {target.name}/{destination} ({', '.join(notes)})."
+        saved = f"Saved {target.name}/{destination} ({', '.join(notes)})."
+        if missing:
+            saved += MISSING_IMAGES.format(count=len(missing), images="; ".join(missing))
+        return saved
 
     async def html_to_pdf(
         project: str,

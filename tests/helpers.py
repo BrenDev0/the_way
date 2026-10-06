@@ -16,9 +16,10 @@ from src.users.domain import Role, User
 
 
 class FakeLLM:
-    def __init__(self, *replies: Completion | str) -> None:
-        self.replies = [
-            reply if isinstance(reply, Completion) else make_completion(reply)
+    def __init__(self, *replies: Completion | str | Exception) -> None:
+        # an exception in place of a reply is raised by that call
+        self.replies: list[Completion | Exception] = [
+            reply if isinstance(reply, Completion | Exception) else make_completion(reply)
             for reply in replies
         ]
         self.received: list[list[Message]] = []
@@ -35,6 +36,8 @@ class FakeLLM:
         if not self.replies:
             raise AssertionError("FakeLLM was called more times than it has replies")
         reply = self.replies.pop(0)
+        if isinstance(reply, Exception):
+            raise reply
         # streamed a word at a time, the way a real model's reply arrives
         if on_text is not None and reply.text:
             for word in reply.text.split(" "):

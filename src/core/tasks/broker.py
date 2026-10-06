@@ -17,6 +17,8 @@ def build_broker() -> AsyncBroker:
         queue_name=settings.TASKIQ_STREAM_NAME,
         consumer_group_name=settings.TASKIQ_CONSUMER_GROUP,
         consumer_id="0",
+        xread_block=settings.TASKIQ_XREAD_BLOCK_MS,
+        socket_timeout=settings.TASKIQ_SOCKET_TIMEOUT_SECONDS,
     ).with_result_backend(result_backend)
 
 

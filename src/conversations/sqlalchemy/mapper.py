@@ -5,6 +5,8 @@ from src.conversations.domain import (
     ConversationClient,
     ConversationCreate,
     ConversationStatus,
+    PauseReason,
+    TurnPause,
     TurnState,
 )
 from src.core.llm.domain import Message, TokenUsage, ToolCall
@@ -38,6 +40,7 @@ def row_to_domain(row: ConversationRow) -> Conversation:
             decisions={
                 call_id: _to_decision(data) for call_id, data in (row.tool_decisions or {}).items()
             },
+            pause=_to_pause(row),
         ),
         created_at=row.created_at,
         updated_at=row.updated_at,
@@ -80,6 +83,25 @@ def apply_turn_state(row: ConversationRow, turn: TurnState) -> None:
     row.total_tokens = turn.usage.total_tokens
     row.cache_read_tokens = turn.usage.cache_read_tokens
     row.cache_write_tokens = turn.usage.cache_write_tokens
+    pause = turn.pause
+    row.pause_reason = pause.reason if pause else None
+    row.pause_detail = pause.detail if pause else None
+    row.paused_at = pause.paused_at if pause else None
+    row.retry_after = pause.retry_after if pause else None
+    # A run holds the turn only while it runs. Saved running (a checkpoint), it keeps it.
+    if turn.status is not ConversationStatus.RUNNING:
+        row.run_claim = None
+
+
+def _to_pause(row: ConversationRow) -> TurnPause | None:
+    if not row.pause_reason:
+        return None
+    return TurnPause(
+        reason=PauseReason(row.pause_reason),
+        detail=row.pause_detail or "",
+        paused_at=row.paused_at,
+        retry_after=row.retry_after,
+    )
 
 
 def message_row_to_domain(row: MessageRow) -> Message:

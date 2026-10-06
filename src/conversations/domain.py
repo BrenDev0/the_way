@@ -13,7 +13,21 @@ class ConversationStatus(StrEnum):
     # The turn is paused on tool calls only the client can settle: desktop tools to run,
     # or server tools the user has to approve. It resumes once every one is resolved.
     AWAITING_CLIENT = "awaiting_client"
+    # The turn stopped on something that passes or that the user can fix -- the model's
+    # rate limit or quota, a timeout, the worker going down. Everything done so far is
+    # stored; POST .../resume carries on from where it stopped.
+    PAUSED = "paused"
     FAILED = "failed"
+
+
+class PauseReason(StrEnum):
+    RATE_LIMIT = "rate_limit"
+    QUOTA = "quota"
+    TIMEOUT = "timeout"
+    PROVIDER_ERROR = "provider_error"
+    CREDENTIALS = "credentials"
+    # the worker stopped mid-turn: restarted, redeployed, crashed
+    INTERRUPTED = "interrupted"
 
 
 class ConversationClient(StrEnum):
@@ -21,6 +35,16 @@ class ConversationClient(StrEnum):
     DESKTOP = "desktop"
     # A browser client cannot reach the user's machine, so it gets server tools only.
     WEB = "web"
+
+
+@dataclass(frozen=True)
+class TurnPause:
+    reason: PauseReason
+    # what the provider said, for the user to act on (a quota, a key)
+    detail: str = ""
+    paused_at: datetime | None = None
+    # the earliest a retry is worth trying, when the provider said
+    retry_after: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -33,6 +57,8 @@ class TurnState:
     pending_requests: tuple[ClientRequest, ...] = ()
     # The client's answers to the pending calls, held until the worker resumes the turn.
     decisions: dict[str, Decision] = field(default_factory=dict)
+    # why the turn is PAUSED; None in any other status
+    pause: TurnPause | None = None
 
 
 @dataclass(frozen=True)

@@ -16,6 +16,9 @@ CHUNK_BYTES = PLAYBACK_RATE // 2
 
 MAX_SPEAK_CHARS = 4000
 
+# OpenAI clients kept open, one per user key -- each holds a warm connection pool.
+MAX_CLIENTS = 64
+
 # Two minutes of 16 kHz 16-bit mono wav is about 3.8 MB -- the client caps a recording
 # there. Anything much bigger is not a turn someone spoke.
 MAX_AUDIO_BYTES = 5 * 1024 * 1024

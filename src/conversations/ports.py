@@ -13,6 +13,10 @@ ListConversationsForUserFn = Callable[[UUID], Awaitable[Sequence[Conversation]]]
 SaveTurnStateFn = Callable[[UUID, TurnState], Awaitable[Conversation | None]]
 AppendMessagesFn = Callable[[UUID, Sequence[Message]], Awaitable[int]]
 RenameConversationFn = Callable[[UUID, str], Awaitable[Conversation | None]]
+# Makes what the turn has stored so far durable, mid-turn.
+CommitFn = Callable[[], Awaitable[None]]
+# The history as the model is sent it: attachments opened up (attachments.expand).
+ExpandFn = Callable[[Sequence[Message]], Awaitable[list[Message]]]
 
 
 class GetConversationForUserFn(Protocol):

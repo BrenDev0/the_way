@@ -7,7 +7,7 @@ from pydantic import Field
 from src.core.schemas import ApiBaseModel
 from src.core.tools.domain import ToolLocation
 
-from .domain import ConversationClient, ConversationStatus
+from .domain import ConversationClient, ConversationStatus, PauseReason
 
 
 class CreateConversationRequest(ApiBaseModel):
@@ -16,7 +16,11 @@ class CreateConversationRequest(ApiBaseModel):
 
 
 class SendMessageRequest(ApiBaseModel):
-    message: str
+    # may be empty when files are attached: "here" with a picture says enough
+    message: str = Field(default="", min_length=0)
+    # Files attached to this message: ids from POST /conversations/attachments, uploaded
+    # and completed. Each must be in one of the user's own projects.
+    attachments: list[UUID] = Field(default_factory=list, max_length=10)
     # The client will speak the reply aloud, so it should be written to be heard.
     voice: bool = False
     # The folder open in the desktop app right now -- the one its local file tools work
@@ -25,6 +29,25 @@ class SendMessageRequest(ApiBaseModel):
     # Or: the user works in one of their projects on the server -- "project/folder". Then
     # that is where things are read, written and delivered by default.
     remote_folder: str | None = Field(default=None, max_length=1024)
+
+
+class AttachmentUploadRequest(ApiBaseModel):
+    name: str = Field(min_length=1, max_length=255)
+    content_type: str = Field(min_length=1, max_length=255)
+    size_bytes: int = Field(ge=0)
+
+
+class AttachmentUploadResponse(ApiBaseModel):
+    """Where to PUT the file's bytes -- with the same Content-Type -- before completing it
+    at POST /projects/{projectId}/files/{fileId}/complete. Then send its fileId with the
+    message."""
+
+    file_id: UUID
+    project_id: UUID
+    project: str
+    # where it was put; a name already taken is numbered, so it may differ from the asked one
+    path: str
+    upload_url: str
 
 
 class PendingToolCallResponse(ApiBaseModel):
@@ -44,11 +67,24 @@ class PendingToolCallResponse(ApiBaseModel):
     always_ask: bool = False
 
 
+class PauseResponse(ApiBaseModel):
+    # rate_limit, quota, timeout, provider_error, credentials, interrupted
+    reason: PauseReason
+    # what the provider said, if anything -- worth showing for quota and credentials;
+    # "" when it said nothing (an interrupted turn), which the base model would refuse
+    detail: str = Field(default="", min_length=0)
+    paused_at: datetime | None = None
+    # retrying before this is likely to pause again; None when the provider did not say
+    retry_after: datetime | None = None
+
+
 class ConversationResponse(ApiBaseModel):
     id: UUID
     title: str
     client: ConversationClient
     status: ConversationStatus
+    # why the turn stopped, while status is 'paused'
+    pause: PauseResponse | None = None
     pending_tool_calls: list[PendingToolCallResponse]
     iterations_used: int
     total_tokens: int
@@ -73,6 +109,13 @@ class ToolResolutionRequest(ApiBaseModel):
 class ResolveToolCallsRequest(ApiBaseModel):
     resolutions: list[ToolResolutionRequest]
     # Sent again on resume: voice is the client's state, never stored with the turn.
+    voice: bool = False
+    local_folder: str | None = Field(default=None, max_length=1024)
+    remote_folder: str | None = Field(default=None, max_length=1024)
+
+
+class ResumeTurnRequest(ApiBaseModel):
+    # The client's state, sent again as on any resume -- never stored with the turn.
     voice: bool = False
     local_folder: str | None = Field(default=None, max_length=1024)
     remote_folder: str | None = Field(default=None, max_length=1024)

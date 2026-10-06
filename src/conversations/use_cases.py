@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from src.background.use_cases import AUTOMATIC, TASK_NOTICE, TASK_RELAYED
@@ -6,23 +7,28 @@ from src.core.agents.domain import LoopState, LoopStatus
 from src.core.agents.loop import LoopObserver, advance
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.llm import domain as llm_domain
-from src.core.llm.domain import Completion, Message
+from src.core.llm.domain import Completion, LLMUnavailable, Message
 from src.core.llm.ports import LLM
 from src.core.tools.domain import Decision, ToolLocation
 from src.core.tools.ports import ToolExecutor
 
+from . import attachments as attachments_module
 from . import config, prompt
 from .domain import (
     Conversation,
     ConversationClient,
     ConversationCreate,
     ConversationStatus,
+    PauseReason,
     ToolResolution,
+    TurnPause,
     TurnState,
 )
 from .ports import (
     AppendMessagesFn,
     BuildContextFn,
+    CommitFn,
+    ExpandFn,
     CreateConversationFn,
     DeleteConversationForUserFn,
     DrainNoticesFn,
@@ -105,7 +111,26 @@ STATUS_AFTER = {
     LoopStatus.AWAITING_CLIENT: ConversationStatus.AWAITING_CLIENT,
     LoopStatus.ITERATION_LIMIT: ConversationStatus.FAILED,
     LoopStatus.CONVERSATION_LIMIT: ConversationStatus.FAILED,
+    LoopStatus.PAUSED: ConversationStatus.PAUSED,
 }
+
+# A new message may follow a paused turn: what it did is kept in the history, and the
+# user chose to move on rather than retry it.
+ACCEPTS_MESSAGES = frozenset({ConversationStatus.IDLE, ConversationStatus.PAUSED})
+
+
+def paused(reason: PauseReason, detail: str = "", retry_after_seconds: float | None = None) -> TurnPause:
+    now = datetime.now(UTC)
+    return TurnPause(
+        reason=reason,
+        detail=detail,
+        paused_at=now,
+        retry_after=now + timedelta(seconds=retry_after_seconds) if retry_after_seconds else None,
+    )
+
+
+def _pause_for(exc: LLMUnavailable) -> TurnPause:
+    return paused(PauseReason(exc.reason), exc.detail, exc.retry_after)
 
 
 async def send_message(
@@ -115,18 +140,24 @@ async def send_message(
     get_conversation_for_user_fn: GetConversationForUserFn,
     append_messages_fn: AppendMessagesFn,
     save_turn_state_fn: SaveTurnStateFn,
+    attachments: Sequence[dict] = (),
 ) -> Conversation:
+    """`attachments`: references to files the user attached (attachments.py), already
+    checked to be theirs."""
     conversation = await get_conversation_for_user_fn(conversation_id, user_id)
     if conversation is None:
         raise _not_found()
 
-    if conversation.turn.status is not ConversationStatus.IDLE:
+    if not message.strip() and not attachments:
+        raise ValidationError(message="Write a message or attach a file", code="message_empty")
+
+    if conversation.turn.status not in ACCEPTS_MESSAGES:
         raise ConflictError(
             message="This conversation is still working on the previous message",
             code="conversation_busy",
         )
 
-    await append_messages_fn(conversation_id, [llm_domain.user(message)])
+    await append_messages_fn(conversation_id, [attachments_module.user_message(message, attachments)])
     started = TurnState(status=ConversationStatus.RUNNING, usage=conversation.turn.usage)
     return await save_turn_state_fn(conversation_id, started) or conversation
 
@@ -143,7 +174,12 @@ async def advance_turn(
     max_iterations: int = config.MAX_ITERATIONS,
     drain_notices_fn: DrainNoticesFn | None = None,
     observer: LoopObserver | None = None,
+    commit_fn: CommitFn | None = None,
+    expand_fn: ExpandFn | None = None,
 ) -> ConversationStatus | None:
+    """Runs the turn until it ends, waits on the client, or pauses. Along the way, before
+    each model call that follows tool work, what the turn has done is stored (and with
+    commit_fn, committed): a turn cut short loses at most the call it was on."""
     conversation = await get_conversation_by_id_fn(conversation_id)
     if conversation is None or conversation.turn.status is not ConversationStatus.RUNNING:
         return None
@@ -157,7 +193,9 @@ async def advance_turn(
     opening = [llm_domain.system(prompt.SYSTEM)]
     if context is not None:
         opening += [llm_domain.system(block) for block in context.stable if block]
-    opening.extend(history)
+    # Attachments go to the model opened up -- the picture, the PDF's text -- while the
+    # stored thread keeps only references; this copy is never written back.
+    opening.extend(await expand_fn(history) if expand_fn is not None else history)
 
     # A background task that finished since the last turn is relayed in this reply. Only
     # the relayed form is kept -- left as a live notice it would be announced every turn.
@@ -181,6 +219,31 @@ async def advance_turn(
         opening.append(current)
         kept.append(current)
 
+    # how much of the loop's messages is in the database: the opening came from it, but
+    # for `kept`, which goes in with the first batch stored
+    stored = len(opening)
+
+    async def store(state: LoopState) -> None:
+        nonlocal stored, kept
+        await append_messages_fn(conversation_id, [*kept, *state.messages[stored:]])
+        kept = []
+        stored = len(state.messages)
+
+    async def checkpoint(state: LoopState) -> None:
+        # Nothing is pending at a checkpoint: the calls have run and their results are in
+        # the messages. Stored as such, a turn resumed from here runs none of them again.
+        await store(state)
+        await save_turn_state_fn(
+            conversation_id,
+            TurnState(
+                status=ConversationStatus.RUNNING,
+                iterations_used=state.iterations_used,
+                usage=state.usage,
+            ),
+        )
+        if commit_fn is not None:
+            await commit_fn()
+
     result = await advance(
         LoopState(
             messages=opening,
@@ -195,9 +258,10 @@ async def advance_turn(
         decisions=dict(conversation.turn.decisions) or None,
         max_iterations=max_iterations,
         observer=observer,
+        checkpoint=checkpoint,
     )
 
-    await append_messages_fn(conversation_id, [*kept, *result.state.messages[len(opening) :]])
+    await store(result.state)
     status = STATUS_AFTER[result.status]
     await save_turn_state_fn(
         conversation_id,
@@ -208,9 +272,41 @@ async def advance_turn(
             iterations_used=result.state.iterations_used,
             usage=result.state.usage,
             pending_requests=result.state.pending_requests,
+            pause=_pause_for(result.unavailable) if result.unavailable is not None else None,
         ),
     )
     return status
+
+
+async def resume_turn(
+    conversation_id: UUID,
+    user_id: UUID,
+    get_conversation_for_user_fn: GetConversationForUserFn,
+    save_turn_state_fn: SaveTurnStateFn,
+) -> Conversation:
+    """Sets a paused turn running again, from where it stopped: its messages are all
+    stored, so the next model call picks up after the last thing it did."""
+    conversation = await get_conversation_for_user_fn(conversation_id, user_id)
+    if conversation is None:
+        raise _not_found()
+
+    turn = conversation.turn
+    if turn.status is not ConversationStatus.PAUSED:
+        raise ConflictError(
+            message="This conversation has no paused turn to resume",
+            code="conversation_not_paused",
+        )
+
+    resumed = TurnState(
+        status=ConversationStatus.RUNNING,
+        pending_tool_calls=turn.pending_tool_calls,
+        completed_tool_results=turn.completed_tool_results,
+        iterations_used=turn.iterations_used,
+        usage=turn.usage,
+        pending_requests=turn.pending_requests,
+        decisions=turn.decisions,
+    )
+    return await save_turn_state_fn(conversation_id, resumed) or conversation
 
 
 async def name_conversation(
@@ -219,12 +315,10 @@ async def name_conversation(
     llm: LLM,
     rename_fn: RenameConversationFn,
 ) -> Conversation | None:
-    """Names a conversation after its first exchange, if it still has a placeholder title
-    and has one: a user message and a reply to it. None when nothing changed."""
-    if conversation.title not in config.PLACEHOLDER_TITLES:
-        return None
+    """Names a conversation after its first exchange, if nobody named it (unnamed) and it
+    has one: a user message and a reply to it. None when nothing changed."""
     exchange = _first_exchange(history)
-    if exchange is None:
+    if exchange is None or not unnamed(conversation.title, history):
         return None
 
     user_text, assistant_text = exchange
@@ -241,6 +335,17 @@ async def name_conversation(
     if not title or title in config.PLACEHOLDER_TITLES:
         return None
     return await rename_fn(conversation.id, title)
+
+
+def unnamed(title: str, history: Sequence[Message]) -> bool:
+    """Whether a conversation's title is one nobody chose: a placeholder, or the opening
+    words of its first message -- what the desktop app used to call a conversation started
+    by typing in an empty chat, which then kept that cut-off sentence for good."""
+    if title in config.PLACEHOLDER_TITLES:
+        return True
+    start = title.strip()
+    first = next((_text(m.get("content")) for m in history if m.get("role") == "user"), "")
+    return bool(start) and first.startswith(start)
 
 
 def _text(content: object) -> str:

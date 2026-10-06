@@ -75,3 +75,22 @@ def test_a_voice_turn_asks_for_a_spoken_reply():
 
     assert prompt.VOICE_STYLE in spoken
     assert prompt.VOICE_STYLE not in written
+
+
+def test_a_key_keeps_its_client_so_its_connection_stays_warm():
+    first = voice_use_cases._client("sk-one")
+
+    assert voice_use_cases._client("sk-one") is first
+    assert voice_use_cases._client("sk-two") is not first
+
+
+def test_the_oldest_client_is_let_go_past_the_cap(monkeypatch):
+    monkeypatch.setattr(config, "MAX_CLIENTS", 2)
+    monkeypatch.setattr(voice_use_cases, "_clients", type(voice_use_cases._clients)())
+
+    oldest = voice_use_cases._client("sk-a")
+    voice_use_cases._client("sk-b")
+    voice_use_cases._client("sk-c")
+
+    assert len(voice_use_cases._clients) == 2
+    assert voice_use_cases._client("sk-a") is not oldest

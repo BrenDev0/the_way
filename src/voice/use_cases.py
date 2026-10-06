@@ -1,4 +1,6 @@
+import hashlib
 import io
+from collections import OrderedDict
 from collections.abc import AsyncIterator
 from contextlib import AsyncExitStack
 from uuid import UUID
@@ -12,6 +14,34 @@ from src.core.cryptography.ports import EncryptionService
 from src.core.exceptions import ConflictError, ServiceUnavailableError, ValidationError
 
 from . import config
+
+
+# One client per key, kept: a reply is spoken a sentence at a time, and a client made per
+# sentence paid a fresh TLS handshake to OpenAI on every one -- the stutter between them.
+# Keyed by a hash so no key sits in a dict in the clear; the oldest is let go past the cap.
+_clients: OrderedDict[str, AsyncOpenAI] = OrderedDict()
+
+
+def _client(api_key: str) -> AsyncOpenAI:
+    slot = hashlib.sha256(api_key.encode()).hexdigest()
+    client = _clients.get(slot)
+    if client is None:
+        client = AsyncOpenAI(api_key=api_key)
+        _clients[slot] = client
+        while len(_clients) > config.MAX_CLIENTS:
+            _clients.popitem(last=False)
+    else:
+        _clients.move_to_end(slot)
+    return client
+
+
+async def warm(api_key: str) -> None:
+    """Opens the connection to OpenAI before the first sentence needs it: the first
+    request on a client pays DNS and TLS setup, which is otherwise heard as a pause."""
+    try:
+        await _client(api_key).models.list()
+    except openai.APIError:
+        pass
 
 
 async def openai_key(
@@ -45,13 +75,12 @@ async def transcribe(audio: bytes, api_key: str) -> str:
     # the API picks its decoder off the filename, and BytesIO has none of its own
     buffer.name = "speech.wav"
 
-    async with AsyncOpenAI(api_key=api_key) as client:
-        try:
-            result = await client.audio.transcriptions.create(
-                model=config.TRANSCRIBE_MODEL, file=buffer
-            )
-        except openai.APIError as exc:
-            raise _upstream(exc) from exc
+    try:
+        result = await _client(api_key).audio.transcriptions.create(
+            model=config.TRANSCRIBE_MODEL, file=buffer
+        )
+    except openai.APIError as exc:
+        raise _upstream(exc) from exc
 
     return result.text.strip()
 
@@ -61,9 +90,8 @@ async def speak(text: str, api_key: str) -> AsyncIterator[bytes]:
     rejected key is still an error status rather than an empty stream."""
     stack = AsyncExitStack()
     try:
-        client = await stack.enter_async_context(AsyncOpenAI(api_key=api_key))
         response = await stack.enter_async_context(
-            client.audio.speech.with_streaming_response.create(
+            _client(api_key).audio.speech.with_streaming_response.create(
                 model=config.SPEAK_MODEL,
                 voice=config.SPEAK_VOICE,
                 input=text[: config.MAX_SPEAK_CHARS],

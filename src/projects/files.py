@@ -14,10 +14,10 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.bucket.ports import BucketStore
-from src.core.exceptions import NotFoundError, ValidationError
+from src.core.exceptions import ApplicationError, NotFoundError, ValidationError
 
-from . import config, paths, use_cases
-from .domain import Folder, Project, ProjectContents, ProjectFile
+from . import config, html_images, links, paths, use_cases
+from .domain import FileStatus, Folder, Project, ProjectContents, ProjectFile
 from .sqlalchemy import adapter
 
 TEXT_TYPES = {
@@ -171,6 +171,10 @@ class ProjectFiles:
         if not segments:
             raise ValidationError(message="Give a file path, not the root", code="project_path_invalid")
 
+        content_type = content_type or content_type_for(segments[-1])
+        if content_type == "text/html":
+            content = await self._linked(project, path, content)
+
         folder_id = await paths.ensure_folder(
             project, segments[:-1], self._find_entry, self._create_folder
         )
@@ -179,7 +183,7 @@ class ProjectFiles:
             folder_id=folder_id,
             name=segments[-1],
             content=content,
-            content_type=content_type or content_type_for(segments[-1]),
+            content_type=content_type,
             uploaded_by=self._user_id,
             overwrite=overwrite,
             find_entry_fn=self._find_entry,
@@ -187,6 +191,135 @@ class ProjectFiles:
             update_file_fn=self._update_file,
             bucket_store=self._bucket,
         )
+
+    # --- a page's images (html_images.py) ---------------------------------------------
+
+    async def _linked(self, project: Project, page_path: str, content: bytes) -> bytes:
+        """A page about to be saved, with each image it points at by path given the
+        image's signed link -- so it shows wherever the page is opened."""
+        try:
+            html = content.decode("utf-8")
+        except UnicodeDecodeError:
+            return content
+
+        async def link(address: str) -> str | None:
+            target = html_images.project_path(page_path, address)
+            if target is None:
+                return None
+            # a path that cannot be a project path at all is simply left as written
+            try:
+                found = await self.entry(project, target)
+            except ApplicationError:
+                return None
+            if not isinstance(found, ProjectFile) or not found.content_type.startswith("image/"):
+                return None
+            return links.view_url(found.id)
+
+        swaps = await html_images.swaps_for(html_images.references(html), link)
+        return html_images.replace(html, swaps).encode("utf-8") if swaps else content
+
+    async def embed_images(self, project: Project, page_path: str, html: str) -> tuple[str, list[str]]:
+        """The page with every image it uses -- by path or by signed link -- put inside it
+        as a data: URI, the only kind of address the PDF renderer loads. Also says which
+        it could not: a path to nothing, a file that is not an image, one too big."""
+        missing: list[str] = []
+        budget = [config.MAX_EMBEDDED_IMAGES_BYTES]
+
+        async def embed(address: str) -> str | None:
+            found: tuple[ProjectFile, Project] | None = None
+            if (file_id := links.parse(address)) is not None:
+                held = await adapter.get_file_with_project(self._session, file_id)
+                # a link from this organization only: a page cannot pull in another's files
+                if held is not None and held[1].organization_id == self._organization_id:
+                    found = held
+            elif (target := html_images.project_path(page_path, address)) is not None:
+                try:
+                    entry = await self.entry(project, target)
+                except ApplicationError:
+                    entry = None
+                if isinstance(entry, ProjectFile):
+                    found = (entry, project)
+            else:
+                return None  # a URL elsewhere, data:, an anchor: not ours to resolve
+
+            if found is None or not found[0].content_type.startswith("image/"):
+                missing.append(address)
+                return None
+            image, owner = found
+            if image.size_bytes > budget[0]:
+                missing.append(f"{address} (too large to embed)")
+                return None
+            try:
+                content = await paths.load_file(owner, image, self._bucket)
+            except ApplicationError:
+                missing.append(f"{address} (its content could not be read)")
+                return None
+            budget[0] -= len(content)
+            return html_images.data_uri(content, image.content_type)
+
+        swaps = await html_images.swaps_for(html_images.references(html), embed)
+        return html_images.replace(html, swaps), missing
+
+    # --- files the client uploads itself (a chat attachment) ----------------------------
+
+    async def upload_ticket(
+        self, project: Project, folder_path: str, name: str, content_type: str, size_bytes: int
+    ) -> tuple[ProjectFile, str]:
+        """A pending file in `folder_path` (made if missing) and the URL its bytes go to.
+        Never replaces anything: a name already taken becomes 'name (2).ext'."""
+        folder_id = await paths.ensure_folder(
+            project, paths.split(folder_path), self._find_entry, self._create_folder
+        )
+        wanted = use_cases.validate_name(name)
+        free = wanted
+        stem, dot, suffix = wanted.rpartition(".")
+        if not dot:
+            stem, suffix = wanted, ""
+        for number in range(2, 1000):
+            if await self._find_entry(project.id, folder_id, free) is None:
+                break
+            free = f"{stem} ({number}){dot}{suffix}"
+
+        return await use_cases.request_upload(
+            project=project,
+            name=free,
+            folder_id=folder_id,
+            content_type=content_type,
+            size_bytes=size_bytes,
+            uploaded_by=self._user_id,
+            get_folder_fn=self._get_folder,
+            find_entry_fn=self._find_entry,
+            delete_file_fn=lambda file_id: adapter.delete_file(self._session, file_id),
+            create_file_fn=self._create_file,
+            bucket_store=self._bucket,
+        )
+
+    async def owned_file(self, file_id: UUID) -> tuple[ProjectFile, Project, str] | None:
+        """A finished file in one of this user's projects, with its path there; None for
+        anything else -- someone else's, still uploading, or gone."""
+        found = await adapter.get_file_with_project(self._session, file_id)
+        if found is None:
+            return None
+        project_file, project = found
+        if project.owner_id != self._user_id or project.organization_id != self._organization_id:
+            return None
+        if project_file.status is not FileStatus.READY:
+            return None
+        for path, entry in await self.tree(project):
+            if entry.id == project_file.id:
+                return project_file, project, path
+        return None
+
+    async def bytes_of(self, file_id: UUID) -> tuple[bytes, str] | None:
+        """An organization file's content and type, by its id."""
+        found = await adapter.get_file_with_project(self._session, file_id)
+        if found is None or found[1].organization_id != self._organization_id:
+            return None
+        project_file, project = found
+        try:
+            return await paths.load_file(project, project_file, self._bucket), project_file.content_type
+        except ApplicationError:
+            return None
 
     async def make_folder(self, project: Project, path: str) -> None:
         await paths.ensure_folder(project, paths.split(path), self._find_entry, self._create_folder)

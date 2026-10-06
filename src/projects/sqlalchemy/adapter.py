@@ -277,6 +277,23 @@ async def get_file(
     return mapper.file_row_to_domain(row) if row else None
 
 
+async def get_file_with_project(
+    session: AsyncSession, file_id: UUID
+) -> tuple[ProjectFile, Project] | None:
+    """A file by its id alone, with the project it is in. Only for a caller that already
+    holds the right to it some other way -- a signed link."""
+    result = await session.execute(
+        select(FileRow, ProjectRow)
+        .join(ProjectRow, ProjectRow.id == FileRow.project_id)
+        .where(FileRow.id == file_id)
+    )
+    found = result.one_or_none()
+    if found is None:
+        return None
+    file_row, project_row = found
+    return mapper.file_row_to_domain(file_row), mapper.project_row_to_domain(project_row)
+
+
 async def update_file(
     session: AsyncSession, file_id: UUID, changes: dict[str, Any]
 ) -> ProjectFile | None:

@@ -1,7 +1,7 @@
 from dataclasses import dataclass, field, replace
 from enum import StrEnum
 
-from src.core.llm.domain import Message, TokenUsage, ToolCall
+from src.core.llm.domain import LLMUnavailable, Message, TokenUsage, ToolCall
 from src.core.tools.domain import ClientRequest, ToolResult
 
 DEFAULT_MAX_ITERATIONS = 40
@@ -13,6 +13,9 @@ class LoopStatus(StrEnum):
     AWAITING_CLIENT = "awaiting_client"
     ITERATION_LIMIT = "iteration_limit"
     CONVERSATION_LIMIT = "conversation_limit"
+    # The model could not be reached (rate limit, quota, timeout...). The state is where it
+    # stopped -- just before that model call -- so retrying carries on from there.
+    PAUSED = "paused"
 
 
 @dataclass(frozen=True)
@@ -35,6 +38,8 @@ class LoopResult:
     status: LoopStatus
     state: LoopState
     text: str = ""
+    # why the model could not be reached, when PAUSED
+    unavailable: LLMUnavailable | None = None
 
     @property
     def is_suspended(self) -> bool:

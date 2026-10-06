@@ -73,6 +73,10 @@ async def continue_assistant(
     )
     if result.is_suspended:
         return Suspended(result.state)
+    # A sub-assistant has no turn of its own to pause: the tool it runs in fails with the
+    # reason, and the turn around it pauses at its own next model call.
+    if result.status is LoopStatus.PAUSED and result.unavailable is not None:
+        raise result.unavailable
 
     if result.status is LoopStatus.COMPLETED:
         return AssistantRun(text=result.text, finished=True, usage=result.state.usage)

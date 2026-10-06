@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from src.api import dependencies as api_dependencies
@@ -43,6 +43,21 @@ async def transcribe_route(
         current_user.id, list_api_keys_for_user_fn, encryption_service
     )
     return TranscriptionResponse(text=await voice_use_cases.transcribe(audio, api_key))
+
+
+@router.post("/warm", status_code=status.HTTP_204_NO_CONTENT)
+async def warm_route(
+    current_user: CurrentUser,
+    list_api_keys_for_user_fn: ListApiKeys,
+    encryption_service: Encryption,
+) -> Response:
+    """Called when voice is turned on: readies the connection to OpenAI so the first
+    spoken sentence does not wait on it."""
+    api_key = await voice_use_cases.openai_key(
+        current_user.id, list_api_keys_for_user_fn, encryption_service
+    )
+    await voice_use_cases.warm(api_key)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.post("/speech")

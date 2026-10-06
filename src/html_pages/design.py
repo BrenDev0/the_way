@@ -140,6 +140,11 @@ layouts from ones that drift.
 - Web fonts via <link> to Google Fonts are allowed and encouraged; everything else is
   inline. Never reference an image file that does not exist -- use inline SVG, a CSS
   gradient, or omit the image.
+- An image that is a file in the project goes in as <img src="..."> with its path from the
+  page, e.g. <img src="../fotos/gato.png"> for a page in another folder. Saving turns the
+  path into a link that works wherever the page is opened, and PDF/PNG export puts the
+  image inside the file. Never base64 an image yourself, and never point at an image on
+  another site -- the export cannot load it.
 - Semantic HTML: <header> <main> <section> <article> <figure> <table>. Headings descend in
   order without skipping.
 - <meta name="viewport" content="width=device-width, initial-scale=1"> and a real mobile

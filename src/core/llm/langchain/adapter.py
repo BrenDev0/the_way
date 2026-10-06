@@ -11,6 +11,7 @@ from src.core.exceptions import InternalServerError
 
 from ..domain import Completion, Message, TokenUsage, ToolCall, assistant
 from ..ports import TextListener
+from .errors import unavailable
 
 
 class LangchainLLM:
@@ -24,7 +25,12 @@ class LangchainLLM:
         tools: Sequence[type[BaseModel]] = (),
         on_text: TextListener | None = None,
     ) -> Completion:
-        result = await self._generate(messages, tools, on_text)
+        try:
+            result = await self._generate(messages, tools, on_text)
+        except Exception as exc:
+            if (passing := unavailable(exc)) is not None:
+                raise passing from exc
+            raise
         tool_calls = tuple(_tool_call(call) for call in result.tool_calls)
         return Completion(
             message=assistant(result.content, tool_calls),

@@ -4,7 +4,8 @@ Every event lands on the conversation's stream; GET /conversations/{id}/events r
 them as server-sent events. The types:
 
   status        the conversation as the API returns it -- sent whenever the turn's state
-                is saved: running, awaiting_client (with the calls it waits on), idle, failed
+                is saved: running, awaiting_client (with the calls it waits on), idle,
+                paused (with why, in pause -- resume at POST .../resume), failed
   text          a piece of the assistant's reply, as the model writes it
   message       a message the turn added: the assistant's (with any tool calls) or a tool
                 result, clipped -- the full thread is always at GET .../messages

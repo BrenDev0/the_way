@@ -1,10 +1,11 @@
 from src.core.llm.domain import Message
 from src.core.tools.domain import ClientRequest
 
-from .domain import Conversation, ToolResolution
+from .domain import Conversation, ToolResolution, TurnPause
 from .schemas import (
     ConversationResponse,
     MessageResponse,
+    PauseResponse,
     PendingToolCallResponse,
     ToolResolutionRequest,
 )
@@ -16,6 +17,7 @@ def domain_to_conversation_response(conversation: Conversation) -> ConversationR
         title=conversation.title,
         client=conversation.client,
         status=conversation.turn.status,
+        pause=pause_to_response(conversation.turn.pause),
         pending_tool_calls=[
             request_to_response(request) for request in conversation.turn.pending_requests
         ],
@@ -23,6 +25,17 @@ def domain_to_conversation_response(conversation: Conversation) -> ConversationR
         total_tokens=conversation.turn.usage.total_tokens,
         created_at=conversation.created_at,
         updated_at=conversation.updated_at,
+    )
+
+
+def pause_to_response(pause: TurnPause | None) -> PauseResponse | None:
+    if pause is None:
+        return None
+    return PauseResponse(
+        reason=pause.reason,
+        detail=pause.detail,
+        paused_at=pause.paused_at,
+        retry_after=pause.retry_after,
     )
 
 

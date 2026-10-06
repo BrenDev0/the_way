@@ -1,7 +1,8 @@
+from collections.abc import Awaitable, Callable
 from typing import Protocol
 
 from src.core.llm import domain as llm_domain
-from src.core.llm.domain import Message
+from src.core.llm.domain import LLMUnavailable, Message
 from src.core.llm.ports import LLM
 from src.core.tools.domain import (
     ClientActionRequired,
@@ -29,6 +30,13 @@ class LoopObserver(Protocol):
     async def on_message(self, message: Message) -> None: ...
 
 
+# Called with the state just before each model call that follows new work -- tool results
+# the model has not seen yet -- so it can be stored. A turn that dies at that call (the
+# worker is killed, the model is unreachable) then loses only the call, never the tools
+# already run.
+Checkpoint = Callable[[LoopState], Awaitable[None]]
+
+
 def conversation_size(state: LoopState) -> int:
     return sum(len(str(message.get("content", ""))) for message in state.messages)
 
@@ -41,8 +49,10 @@ async def advance(
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
     max_conversation_chars: int = DEFAULT_MAX_CONVERSATION_CHARS,
     observer: LoopObserver | None = None,
+    checkpoint: Checkpoint | None = None,
 ) -> LoopResult:
     messages = list(state.messages)
+    saved = len(messages)
     pending = state.pending_tool_calls
     completed = state.completed_tool_results
     requests: tuple[ClientRequest, ...] = state.pending_requests
@@ -84,10 +94,17 @@ async def advance(
         if conversation_size(snapshot()) > max_conversation_chars:
             return LoopResult(status=LoopStatus.CONVERSATION_LIMIT, state=snapshot())
 
-        if observer is not None:
-            completion = await llm.respond(messages, executor.schemas, on_text=observer.on_text)
-        else:
-            completion = await llm.respond(messages, executor.schemas)
+        if checkpoint is not None and len(messages) > saved:
+            await checkpoint(snapshot())
+            saved = len(messages)
+
+        try:
+            if observer is not None:
+                completion = await llm.respond(messages, executor.schemas, on_text=observer.on_text)
+            else:
+                completion = await llm.respond(messages, executor.schemas)
+        except LLMUnavailable as exc:
+            return LoopResult(status=LoopStatus.PAUSED, state=snapshot(), unavailable=exc)
         iterations += 1
         usage = usage + completion.usage
         await append(completion.message)

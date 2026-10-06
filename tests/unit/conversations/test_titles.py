@@ -58,6 +58,24 @@ async def test_a_title_someone_chose_is_kept():
     assert llm.received == [] and renames.titles == []
 
 
+async def test_the_cut_off_first_message_the_app_used_as_a_title_is_replaced():
+    # what the desktop app used to call a conversation started by typing
+    current = conversation("necesito un banner para la campaña de oto")
+    renames = Renames(current)
+
+    named = await use_cases.name_conversation(current, FIRST_EXCHANGE, FakeLLM("Banner de otoño"), renames)
+
+    assert named is not None and named.title == "Banner de otoño"
+
+
+def test_a_title_is_unnamed_only_when_nobody_chose_it():
+    assert use_cases.unnamed("Nueva conversación", FIRST_EXCHANGE)
+    assert use_cases.unnamed("necesito un banner", FIRST_EXCHANGE)
+    assert not use_cases.unnamed("Banner de otoño", FIRST_EXCHANGE)
+    assert not use_cases.unnamed("Skill · coworking", FIRST_EXCHANGE)
+    assert not use_cases.unnamed("  ", FIRST_EXCHANGE)
+
+
 async def test_nothing_is_named_before_there_is_a_reply():
     llm = FakeLLM("should not be asked")
     renames = Renames(conversation())

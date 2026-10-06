@@ -16,6 +16,7 @@ from src.core.sessions.config import SessionCookieConfig
 from src.core.sessions.tokens import SessionTokenService
 from src.core.settings import settings
 from src.core.tasks.broker import broker
+from src.projects.public_routes import router as project_images_router
 
 from .desktop.routes import router as desktop_router
 from .v1.routes import router as v1_router
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI):
             access_key=settings.BUCKET_ACCESS_KEY_ID,
             secret_key=settings.BUCKET_SECRET_ACCESS_KEY,
             endpoint_url=settings.BUCKET_ENDPOINT,
+            public_endpoint_url=settings.BUCKET_PUBLIC_ENDPOINT,
         )
     app.state.session_token_service = SessionTokenService(
         session_ttl=timedelta(seconds=settings.SESSION_TTL_SECONDS),
@@ -74,6 +76,8 @@ app.add_middleware(
 register_exception_handlers(app)
 app.include_router(v1_router, prefix=auth_config.WEB_API_PREFIX)
 app.include_router(desktop_router, prefix=auth_config.DESKTOP_API_PREFIX)
+# beside the web API, not in it: an <img> sends no request signature (projects/links.py)
+app.include_router(project_images_router, prefix=auth_config.WEB_API_PREFIX)
 
 
 @app.get("/health", tags=["health"])

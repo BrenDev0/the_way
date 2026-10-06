@@ -324,6 +324,45 @@ def test_only_awaiting_client_counts_as_suspended(status):
     assert LoopResult(status=status, state=LoopState()).is_suspended is False
 
 
+async def test_an_unreachable_model_pauses_where_it_stopped():
+    from src.core.llm.domain import LLMUnavailable, UnavailableReason
+
+    unreachable = LLMUnavailable(UnavailableReason.TIMEOUT)
+    llm = FakeLLM(make_completion("", (call("ReadFile", path="x.txt"),)), unreachable)
+
+    result = await advance(start(), llm, executor())
+
+    assert result.status is LoopStatus.PAUSED
+    assert result.unavailable is unreachable
+    assert [m["role"] for m in result.state.messages] == ["user", "assistant", "tool"]
+    assert result.state.iterations_used == 1
+
+
+async def test_a_sub_assistant_that_cannot_reach_its_model_fails_its_tool_with_why():
+    from src.core.agents.runner import run_assistant
+    from src.core.llm.domain import LLMUnavailable, UnavailableReason
+
+    unreachable = LLMUnavailable(UnavailableReason.QUOTA, "out of credit")
+
+    with pytest.raises(LLMUnavailable) as exc:
+        await run_assistant(FakeLLM(unreachable), executor(), [llm_domain.user("build it")])
+
+    assert exc.value is unreachable
+
+
+async def test_the_checkpoint_sees_the_tool_results_before_the_next_call():
+    seen = []
+
+    async def checkpoint(state):
+        seen.append([m["role"] for m in state.messages])
+
+    llm = FakeLLM(make_completion("", (call("ReadFile", path="x.txt"),)), make_completion("done"))
+
+    await advance(start(), llm, executor(), checkpoint=checkpoint)
+
+    assert seen == [["user", "assistant", "tool"]]
+
+
 async def test_the_model_is_told_which_tools_exist():
     llm = FakeLLM(make_completion("done"))
 

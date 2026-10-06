@@ -5,7 +5,7 @@ from typing import Annotated
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
-from taskiq import TaskiqDepends
+from taskiq import Context, TaskiqDepends
 
 from src.api_keys import credentials as api_keys_credentials
 from src.api_keys.sqlalchemy import adapter as api_keys_adapter
@@ -16,7 +16,7 @@ from src.core.bucket.unavailable import UnavailableBucketStore
 from src.core.cryptography.ports import EncryptionService
 from src.core.database.sqlalchemy.core import async_session_factory
 from src.core.events.ports import EventStream
-from src.core.llm.domain import Message
+from src.core.llm.domain import LLMUnavailable, Message
 from src.core.llm.ports import LLM
 from src.core.tasks.broker import broker
 from src.core.tools.context import LLMFactory, ToolContext
@@ -26,17 +26,20 @@ from src.crm import tools as crm_tools
 from src.crm.prompt import WORKFLOW
 from src.knowledge import tools as knowledge_tools
 from src.preferences import tools as preference_tools
+from src.projects.files import ProjectFiles
 from src.users.sqlalchemy import adapter as users_adapter
 from src.worker import dependencies as worker_dependencies
 
-from . import config, prompt, relay
+from . import attachments, config, prompt, relay
 from . import tools as conversation_tools
 from . import use_cases as conversations_use_cases
 from .domain import (
     Conversation,
     ConversationClient,
     ConversationStatus,
+    PauseReason,
     TurnContext,
+    TurnPause,
     TurnState,
 )
 from .events import ConversationEvents
@@ -46,11 +49,19 @@ READY_ATTEMPTS = 40
 READY_INTERVAL_SECONDS = 0.1
 
 
-async def wait_until_running(session: AsyncSession, conversation_id: UUID) -> bool:
+async def wait_until_running(session: AsyncSession, conversation_id: UUID, run: str | None = None) -> bool:
+    """Whether there is a running turn for this run to work on -- polled a moment, since
+    the message can arrive before the request that sent it has committed. With `run`, the
+    turn is also claimed for it, and committed, so no second run takes it."""
     for attempt in range(READY_ATTEMPTS):
-        conversation = await adapter.get_by_id(session, conversation_id)
-        if conversation and conversation.turn.status is ConversationStatus.RUNNING:
-            return True
+        if run is not None:
+            if await adapter.claim_turn(session, conversation_id, run):
+                await session.commit()
+                return True
+        else:
+            conversation = await adapter.get_by_id(session, conversation_id)
+            if conversation and conversation.turn.status is ConversationStatus.RUNNING:
+                return True
         if attempt + 1 == READY_ATTEMPTS:
             return False
         await session.rollback()
@@ -73,6 +84,7 @@ async def advance_conversation(
         EventStream,
         TaskiqDepends(worker_dependencies.get_event_stream),
     ],
+    context: Annotated[Context, TaskiqDepends()],
     voice: bool = False,
     local_folder: str | None = None,
     remote_folder: str | None = None,
@@ -85,6 +97,7 @@ async def advance_conversation(
         voice=voice,
         local_folder=local_folder,
         remote_folder=remote_folder,
+        run=context.message.task_id,
     )
 
 
@@ -112,11 +125,12 @@ async def run_turn(
     voice: bool = False,
     local_folder: str | None = None,
     remote_folder: str | None = None,
+    run: str | None = None,
 ) -> str | None:
     events = ConversationEvents(event_stream, conversation_id) if event_stream else None
     async with async_session_factory() as session:
         try:
-            if not await wait_until_running(session, conversation_id):
+            if not await wait_until_running(session, conversation_id, run):
                 return None
 
             conversation = await adapter.get_by_id(session, conversation_id)
@@ -160,6 +174,11 @@ async def run_turn(
             async def append_messages_fn(cid: UUID, messages: Sequence[Message]):
                 return await adapter.append_messages(session, cid, messages)
 
+            files = ProjectFiles(session, conversation.organization_id, conversation.user_id, context.bucket_store)
+
+            async def expand_fn(history: Sequence[Message]) -> list[Message]:
+                return await attachments.expand(history, files.bytes_of)
+
             saved: list[Conversation] = []
 
             async def save_turn_state_fn(cid: UUID, turn: TurnState):
@@ -179,6 +198,8 @@ async def run_turn(
                 build_context_fn=build_context_fn,
                 drain_notices_fn=drain_notices_fn,
                 observer=events,
+                commit_fn=session.commit,
+                expand_fn=expand_fn,
             )
             await session.commit()
             # Named before the turn is announced over: a client stops listening at idle, so
@@ -194,6 +215,20 @@ async def run_turn(
             if events and saved:
                 await events.status(saved[-1])
             return status
+        except LLMUnavailable as exc:
+            # The loop pauses on the model being unreachable; this is the rare call outside
+            # it (building the model, say). Same outcome: kept, paused, retryable.
+            await session.rollback()
+            pause = conversations_use_cases.paused(PauseReason(exc.reason), exc.detail, exc.retry_after)
+            await _announce(events, await _mark_paused(conversation_id, pause))
+            return ConversationStatus.PAUSED
+        except asyncio.CancelledError:
+            # The worker is going down mid-turn. What the turn did up to its last checkpoint
+            # is committed; it is paused, not failed, so the user can carry on from there.
+            await session.rollback()
+            pause = conversations_use_cases.paused(PauseReason.INTERRUPTED)
+            await asyncio.shield(_pause_and_announce(conversation_id, pause, events))
+            raise
         except Exception:
             await session.rollback()
             failed = await _mark_failed(conversation_id)
@@ -235,7 +270,11 @@ async def _name(session: AsyncSession, conversation_id: UUID, factory: LLMFactor
     placeholder title is no reason to fail a turn that has already succeeded."""
     try:
         conversation = await adapter.get_by_id(session, conversation_id)
-        if conversation is None or conversation.title not in config.PLACEHOLDER_TITLES:
+        if conversation is None:
+            return None
+        history = await adapter.list_messages(session, conversation_id)
+        # checked before a model is built: most turns are in a conversation already named
+        if not conversations_use_cases.unnamed(conversation.title, history):
             return None
 
         async def rename_fn(cid: UUID, title: str) -> Conversation | None:
@@ -243,7 +282,7 @@ async def _name(session: AsyncSession, conversation_id: UUID, factory: LLMFactor
 
         named = await conversations_use_cases.name_conversation(
             conversation,
-            await adapter.list_messages(session, conversation_id),
+            history,
             await factory(config.TITLE_MODELS, config.TITLE_TEMPERATURE),
             rename_fn,
         )
@@ -252,6 +291,40 @@ async def _name(session: AsyncSession, conversation_id: UUID, factory: LLMFactor
     except Exception:  # noqa: BLE001
         await session.rollback()
         return None
+
+
+async def _mark_paused(conversation_id: UUID, pause: TurnPause) -> Conversation | None:
+    """Pauses the turn as it stands in the database -- its last checkpoint -- with
+    nothing pending: whatever ran after that checkpoint is redone on resume."""
+    async with async_session_factory() as session:
+        current = await adapter.get_by_id(session, conversation_id)
+        if current is None or current.turn.status is not ConversationStatus.RUNNING:
+            return current
+        turn = current.turn
+        paused_turn = TurnState(
+            status=ConversationStatus.PAUSED,
+            pending_tool_calls=turn.pending_tool_calls,
+            completed_tool_results=turn.completed_tool_results,
+            iterations_used=turn.iterations_used,
+            usage=turn.usage,
+            pending_requests=turn.pending_requests,
+            decisions=turn.decisions,
+            pause=pause,
+        )
+        result = await adapter.save_turn_state(session, conversation_id, paused_turn)
+        await session.commit()
+        return result
+
+
+async def _announce(events: ConversationEvents | None, conversation: Conversation | None) -> None:
+    if events and conversation:
+        await events.status(conversation)
+
+
+async def _pause_and_announce(
+    conversation_id: UUID, pause: TurnPause, events: ConversationEvents | None
+) -> None:
+    await _announce(events, await _mark_paused(conversation_id, pause))
 
 
 async def _mark_failed(conversation_id: UUID) -> Conversation | None:

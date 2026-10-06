@@ -156,6 +156,23 @@ async def claim_if_idle(session: AsyncSession, conversation_id: UUID) -> Convers
     return await get_by_id(session, conversation_id)
 
 
+async def claim_turn(session: AsyncSession, conversation_id: UUID, run: str) -> bool:
+    """Takes the running turn for one queue message -- unless another holds it. The
+    message that held it may take it again: the queue redelivers a message whose worker
+    died, and that turn is carried on from its last checkpoint."""
+    result = await session.execute(
+        update(ConversationRow)
+        .where(
+            ConversationRow.id == conversation_id,
+            ConversationRow.status == ConversationStatus.RUNNING,
+            or_(ConversationRow.run_claim.is_(None), ConversationRow.run_claim == run),
+        )
+        .values(run_claim=run)
+        .returning(ConversationRow.id)
+    )
+    return result.scalar_one_or_none() is not None
+
+
 async def save_turn_state(
     session: AsyncSession,
     conversation_id: UUID,
