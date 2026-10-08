@@ -192,7 +192,7 @@ async def test_the_read_tool_rejects_a_malformed_id(db_session, tenant):
     assert "No document with id" in result
 
 
-async def test_the_read_tool_truncates_a_long_document(db_session, tenant):
+async def test_the_read_tool_reads_a_long_document_in_sections(db_session, tenant):
     from src.knowledge import config as knowledge_config
 
     organization, user = tenant
@@ -201,10 +201,13 @@ async def test_the_read_tool_truncates_a_long_document(db_session, tenant):
     )
 
     tools = knowledge_tools.build(db_session, organization.id)
-    result = await tools["ReadKnowledgeDocument"].handler(document_id=str(document.id))
+    read = tools["ReadKnowledgeDocument"].handler
+    first = await read(document_id=str(document.id))
+    last = await read(document_id=str(document.id), offset=40_000)
 
-    assert len(result) < knowledge_config.MAX_TOOL_READ_CHARS + 500
-    assert "truncated" in result
+    assert len(first) < knowledge_config.MAX_TOOL_READ_CHARS + 500
+    assert "Continue with offset=20000" in first
+    assert last.startswith("[Characters 40,000-60,000 of 60,000. This is the end.]")
 
 
 async def test_the_skill_tool_returns_instructions(db_session, tenant):

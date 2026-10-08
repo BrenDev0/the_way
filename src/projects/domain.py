@@ -18,6 +18,8 @@ class Project:
     name: str
     created_at: datetime
     updated_at: datetime
+    # the organization's library (config.LIBRARY_PROJECT), not anyone's own project
+    shared: bool = False
 
 
 @dataclass

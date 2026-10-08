@@ -14,6 +14,7 @@ def domain_to_project_response(project: Project) -> ProjectResponse:
         name=project.name,
         created_at=project.created_at,
         updated_at=project.updated_at,
+        shared=project.shared,
     )
 
 

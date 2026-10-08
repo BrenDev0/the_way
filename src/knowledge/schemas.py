@@ -2,14 +2,19 @@ from pydantic import BaseModel, Field
 
 
 class ReadKnowledgeDocument(BaseModel):
-    """Read the full text of one of the organization's documents.
+    """Read one of the organization's documents, a section at a time.
 
     The id comes from the document listing in your context, written in brackets.
     Use this before answering anything that depends on the organization's own
-    brand, policies, strategy or marketing material.
+    brand, policies, strategy or marketing material. A long document comes back in
+    sections; the end of each says where the next one starts -- keep reading while
+    what you need may still be ahead.
     """
 
     document_id: str = Field(description="The document id, exactly as listed in brackets")
+    offset: int = Field(
+        default=0, ge=0, description="Where to start, in characters: 0, then the offset the last section gave"
+    )
 
 
 class ReadSkill(BaseModel):

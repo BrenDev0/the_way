@@ -142,7 +142,9 @@ def build(context: ToolContext) -> dict[str, Tool]:
         target = await files.project(project)
 
         async def load(path: str) -> io.BytesIO:
-            _, data = await files.read_bytes(target, path, limit=config.MAX_REFERENCE_BYTES)
+            # a source may be in another project (project:<name>/<path>); results stay in target
+            source, inner = await files.source(target, path)
+            _, data = await files.read_bytes(source, inner, limit=config.MAX_REFERENCE_BYTES)
             buffer = io.BytesIO(data)
             # the API picks its decoder off the filename
             buffer.name = PurePosixPath(path).name

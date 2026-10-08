@@ -181,16 +181,19 @@ async def update_document(
     update_document_fn: UpdateDocumentFn,
     title: str | None = None,
     description: str | None = None,
+    brand: str | None = None,
 ) -> Document:
     changes: dict[str, Any] = {}
     if title is not None:
         changes["title"] = title
     if description is not None:
         changes["description"] = description
+    if brand is not None:
+        changes["brand"] = brand.strip() or None
 
     if not changes:
         raise ValidationError(
-            message="Supply a title or a description to change",
+            message="Supply a title, a description or a brand to change",
             code="document_no_changes",
         )
 

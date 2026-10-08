@@ -16,6 +16,9 @@ class DocumentRow(Base, IDMixin, TimestampMixin):
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(String(1024), nullable=False, default="")
+    # the client brand it is about, matching a brand folder in the library; none for
+    # material about the organization itself
+    brand: Mapped[str | None] = mapped_column(String(255), nullable=True)
     filename: Mapped[str] = mapped_column(String(512), nullable=False)
     content_type: Mapped[str] = mapped_column(String(255), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

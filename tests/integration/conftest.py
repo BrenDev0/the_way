@@ -6,7 +6,7 @@ import time
 from pathlib import Path
 
 import pytest
-from sqlalchemy import text
+from sqlalchemy import make_url, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
@@ -26,7 +26,8 @@ from src.core.settings import settings
 
 NEEDS_SERVICES = (
     "Integration tests need the local stack. Run `docker compose up -d`, then "
-    "`set -a && . ./.env && set +a && pytest tests/integration`."
+    "`set -a && . ./.env && set +a`, point DATABASE_URL at the_way_test (the suite drops "
+    "the schema of the database it runs against), then `pytest tests/integration`."
 )
 
 INTEGRATION_DIR = Path(__file__).parent
@@ -34,6 +35,24 @@ INTEGRATION_DIR = Path(__file__).parent
 
 def services_configured() -> bool:
     return settings.TASKIQ_BROKER_URL != "memory://"
+
+
+def database_name() -> str:
+    return make_url(settings.DATABASE_URL).database or ""
+
+
+def refuse_unless_test_database() -> None:
+    """The reset below drops the whole schema. Pointed at the dev database -- running the
+    suite inside the api container, where DATABASE_URL is the real one -- it wiped every
+    conversation, project and user. Only a database named for tests may be reset."""
+    name = database_name()
+    if not name.endswith("_test") and name != "test":
+        pytest.exit(
+            f"Refusing to run integration tests against database '{name}': they drop its "
+            "schema. Point DATABASE_URL at a database whose name ends in _test "
+            "(e.g. the_way_test).",
+            returncode=2,
+        )
 
 
 def pytest_collection_modifyitems(config, items):
@@ -55,6 +74,7 @@ def schema():
     if not services_configured():
         yield
         return
+    refuse_unless_test_database()
 
     async def reset():
         engine = build_engine()

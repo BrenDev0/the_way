@@ -175,6 +175,7 @@ async def update_document_route(
         organization_id=current_user.organization_id,
         title=payload.title,
         description=payload.description,
+        brand=payload.brand,
         update_document_fn=update_document_fn,
     )
     return mapper.domain_to_document_response(document)

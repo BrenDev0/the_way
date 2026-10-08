@@ -14,7 +14,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.bucket.ports import BucketStore
-from src.core.exceptions import ApplicationError, NotFoundError, ValidationError
+from src.core.exceptions import ApplicationError, AuthorizationError, NotFoundError, ValidationError
 
 from . import config, html_images, links, paths, use_cases
 from .domain import FileStatus, Folder, Project, ProjectContents, ProjectFile
@@ -86,7 +86,25 @@ class ProjectFiles:
     # --- projects ---------------------------------------------------------------------
 
     async def projects(self) -> Sequence[Project]:
-        return await adapter.list_projects_for_owner(self._session, self._user_id)
+        """The user's own projects, then the organization's library, which they read but
+        never change from here (see _writable)."""
+        own = await adapter.list_projects_for_owner(self._session, self._user_id)
+        library = await adapter.get_library(self._session, self._organization_id)
+        return [*own, library] if library is not None else own
+
+    @staticmethod
+    def _writable(project: Project) -> None:
+        """The library is changed only by owners and admins, in the panel -- never by an
+        agent, whoever it works for: a brand's logo replaced by a draft is a quiet disaster."""
+        if project.shared:
+            raise AuthorizationError(
+                message=(
+                    f"'{project.name}' is the organization's shared library: read from it "
+                    "(project:" + project.name + "/<path>), but save anything you make in one "
+                    "of the user's own projects."
+                ),
+                code="library_read_only",
+            )
 
     async def create_project(self, name: str) -> Project:
         return await use_cases.create_project(
@@ -113,6 +131,32 @@ class ProjectFiles:
             message=f"No project named '{name}'. The user's projects: {names}.",
             code="project_not_found",
         )
+
+    async def source(self, project: Project, path: str) -> tuple[Project, str]:
+        """Where a file a tool reads from is: `path` in `project`, or, written as
+        project:<name>/<path>, in another of the user's projects. For reading only --
+        whatever the tool makes is still saved in `project`. That is how a background
+        worker, which saves only in its own task folder, works from the user's images."""
+        ref = html_images.project_ref(path)
+        if ref is None:
+            return project, path
+        name, inner = ref
+        # looked up, never auto-created: naming a project to read from must not make one
+        for held in await self.projects():
+            if held.name.lower() == name.lower():
+                return held, inner
+        names = ", ".join(p.name for p in await self.projects()) or "none yet"
+        raise NotFoundError(
+            message=f"No project named '{name}' to read {inner} from. The user's projects: {names}.",
+            code="project_not_found",
+        )
+
+    @staticmethod
+    def source_name(path: str) -> str:
+        """The path inside its project, for naming what is made from it: an edit of
+        project:Borradores/fotos/gato.png is fotos/gato-editado.png, not a folder 'project:Borradores'."""
+        ref = html_images.project_ref(path)
+        return ref[1] if ref else path
 
     async def workspace(self) -> Project:
         return await self.project(config.WORKSPACE_PROJECT)
@@ -167,6 +211,7 @@ class ProjectFiles:
         overwrite: bool = False,
         content_type: str | None = None,
     ) -> ProjectFile:
+        self._writable(project)
         segments = paths.split(path)
         if not segments:
             raise ValidationError(message="Give a file path, not the root", code="project_path_invalid")
@@ -194,6 +239,30 @@ class ProjectFiles:
 
     # --- a page's images (html_images.py) ---------------------------------------------
 
+    async def _addressed(
+        self, project: Project, page_path: str, address: str
+    ) -> tuple[Folder | ProjectFile | None, Project] | None:
+        """What an address on a page in `project` points at, and the project it is in: a
+        path from the page, or project:<name>/<path> for another of the user's projects.
+        The entry is None when nothing is there; None altogether when the address is not a
+        project path (a URL, data:, an anchor)."""
+        if (ref := html_images.project_ref(address)) is not None:
+            name, target = ref
+            # looked up, never auto-created: a page naming a project must not make one
+            held = [p for p in await self.projects() if p.name.lower() == name.lower()]
+            if not held:
+                return None, project
+            owner = held[0]
+        elif (target := html_images.project_path(page_path, address)) is not None:
+            owner = project
+        else:
+            return None
+        # a path that cannot be a project path at all counts as nothing there
+        try:
+            return await self.entry(owner, target), owner
+        except ApplicationError:
+            return None, owner
+
     async def _linked(self, project: Project, page_path: str, content: bytes) -> bytes:
         """A page about to be saved, with each image it points at by path given the
         image's signed link -- so it shows wherever the page is opened."""
@@ -203,14 +272,8 @@ class ProjectFiles:
             return content
 
         async def link(address: str) -> str | None:
-            target = html_images.project_path(page_path, address)
-            if target is None:
-                return None
-            # a path that cannot be a project path at all is simply left as written
-            try:
-                found = await self.entry(project, target)
-            except ApplicationError:
-                return None
+            addressed = await self._addressed(project, page_path, address)
+            found = addressed[0] if addressed else None
             if not isinstance(found, ProjectFile) or not found.content_type.startswith("image/"):
                 return None
             return links.view_url(found.id)
@@ -232,13 +295,10 @@ class ProjectFiles:
                 # a link from this organization only: a page cannot pull in another's files
                 if held is not None and held[1].organization_id == self._organization_id:
                     found = held
-            elif (target := html_images.project_path(page_path, address)) is not None:
-                try:
-                    entry = await self.entry(project, target)
-                except ApplicationError:
-                    entry = None
+            elif (addressed := await self._addressed(project, page_path, address)) is not None:
+                entry, owner = addressed
                 if isinstance(entry, ProjectFile):
-                    found = (entry, project)
+                    found = (entry, owner)
             else:
                 return None  # a URL elsewhere, data:, an anchor: not ours to resolve
 
@@ -267,6 +327,7 @@ class ProjectFiles:
     ) -> tuple[ProjectFile, str]:
         """A pending file in `folder_path` (made if missing) and the URL its bytes go to.
         Never replaces anything: a name already taken becomes 'name (2).ext'."""
+        self._writable(project)
         folder_id = await paths.ensure_folder(
             project, paths.split(folder_path), self._find_entry, self._create_folder
         )
@@ -322,13 +383,16 @@ class ProjectFiles:
             return None
 
     async def make_folder(self, project: Project, path: str) -> None:
+        self._writable(project)
         await paths.ensure_folder(project, paths.split(path), self._find_entry, self._create_folder)
 
     async def copy(
-        self, source: Project, source_path: str, target: Project, target_path: str
+        self, source: Project, source_path: str, target: Project, target_path: str, replace: bool = False
     ) -> tuple[int, str]:
         """Copy with cp's conventions: into an existing folder under the source's own
-        name, otherwise to the new path. Returns the file count and where it landed."""
+        name, otherwise to the new path. Returns the file count and where it landed.
+        `replace` overwrites files already there (delivery); otherwise they are refused."""
+        self._writable(target)
         entry = await self.entry(source, source_path)
         if entry is None:
             raise ValidationError(message="Cannot copy a whole project root", code="project_path_invalid")
@@ -347,10 +411,12 @@ class ProjectFiles:
             self._update_file,
             self._list_contents,
             self._bucket,
+            replace,
         )
         return count, landed
 
     async def move(self, project: Project, source_path: str, target_path: str) -> str:
+        self._writable(project)
         entry = await self.entry(project, source_path)
         if entry is None:
             raise ValidationError(message="Cannot move a project root", code="project_path_invalid")
@@ -391,6 +457,7 @@ class ProjectFiles:
         return landed
 
     async def delete(self, project: Project, path: str) -> str:
+        self._writable(project)
         entry = await self.entry(project, path)
         if entry is None:
             raise ValidationError(

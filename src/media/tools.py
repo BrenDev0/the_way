@@ -15,6 +15,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel
 from pypdf.errors import PdfReadError
 
+from src.core.exceptions import NotFoundError
 from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool
 from src.projects.domain import Project, ProjectFile
@@ -57,11 +58,22 @@ def build(context: ToolContext) -> dict[str, Tool]:
     files = ProjectFiles(context.session, context.organization_id, context.user_id, context.bucket_store)
 
     async def load(target: Project, path: str) -> bytes:
-        _, data = await files.read_bytes(target, path, limit=config.MAX_INPUT_BYTES)
+        # a source may be in another project (project:<name>/<path>); results stay in target
+        source, inner = await files.source(target, path)
+        _, data = await files.read_bytes(source, inner, limit=config.MAX_INPUT_BYTES)
         return data
 
+    def shown(target: Project, path: str) -> str:
+        """A source as the user would name it: Borradores/fotos/gato.png."""
+        name = files.source_name(path)
+        return path.removeprefix("project:") if name != path else f"{target.name}/{path}"
+
     async def free(target: Project, path: str, overwrite: bool) -> None:
-        if not overwrite and isinstance(await files.entry(target, path), ProjectFile):
+        try:
+            existing = await files.entry(target, path)
+        except NotFoundError:  # its folder is not there yet -- writing makes it
+            return
+        if not overwrite and isinstance(existing, ProjectFile):
             raise Refused(
                 f"{target.name}/{path} already exists. Pick another output_path, or pass "
                 "overwrite=true if the user wants it replaced."
@@ -92,6 +104,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
     def image_out(path: str, output_path: str | None, image_format: str | None) -> tuple[str, str]:
         """Where an edited image goes and in what format: the format asked for, else the
         output path's extension, else the source's."""
+        path = files.source_name(path)
         fmt = image_format or (_suffix(output_path) if output_path else "") or _suffix(path)
         fmt = "jpeg" if fmt == "jpg" else fmt if fmt in config.IMAGE_FORMATS else "png"
         destination = (output_path or _edited(path, "jpg" if fmt == "jpeg" else fmt)).strip("/")
@@ -106,7 +119,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
         width, height = summary.sizes[0] if summary.sizes else (0, 0)
         sizes = {(round(w), round(h)) for w, h in summary.sizes}
         header = [
-            f"{target.name}/{path}: {summary.pages} page{'' if summary.pages == 1 else 's'}, "
+            f"{shown(target, path)}: {summary.pages} page{'' if summary.pages == 1 else 's'}, "
             f"{round(width)}x{round(height)} pt ({round(width / 72 * 25.4)}x{round(height / 72 * 25.4)} mm)"
             + (" -- pages differ in size" if len(sizes) > 1 else ""),
         ]
@@ -121,7 +134,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
         if not (keep or remove or rotate):
             raise Refused("Say what to change: keep (pages and order), remove, or rotate.")
         target = await files.project(project)
-        destination = (output_path or _edited(path, "pdf")).strip("/")
+        destination = (output_path or _edited(files.source_name(path), "pdf")).strip("/")
         await free(target, destination, overwrite)
         data = await load(target, path)
         result, count = await cpu(lambda: pdf_ops.rearrange(data, keep, remove, rotate, rotate_pages))
@@ -141,7 +154,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
         target = await files.project(project)
         data = await load(target, path)
         rendered = await cpu(lambda: pdf_ops.to_images(data, pages, dpi, image_format))
-        source = PurePosixPath(path.strip("/"))
+        source = PurePosixPath(files.source_name(path).strip("/"))
         folder = (output_folder or str(source.with_name(source.stem))).strip("/")
         extension = "jpg" if image_format == "jpeg" else image_format
         lines = []
@@ -167,7 +180,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
         data = await load(target, path)
         summary = await cpu(lambda: image_ops.inspect(data))
         return (
-            f"{target.name}/{path}: {summary.width}x{summary.height} px, {summary.format}, "
+            f"{shown(target, path)}: {summary.width}x{summary.height} px, {summary.format}, "
             f"{'with' if summary.transparent else 'no'} transparency"
         )
 

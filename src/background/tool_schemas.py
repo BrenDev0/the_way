@@ -5,8 +5,10 @@ class StartBackgroundTask(BaseModel):
     """Run a long-running task in the background so the conversation can continue.
 
     Use this for work that spans many operations or would take more than a few seconds --
-    bulk lookups, audits, multi-step research, anything that analyses CX data. Do not use
-    it for work the user is waiting on right now; answer those directly instead."""
+    bulk lookups, audits, multi-step research, anything that analyses CX data -- and for
+    anything the user asks to run in the background ("en segundo plano", "en segunda
+    capa", "en el fondo", "in the background"), however quick. Otherwise, do not use it
+    for work the user is waiting on right now; answer those directly instead."""
 
     description: str = Field(
         description="Short label for the task, shown to the user while it runs, for example "

@@ -146,7 +146,8 @@ async def deliver(
 
     delivered = []
     for child in children:
-        count, landed = await files.copy(workspace, f"{root}/{child.name}", target, destination)
+        # a revision lands on the file it revises -- that is what delivering it means
+        count, landed = await files.copy(workspace, f"{root}/{child.name}", target, destination, replace=True)
         delivered.append(f"{landed} ({count} file{'' if count == 1 else 's'})")
 
     unwrapped = (
@@ -154,6 +155,16 @@ async def deliver(
         else f" (dropped the redundant {root[len(task_path(task)) + 1:]}/ level the worker added)"
     )
     return f"Delivered to {target.name}/{destination.strip('/') or '.'}{unwrapped}: {', '.join(delivered)}"
+
+
+def reports_incomplete(report: str) -> bool:
+    """The worker's own verdict, on the first line of its report: RESULT: INCOMPLETE when
+    the main thing asked for was not made. Without it a task that wrote a note saying the
+    edit failed counted as done -- a green check over a failure. A report with no verdict
+    line is taken as complete, as before."""
+    first = next((line for line in report.splitlines() if line.strip()), "")
+    verdict = first.strip().strip("*").strip().lower()
+    return verdict.startswith("result:") and verdict.removeprefix("result:").strip().startswith("incomplete")
 
 
 def status_of(result: str) -> TaskStatus:

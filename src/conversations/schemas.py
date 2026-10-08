@@ -25,10 +25,10 @@ class SendMessageRequest(ApiBaseModel):
     voice: bool = False
     # The folder open in the desktop app right now -- the one its local file tools work
     # in -- or none. Sent with every message, since the user can change it at any time.
-    local_folder: str | None = Field(default=None, max_length=1024)
+    local_folder: str | None = Field(default=None, min_length=0, max_length=1024)
     # Or: the user works in one of their projects on the server -- "project/folder". Then
     # that is where things are read, written and delivered by default.
-    remote_folder: str | None = Field(default=None, max_length=1024)
+    remote_folder: str | None = Field(default=None, min_length=0, max_length=1024)
 
 
 class AttachmentUploadRequest(ApiBaseModel):
@@ -110,15 +110,15 @@ class ResolveToolCallsRequest(ApiBaseModel):
     resolutions: list[ToolResolutionRequest]
     # Sent again on resume: voice is the client's state, never stored with the turn.
     voice: bool = False
-    local_folder: str | None = Field(default=None, max_length=1024)
-    remote_folder: str | None = Field(default=None, max_length=1024)
+    local_folder: str | None = Field(default=None, min_length=0, max_length=1024)
+    remote_folder: str | None = Field(default=None, min_length=0, max_length=1024)
 
 
 class ResumeTurnRequest(ApiBaseModel):
     # The client's state, sent again as on any resume -- never stored with the turn.
     voice: bool = False
-    local_folder: str | None = Field(default=None, max_length=1024)
-    remote_folder: str | None = Field(default=None, max_length=1024)
+    local_folder: str | None = Field(default=None, min_length=0, max_length=1024)
+    remote_folder: str | None = Field(default=None, min_length=0, max_length=1024)
 
 
 class MessageResponse(ApiBaseModel):

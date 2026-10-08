@@ -126,11 +126,11 @@ async def test_an_uploaded_document_is_not_trained_yet(db_session, tenant, model
     assert held[0].status is DocumentStatus.EXTRACTED
 
 
-async def test_an_untrained_document_is_invisible_to_the_agent(db_session, tenant, model):
+async def test_an_extracted_document_is_offered_before_any_training(db_session, tenant, model):
     organization, user = tenant
     await extracted_document(db_session, organization, user)
 
-    assert await knowledge_tools.build_context(db_session, organization.id) == ""
+    assert "Brand Book" in await knowledge_tools.build_context(db_session, organization.id)
 
 
 async def test_training_makes_it_visible(db_session, tenant, model):

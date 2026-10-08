@@ -77,6 +77,8 @@ def build(context: ToolContext) -> dict[str, Tool]:
                 f"scaled to {rendered.zoom:.0%} so content wider than the page fits instead "
                 "of being cut off"
             )
+        if rendered.note:
+            notes.append(rendered.note)
         saved = f"Saved {target.name}/{destination} ({', '.join(notes)})."
         if missing:
             saved += MISSING_IMAGES.format(count=len(missing), images="; ".join(missing))

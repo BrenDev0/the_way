@@ -14,7 +14,7 @@ from .models import DocumentRow
 
 WITHOUT_TEXT = defer(DocumentRow.extracted_text)
 
-UPDATABLE_FIELDS = frozenset({"title", "description"})
+UPDATABLE_FIELDS = frozenset({"title", "description", "brand"})
 async def create(session: AsyncSession, document: DocumentCreate) -> Document:
     row = mapper.domain_create_to_row(document)
     session.add(row)

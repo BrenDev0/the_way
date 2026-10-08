@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import BigInteger, ForeignKey, Index, String, func
+from sqlalchemy import BigInteger, Boolean, ForeignKey, Index, String, false, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database.sqlalchemy.models import Base, IDMixin, TimestampMixin
@@ -22,6 +22,10 @@ class ProjectRow(Base, IDMixin, TimestampMixin):
         index=True,
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    # The organization's library: one per organization, no owner, read by every member
+    # and changed only by owners and admins. Not the same as an orphan, whose owner_id is
+    # also empty but which nobody else may read.
+    shared: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
 
 
 class FolderRow(Base, IDMixin, TimestampMixin):
@@ -70,6 +74,13 @@ Index(
     ProjectRow.owner_id,
     func.lower(ProjectRow.name),
     unique=True,
+)
+# One library per organization, however many requests create it at once.
+Index(
+    "uq_project_library_per_organization",
+    ProjectRow.organization_id,
+    unique=True,
+    postgresql_where=ProjectRow.shared,
 )
 Index(
     "uq_project_folder_parent_name",

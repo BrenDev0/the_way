@@ -27,6 +27,8 @@ class Document:
     uploaded_by: UUID | None
     created_at: datetime
     updated_at: datetime
+    # the client brand it is about (a brand folder in the library), or none
+    brand: str | None = None
 
 
 @dataclass

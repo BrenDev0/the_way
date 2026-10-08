@@ -35,6 +35,10 @@ WORKSPACE_PROJECT = ".the_way"
 # created the first time something is delivered to it.
 DRAFTS_PROJECT = "Borradores"
 
+# The organization's library: brand folders of logos, images and brand books that owners
+# and admins upload and every member's agent reads. Reserved as a project name.
+LIBRARY_PROJECT = "Biblioteca"
+
 # Created on first use rather than refused as unknown.
 AUTO_CREATED_PROJECTS = {WORKSPACE_PROJECT.lower(): WORKSPACE_PROJECT, DRAFTS_PROJECT.lower(): DRAFTS_PROJECT}
 

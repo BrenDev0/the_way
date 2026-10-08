@@ -240,17 +240,33 @@ async def copy_entry(
     update_file_fn: UpdateFileFn,
     list_contents_fn: ListContentsFn,
     bucket_store: BucketStore,
+    replace: bool = False,
 ) -> int:
     """Copy a file, or a folder and everything under it, returning the number of files.
-    Objects are copied inside the bucket; the bytes never pass through the worker."""
+    Objects are copied inside the bucket; the bytes never pass through the worker.
+
+    `replace`: a file already at the destination gets the new contents instead of the copy
+    being refused -- what delivering a revision means. It keeps its id, so a page linking
+    to it shows the new version."""
     if isinstance(entry, ProjectFile):
         if entry.status is not FileStatus.READY:
             return 0
-        if await find_entry_fn(target_project.id, target_folder_id, name) is not None:
-            raise ConflictError(
-                message=f"Something named '{name}' is already in the destination",
-                code="project_entry_name_taken",
-            )
+        existing = await find_entry_fn(target_project.id, target_folder_id, name)
+        if existing is not None:
+            if not (replace and isinstance(existing, ProjectFile)):
+                raise ConflictError(
+                    message=f"Something named '{name}' is already in the destination",
+                    code="project_entry_name_taken",
+                )
+            try:
+                await bucket_store.copy(
+                    keys.file_key(source_project.organization_id, entry.id),
+                    keys.file_key(target_project.organization_id, existing.id),
+                )
+            except BucketError as exc:
+                raise _unavailable() from exc
+            await update_file_fn(existing.id, {"status": FileStatus.READY, "size_bytes": entry.size_bytes})
+            return 1
         copied = await create_file_fn(
             ProjectFileCreate(
                 project_id=target_project.id,
@@ -302,6 +318,7 @@ async def copy_entry(
             update_file_fn,
             list_contents_fn,
             bucket_store,
+            replace,
         )
     return total
 

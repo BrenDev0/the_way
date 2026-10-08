@@ -29,6 +29,8 @@ class DocumentResponse(ApiBaseModel):
     uploaded_by: UUID | None
     created_at: datetime
     updated_at: datetime
+    # the client brand it is about -- a brand folder in the library -- or none
+    brand: str | None = None
 
 
 class UploadTicketResponse(ApiBaseModel):
@@ -46,6 +48,8 @@ class UpdateDocumentRequest(ApiBaseModel):
     description: str | None = Field(
         default=None, min_length=0, max_length=MAX_DESCRIPTION_CHARS
     )
+    # "" clears it: the document is about the organization itself, not one client brand
+    brand: str | None = Field(default=None, min_length=0, max_length=255)
 
 
 class TrainDocumentsResponse(ApiBaseModel):

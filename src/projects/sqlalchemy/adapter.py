@@ -66,6 +66,34 @@ async def create_project(session: AsyncSession, project: ProjectCreate) -> Proje
     return mapper.project_row_to_domain(row)
 
 
+async def get_library(session: AsyncSession, organization_id: UUID) -> Project | None:
+    result = await session.execute(
+        select(ProjectRow).where(ProjectRow.organization_id == organization_id, ProjectRow.shared.is_(True))
+    )
+    row = result.scalar_one_or_none()
+    return mapper.project_row_to_domain(row) if row else None
+
+
+async def get_or_create_library(session: AsyncSession, organization_id: UUID, name: str) -> Project:
+    """The organization's library, made the first time anyone asks for it. Two first
+    requests at once meet the one-per-organization index; the loser reads the winner's."""
+    found = await get_library(session, organization_id)
+    if found is not None:
+        return found
+    row = ProjectRow(organization_id=organization_id, owner_id=None, name=name, shared=True)
+    try:
+        async with session.begin_nested():
+            session.add(row)
+            await session.flush()
+    except IntegrityError:
+        found = await get_library(session, organization_id)
+        if found is None:
+            raise
+        return found
+    await session.refresh(row)
+    return mapper.project_row_to_domain(row)
+
+
 async def list_projects_for_owner(
     session: AsyncSession, owner_id: UUID
 ) -> Sequence[Project]:
@@ -82,7 +110,11 @@ async def list_projects_for_organization(
     organization_id: UUID,
     owner_id: UUID | None = None,
 ) -> Sequence[Project]:
-    statement = select(ProjectRow).where(ProjectRow.organization_id == organization_id)
+    # members' projects: the library is managed on its own (library routes), never
+    # listed, reassigned or deleted here
+    statement = select(ProjectRow).where(
+        ProjectRow.organization_id == organization_id, ProjectRow.shared.is_(False)
+    )
     if owner_id is not None:
         statement = statement.where(ProjectRow.owner_id == owner_id)
 

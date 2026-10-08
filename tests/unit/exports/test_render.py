@@ -70,3 +70,20 @@ def test_a_page_that_links_web_fonts_still_renders():
     )
 
     assert render.to_pdf(page).content.startswith(b"%PDF")
+
+
+def test_a_print_layout_weasyprint_cannot_paginate_falls_back_to_the_screen_layout(monkeypatch):
+    layout = render._layout
+
+    def failing_print(html, media, *args):
+        if media == "print":
+            raise AssertionError  # WeasyPrint's "assert not page_is_empty"
+        return layout(html, media, *args)
+
+    monkeypatch.setattr(render, "_layout", failing_print)
+
+    pdf = render.to_pdf(PAGE)
+
+    assert pdf.content.startswith(b"%PDF")
+    assert pdf.note and "on-screen layout" in pdf.note
+    assert render.to_pdf(PAGE, match_screen=True).note is None

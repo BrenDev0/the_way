@@ -3,9 +3,11 @@ from urllib.parse import quote
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query, Response, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api import dependencies as api_dependencies
 from src.auth import dependencies as auth_dependencies
+from src.core.database.sqlalchemy.dependencies import get_db_session
 from src.core.bucket.ports import BucketStore
 from src.users.domain import User
 
@@ -13,6 +15,7 @@ from . import config, mapper
 from . import dependencies as projects_dependencies
 from . import use_cases as projects_use_cases
 from .domain import Project
+from .sqlalchemy import adapter as projects_adapter
 from .ports import (
     CreateFileFn,
     CreateFolderFn,
@@ -54,6 +57,7 @@ router = APIRouter(tags=["projects"])
 
 CurrentUser = Annotated[User, Depends(auth_dependencies.get_current_user)]
 Bucket = Annotated[BucketStore, Depends(api_dependencies.get_bucket_store)]
+Session = Annotated[AsyncSession, Depends(get_db_session)]
 
 GetProject = Annotated[GetProjectFn, Depends(projects_dependencies.provide_get_project_fn)]
 UpdateProject = Annotated[
@@ -102,6 +106,28 @@ async def get_owned_project(
 OwnedProject = Annotated[Project, Depends(get_owned_project)]
 
 
+async def get_readable_project(
+    project_id: UUID, current_user: CurrentUser, get_project_fn: GetProject
+) -> Project:
+    return await projects_use_cases.resolve_readable_project(
+        project_id=project_id, user=current_user, get_project_fn=get_project_fn
+    )
+
+
+async def get_writable_project(
+    project_id: UUID, current_user: CurrentUser, get_project_fn: GetProject
+) -> Project:
+    return await projects_use_cases.resolve_writable_project(
+        project_id=project_id, user=current_user, get_project_fn=get_project_fn
+    )
+
+
+# Own projects, plus the organization's library: every member reads it, owners and admins
+# change it. Renaming or deleting a project stays with OwnedProject -- the library is no one's.
+ReadableProject = Annotated[Project, Depends(get_readable_project)]
+WritableProject = Annotated[Project, Depends(get_writable_project)]
+
+
 @router.post("", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
 async def create_project_route(
     payload: CreateProjectRequest,
@@ -139,8 +165,19 @@ async def list_projects_route(
     return [mapper.domain_to_project_response(project) for project in projects]
 
 
+@router.get("/library", response_model=ProjectResponse)
+async def get_library_route(current_user: CurrentUser, session: Session) -> ProjectResponse:
+    """The organization's library -- brand folders of logos, images and brand books --
+    created the first time anyone asks. Browse and upload with the usual project routes
+    and this id; changing it takes an owner or admin."""
+    library = await projects_adapter.get_or_create_library(
+        session, current_user.organization_id, config.LIBRARY_PROJECT
+    )
+    return mapper.domain_to_project_response(library)
+
+
 @router.get("/{project_id}", response_model=ProjectResponse)
-async def get_project_route(project: OwnedProject) -> ProjectResponse:
+async def get_project_route(project: ReadableProject) -> ProjectResponse:
     return mapper.domain_to_project_response(project)
 
 
@@ -174,7 +211,7 @@ async def delete_project_route(
 
 @router.get("/{project_id}/contents", response_model=ProjectContentsResponse)
 async def list_contents_route(
-    project: OwnedProject,
+    project: ReadableProject,
     get_folder_fn: GetFolder,
     list_contents_fn: ListContents,
     folder_id: Annotated[UUID | None, Query(alias="folderId")] = None,
@@ -189,7 +226,7 @@ async def list_contents_route(
 
 
 @router.get("/{project_id}/tree", response_model=ProjectContentsResponse)
-async def get_tree_route(project: OwnedProject, list_tree_fn: ListTree) -> ProjectContentsResponse:
+async def get_tree_route(project: ReadableProject, list_tree_fn: ListTree) -> ProjectContentsResponse:
     tree = await projects_use_cases.get_tree(project=project, list_tree_fn=list_tree_fn)
     return mapper.domain_to_contents_response(tree)
 
@@ -201,7 +238,7 @@ async def get_tree_route(project: OwnedProject, list_tree_fn: ListTree) -> Proje
 )
 async def create_folder_route(
     payload: CreateFolderRequest,
-    project: OwnedProject,
+    project: WritableProject,
     get_folder_fn: GetFolder,
     find_entry_fn: FindEntry,
     create_folder_fn: CreateFolder,
@@ -221,7 +258,7 @@ async def create_folder_route(
 async def rename_folder_route(
     folder_id: UUID,
     payload: RenameRequest,
-    project: OwnedProject,
+    project: WritableProject,
     get_folder_fn: GetFolder,
     find_entry_fn: FindEntry,
     update_folder_fn: UpdateFolder,
@@ -241,7 +278,7 @@ async def rename_folder_route(
 async def move_folder_route(
     folder_id: UUID,
     payload: MoveFolderRequest,
-    project: OwnedProject,
+    project: WritableProject,
     get_folder_fn: GetFolder,
     list_folder_ancestor_ids_fn: ListFolderAncestorIds,
     find_entry_fn: FindEntry,
@@ -262,7 +299,7 @@ async def move_folder_route(
 @router.delete("/{project_id}/folders/{folder_id}", response_model=DeleteResponse)
 async def delete_folder_route(
     folder_id: UUID,
-    project: OwnedProject,
+    project: WritableProject,
     bucket_store: Bucket,
     get_folder_fn: GetFolder,
     list_subtree_file_ids_fn: ListSubtreeFileIds,
@@ -286,7 +323,7 @@ async def delete_folder_route(
 )
 async def request_upload_route(
     payload: RequestFileUploadRequest,
-    project: OwnedProject,
+    project: WritableProject,
     current_user: CurrentUser,
     bucket_store: Bucket,
     get_folder_fn: GetFolder,
@@ -317,7 +354,7 @@ async def request_upload_route(
 @router.post("/{project_id}/files/{file_id}/complete", response_model=FileResponse)
 async def complete_upload_route(
     file_id: UUID,
-    project: OwnedProject,
+    project: WritableProject,
     bucket_store: Bucket,
     get_file_fn: GetFile,
     update_file_fn: UpdateFile,
@@ -335,7 +372,7 @@ async def complete_upload_route(
 @router.get("/{project_id}/files/{file_id}/download", response_model=FileDownloadResponse)
 async def request_download_route(
     file_id: UUID,
-    project: OwnedProject,
+    project: ReadableProject,
     bucket_store: Bucket,
     get_file_fn: GetFile,
 ) -> FileDownloadResponse:
@@ -355,7 +392,7 @@ async def request_download_route(
 @router.get("/{project_id}/files/{file_id}/content")
 async def file_content_route(
     file_id: UUID,
-    project: OwnedProject,
+    project: ReadableProject,
     bucket_store: Bucket,
     get_file_fn: GetFile,
 ) -> Response:
@@ -380,7 +417,7 @@ async def file_content_route(
 async def rename_file_route(
     file_id: UUID,
     payload: RenameRequest,
-    project: OwnedProject,
+    project: WritableProject,
     get_file_fn: GetFile,
     find_entry_fn: FindEntry,
     update_file_fn: UpdateFile,
@@ -400,7 +437,7 @@ async def rename_file_route(
 async def move_file_route(
     file_id: UUID,
     payload: MoveFileRequest,
-    project: OwnedProject,
+    project: WritableProject,
     get_file_fn: GetFile,
     get_folder_fn: GetFolder,
     find_entry_fn: FindEntry,
@@ -421,7 +458,7 @@ async def move_file_route(
 @router.delete("/{project_id}/files/{file_id}", response_model=DeleteResponse)
 async def delete_file_route(
     file_id: UUID,
-    project: OwnedProject,
+    project: WritableProject,
     bucket_store: Bucket,
     get_file_fn: GetFile,
     delete_file_fn: DeleteFile,

@@ -5,7 +5,8 @@ The agent writes a page the natural way, pointing at an image by its path from t
 the viewer has nothing to resolve it against, and the PDF renderer loads no addresses at
 all. So when a page is saved, each such path becomes the image's signed link (links.py),
 which works wherever the page is opened; and when it is exported, each link or path is
-replaced by the image itself, as a data: URI, which is all the renderer takes.
+replaced by the image itself, as a data: URI, which is all the renderer takes. An image in
+another project is named as project:<name>/<path> and is treated the same way.
 """
 
 import base64
@@ -24,6 +25,11 @@ TAG_SOURCE = re.compile(
 CSS_URL = re.compile(r"""url\(\s*(?P<quote>["']?)(?P<value>[^"')]+?)(?P=quote)\s*\)""", re.IGNORECASE)
 
 SCHEME = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*:")
+
+# An image in another of the user's projects: project:Borradores/fotos/gato.png. A path
+# from the page cannot leave the page's own project, and a background worker's pages live
+# in '.the_way' while the images the user wants on them live everywhere else.
+PROJECT_REF = re.compile(r"^project:(?P<project>[^/]+)/(?P<path>.+)$", re.IGNORECASE)
 
 
 def references(html: str) -> list[str]:
@@ -70,6 +76,18 @@ def project_path(page_path: str, address: str) -> str | None:
     if normal in (".", "") or normal == ".." or normal.startswith("../"):
         return None
     return normal
+
+
+def project_ref(address: str) -> tuple[str, str] | None:
+    """(project name, path in it) for a project: address, None for anything else or for a
+    path that climbs out of the project."""
+    match = PROJECT_REF.match(address.strip())
+    if not match:
+        return None
+    normal = posixpath.normpath(unquote(match["path"]).lstrip("/"))
+    if normal in (".", "") or normal == ".." or normal.startswith("../"):
+        return None
+    return unquote(match["project"]).strip(), normal
 
 
 def data_uri(content: bytes, content_type: str) -> str:

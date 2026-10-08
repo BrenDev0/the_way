@@ -112,17 +112,54 @@ def test_the_whole_block_stays_small_enough_to_resend_every_turn():
     assert len(block) < 40_000
 
 
-def test_an_untrained_document_is_not_offered_to_the_agent():
-    block = context.render([], [make_document(status=DocumentStatus.EXTRACTED)])
+def test_an_extracted_document_is_offered_without_training():
+    # Waiting on someone to press "Entrenar" left uploaded brand books invisible.
+    block = context.render([], [make_document(title="Brand Book", status=DocumentStatus.EXTRACTED)])
 
-    assert block == ""
+    assert "Brand Book" in block
 
 
-def test_training_is_what_makes_a_document_visible():
-    document = make_document(title="Brand Book", status=DocumentStatus.EXTRACTED)
+def test_a_failed_document_is_not_offered():
+    assert context.render([], [make_document(status=DocumentStatus.FAILED)]) == ""
 
-    assert context.render([], [document]) == ""
 
-    document.status = DocumentStatus.TRAINED
+def test_a_document_says_which_brand_it_is_about():
+    document = make_document(title="Manual de marca")
+    document.brand = "Soullens"
 
-    assert "Brand Book" in context.render([], [document])
+    assert "Manual de marca (brand: Soullens):" in context.render([], [document])
+
+
+def test_the_library_is_listed_by_brand_folder():
+    block = context.render([], [], ("Biblioteca", ["ClienteX/logo.svg", "Soullens/logo.png", "Soullens/paleta.png", "general.png"]))
+
+    assert "project:Biblioteca/ClienteX/logo.svg" in block  # the example uses a real file
+    assert "- ClienteX/: logo.svg" in block
+    assert "- Soullens/: logo.png, paleta.png" in block
+    assert block.index("Soullens/") < block.index("(top level, not a brand): general.png")
+    assert "never another client's logo" in block
+
+
+def test_an_empty_library_adds_nothing():
+    assert context.render([], [], ("Biblioteca", [])) == ""
+
+
+def test_a_full_brand_folder_says_where_to_see_the_rest():
+    files = [f"Soullens/img-{index:02}.png" for index in range(config.MAX_LIBRARY_FILES_PER_BRAND + 5)]
+
+    block = context.render([], [], ("Biblioteca", files))
+
+    assert "(+5 more: ListProjectFolder 'Biblioteca' 'Soullens')" in block
+
+
+def test_a_long_document_is_read_in_sections_that_say_where_the_next_starts():
+    from src.knowledge.tools import section
+
+    text = "a" * 15_000 + "\n\n" + "b" * 15_000
+
+    first = section(text, 0)
+    assert first.startswith("[Characters 0-15,002 of 30,002. Continue with offset=15002.]")
+    assert "b" not in first.split("\n\n", 1)[1]  # cut at the paragraph break
+    assert section(text, 15_002).startswith("[Characters 15,002-30,002 of 30,002. This is the end.]")
+    assert section(text, 40_000).startswith("[End of document")
+    assert section("short", 0) == "short"

@@ -32,6 +32,8 @@ class Rendered:
     # below 1 when the page was scaled down so nothing ran off the edge
     zoom: float
     pages: int
+    # something the caller should pass on: how the result differs from what was asked
+    note: str | None = None
 
 
 def _weasyprint():
@@ -136,8 +138,21 @@ def to_pdf(html: str, page_size: str = "A4", match_screen: bool = False) -> Rend
     the page builder writes for exactly this -- and `match_screen` keeps the on-screen
     colours instead."""
     width, height = config.PAGE_SIZES_PX[page_size]
-    margin = 0 if match_screen else config.PRINT_MARGIN_PX
-    document, zoom = _layout(html, "screen" if match_screen else "print", width, height, margin)
+    if not match_screen:
+        try:
+            document, zoom = _layout(html, "print", width, height, config.PRINT_MARGIN_PX)
+            return Rendered(document.write_pdf(zoom=zoom), zoom, len(document.pages))
+        except AssertionError:
+            # WeasyPrint's paginator asserts on some print stylesheets (a page it cannot
+            # fill: "assert not page_is_empty"). The screen layout of the same page
+            # paginates fine, and a PDF in screen colours beats no PDF at all.
+            document, zoom = _layout(html, "screen", width, height, 0)
+            note = (
+                "the page's print layout could not be paginated, so this PDF uses its "
+                "on-screen layout and colours instead"
+            )
+            return Rendered(document.write_pdf(zoom=zoom), zoom, len(document.pages), note)
+    document, zoom = _layout(html, "screen", width, height, 0)
     return Rendered(document.write_pdf(zoom=zoom), zoom, len(document.pages))
 
 

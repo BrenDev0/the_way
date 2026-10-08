@@ -27,6 +27,8 @@ class ProjectResponse(ApiBaseModel):
     name: str = Field(min_length=1)
     created_at: datetime
     updated_at: datetime
+    # the organization's library, which every member reads and owners/admins change
+    shared: bool = False
 
 
 class CreateFolderRequest(ApiBaseModel):

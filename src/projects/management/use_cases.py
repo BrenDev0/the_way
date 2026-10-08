@@ -19,7 +19,8 @@ async def resolve_organization_project(
     project_id: UUID, organization_id: UUID, get_project_fn: GetProjectFn
 ) -> Project:
     project = await get_project_fn(project_id, organization_id)
-    if project is None:
+    # the library is managed through its own routes, not reassigned or deleted as a member's
+    if project is None or project.shared:
         raise _project_not_found()
     return project
 

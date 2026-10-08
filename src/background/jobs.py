@@ -214,6 +214,13 @@ async def _work(
             f"finishing. {produced} It reported: {run.text} Tell the user plainly that it did "
             f"not complete; do not describe it as finished."
         )
+    if background_use_cases.reports_incomplete(run.text):
+        # failed, so it shows as failed and nothing half-made is delivered as if finished
+        return (
+            f"{background_use_cases.FAILURE_MARKER} -- the worker could not complete the task. "
+            f"{produced} It reported: {run.text} Tell the user plainly what was not done and "
+            f"why, and offer to try again; do not describe it as finished."
+        )
     return f"{produced}\n{run.text}"
 
 

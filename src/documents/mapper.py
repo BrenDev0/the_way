@@ -15,4 +15,5 @@ def domain_to_document_response(document: Document) -> DocumentResponse:
         uploaded_by=document.uploaded_by,
         created_at=document.created_at,
         updated_at=document.updated_at,
+        brand=document.brand,
     )

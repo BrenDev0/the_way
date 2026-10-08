@@ -65,6 +65,27 @@ async def test_a_saved_page_links_the_project_image_it_points_at(db_session, dra
     assert html == f'<img src="{links.view_url(image.id)}" alt="Merida">'
 
 
+async def test_a_worker_page_links_an_image_in_another_project(db_session, drafts, public_api):
+    files, _, image, _ = drafts
+    workspace = await files.create_project(".the_way")
+
+    await files.write(workspace, "tasks/t/index.html", b'<img src="project:borradores/cat-mouse-merida/cat.png">')
+
+    assert await page_source(files, workspace, "tasks/t/index.html") == f'<img src="{links.view_url(image.id)}">'
+
+
+async def test_an_image_in_another_project_is_embedded_on_export(db_session, drafts):
+    files, _, _, _ = drafts
+    workspace = await files.create_project(".the_way")
+    page = '<img src="project:Borradores/cat-mouse-merida/cat.png"><img src="project:Nope/cat.png">'
+
+    html, missing = await files.embed_images(workspace, "tasks/t/index.html", page)
+
+    assert html.startswith(f'<img src="data:image/png;base64,{base64.b64encode(PNG).decode()}">')
+    assert missing == ["project:Nope/cat.png"]
+    assert [p.name for p in await files.projects()].count("Nope") == 0
+
+
 async def test_a_path_to_nothing_is_left_as_written(db_session, drafts, public_api):
     files, project, _, _ = drafts
     page = b'<img src="../nowhere/cat.png"><img src="https://example.com/x.png">'

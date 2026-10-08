@@ -4,7 +4,10 @@ from pydantic import BaseModel, Field
 
 from . import config
 
-PROJECT = "Project name, exactly as ListProjects shows it"
+PROJECT = (
+    "Project name, exactly as ListProjects shows it. Files are read from it and results saved in "
+    "it; a source file in another of the user's projects is written project:<name>/<path>"
+)
 OUTPUT = (
     "Where to save the result inside the project. Defaults to the source's name with "
     "'-editado' added, beside it -- the original is kept."

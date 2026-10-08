@@ -4,7 +4,10 @@ from pydantic import BaseModel, Field
 
 from . import config
 
-PROJECT = "Project to save the images in, exactly as ListProjects shows it"
+PROJECT = (
+    "Project to save the images in, exactly as ListProjects shows it. Source images are read "
+    "from it too, unless written project:<name>/<path> for another of the user's projects"
+)
 MODEL = (
     "gpt-image-2.5-flare (fast, the default -- everyday images, social content, drafts) or "
     "gpt-image-2.5-sunburst (most detail and style, best for a hero image or careful edits). "
@@ -68,7 +71,8 @@ class EditImage(BaseModel):
     source_paths: list[str] = Field(
         min_length=1,
         max_length=config.MAX_REFERENCE_IMAGES,
-        description="The images to start from, in that project. The first is the one edited.",
+        description="The images to start from, in that project or as project:<name>/<path>. The "
+        "first is the one edited.",
     )
     prompt: str = Field(description="What to change or make, in detail, and what to keep exactly.")
     output_paths: list[str] = Field(

@@ -6,8 +6,10 @@ from src.auth.routes import router as auth_router
 from src.auth.session_routes import router as sessions_router
 from src.background.routes import router as background_router
 from src.conversations.routes import router as conversations_router
+from src.cx_dashboard.routes import router as cx_dashboard_router
 from src.documents.routes import router as documents_router
 from src.invitations.routes import router as invitations_router
+from src.organizations.overview import router as organization_overview_router
 from src.organizations.routes import router as organizations_router
 from src.preferences.routes import router as preferences_router
 from src.projects.management.routes import router as projects_management_router
@@ -22,9 +24,11 @@ router.include_router(auth_router, prefix="/auth")
 router.include_router(sessions_router, prefix="/auth")
 router.include_router(background_router, prefix="/background-tasks")
 router.include_router(conversations_router, prefix="/conversations")
+router.include_router(cx_dashboard_router, prefix="/cx")
 router.include_router(documents_router, prefix="/documents")
 router.include_router(invitations_router, prefix="/invitations")
 router.include_router(organizations_router, prefix="/organizations")
+router.include_router(organization_overview_router, prefix="/organizations")
 router.include_router(preferences_router, prefix="/preferences")
 # Before the projects router, whose /{project_id} routes would otherwise claim it.
 router.include_router(projects_management_router, prefix="/projects/management")
