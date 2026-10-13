@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     FILE_LINK_SECRET: str | None = None
 
     INVITATION_ACCEPT_URL: str | None = None
+    # The public page with the desktop installers, where the app's "new version" notice
+    # points. Unset, the panel's /download beside INVITATION_ACCEPT_URL is used.
+    DESKTOP_DOWNLOAD_PAGE_URL: str | None = None
 
     # The render service (src/render): a real Chromium for screenshots, page checks and
     # single-page PDFs. Unset, those fall back to WeasyPrint or are reported unavailable.

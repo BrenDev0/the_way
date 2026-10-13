@@ -15,7 +15,7 @@ from src.core.bucket.ports import BucketStore
 from src.core.exceptions import NotFoundError
 from src.core.schemas import ApiBaseModel
 
-from . import config
+from . import config, versions
 
 router = APIRouter(tags=["downloads"])
 
@@ -27,6 +27,7 @@ class InstallerResponse(ApiBaseModel):
     label: str
     filename: str
     available: bool
+    version: str | None = None
     size_bytes: int | None = None
     updated_at: datetime | None = None
 
@@ -39,6 +40,7 @@ class InstallerLinkResponse(ApiBaseModel):
 @router.get("/desktop", response_model=list[InstallerResponse])
 async def list_installers(bucket: Bucket) -> list[InstallerResponse]:
     published = {item.key: item for item in await bucket.list(config.folder())}
+    recorded = await versions.published(bucket)
     listed = []
     for installer in config.INSTALLERS.values():
         found = published.get(config.key(installer))
@@ -48,6 +50,7 @@ async def list_installers(bucket: Bucket) -> list[InstallerResponse]:
                 label=installer.label,
                 filename=installer.filename,
                 available=found is not None,
+                version=recorded.get(installer.platform) if found else None,
                 size_bytes=found.size if found else None,
                 updated_at=found.modified if found else None,
             )

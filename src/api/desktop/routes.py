@@ -16,12 +16,14 @@ from src.auth.session_routes import router as sessions_router
 from src.background.routes import router as background_router
 from src.conversations.routes import router as conversations_router
 from src.desktop.routes import router as desktop_tools_router
+from src.downloads.desktop_routes import router as app_version_router
 from src.preferences.routes import router as preferences_router
 from src.projects.routes import router as projects_router
 from src.users.routes import router as users_router
 from src.voice.routes import router as voice_router
 
 router = APIRouter()
+router.include_router(app_version_router, prefix="/app")
 router.include_router(desktop_auth_router, prefix="/auth")
 router.include_router(sessions_router, prefix="/auth")
 router.include_router(background_router, prefix="/background-tasks")
