@@ -18,6 +18,7 @@ from src.projects.sqlalchemy import adapter as projects_adapter
 from src.users.domain import Role, UserCreate
 from src.users.sqlalchemy import adapter as users_adapter
 
+
 def _png() -> bytes:
     import io
 

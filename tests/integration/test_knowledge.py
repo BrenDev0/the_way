@@ -466,6 +466,8 @@ async def test_the_tool_result_is_persisted_with_the_turn(db_session, tenant):
 
     await db_session.rollback()
     messages = await conversations_adapter.list_messages(db_session, conversation.id)
+    # the turn's context note is kept in the thread too (for caching); this is about the rest
+    messages = [m for m in messages if m["role"] != "system"]
 
     assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant"]
     assert BRAND_TEXT in messages[2]["content"]
@@ -492,3 +494,25 @@ async def test_the_system_prompt_stays_the_cacheable_prefix(db_session, tenant):
     )
 
     assert seen[0][0]["content"] == prompt.SYSTEM
+
+
+async def test_the_skill_listing_carries_file_names_but_not_their_text(db_session):
+    from src.organizations.domain import OrganizationCreate
+    from src.organizations.sqlalchemy import adapter as organizations_adapter
+    from src.skills.domain import SkillCreate
+    from src.skills.sqlalchemy import adapter as skills_adapter
+
+    organization = await organizations_adapter.create(db_session, OrganizationCreate(name="Listado"))
+    await skills_adapter.upsert(db_session, SkillCreate(
+        organization_id=organization.id, name="landing-pages", description="d", instructions="i",
+        files={"laws.md": "x" * 50_000, "brief.md": "b"}, created_by=None,
+    ))
+    await skills_adapter.upsert(db_session, SkillCreate(
+        organization_id=organization.id, name="plain", description="d", instructions="i", created_by=None,
+    ))
+
+    listed = {s.name: s for s in await skills_adapter.list_for_organization(db_session, organization.id)}
+
+    assert listed["landing-pages"].file_names == ["brief.md", "laws.md"]
+    assert listed["landing-pages"].files is None
+    assert listed["plain"].file_names == []

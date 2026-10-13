@@ -240,3 +240,76 @@ async def test_a_brand_without_a_pack_builds_nothing_and_names_the_ones_there(db
     assert result.startswith("No page was built")
     assert "Brand folders there: SLS." in result
     assert llm.received == []
+
+
+KIT_PACKS = __import__("pathlib").Path(__file__).resolve().parents[3] / "the-way-kit" / "brand-packs"
+
+
+@pytest.mark.skipif(not KIT_PACKS.is_dir(), reason="the kit is not cloned next to the backend")
+async def test_the_kit_packs_load_into_the_library_and_reach_the_builder(db_session, org):
+    from helpers import FakeLLM
+
+    from src.projects import load_brands
+
+    organization, admin, member, _ = org
+    bucket = FakeBucketStore()
+    packs = load_brands._packs(KIT_PACKS, [])
+
+    loaded = await load_brands.load(db_session, bucket, organization.id, admin.id, packs)
+    # again: replaced in place, not duplicated or refused
+    await load_brands.load(db_session, bucket, organization.id, admin.id, packs)
+    await db_session.commit()
+
+    assert [item.brand for item in loaded] == ["ARKA", "EXA", "GRE", "SLS", "XST"]
+    assert "SLS/logo/logo.webp" in loaded[3].files
+    llm = FakeLLM("Design brief.", "Built.")
+    await _page_builder(db_session, organization, member, bucket, llm)(
+        project="Borradores", output_path="p.html", page_type="landing", brief="A page.", brand="SLS",
+    )
+    designer_request = llm.received[0][-1]["content"]
+    assert "--accent: #0052FE;" in designer_request
+    assert f"project:{LIBRARY}/SLS/logo/logo-inverse.webp" in designer_request
+
+
+async def test_only_owners_and_admins_load_brands(db_session, org):
+    from src.core.cryptography.bcrypt.adapter import BcryptHashingService
+    from src.projects import load_brands
+
+    organization, _, _, _ = org
+    email = f"member-{uuid4()}@example.com"
+    await users_adapter.create(
+        db_session,
+        UserCreate(
+            organization_id=organization.id, encrypted_email="enc", password_hash="x", role=Role.MEMBER,
+            email_hash=BcryptHashingService().deterministic_hash(email),
+        ),
+    )
+
+    with pytest.raises(load_brands.LoadError, match="only owners and admins"):
+        await load_brands.find_editor(db_session, email)
+    with pytest.raises(load_brands.LoadError, match="No user"):
+        await load_brands.find_editor(db_session, "nobody@example.com")
+
+
+async def test_a_kit_document_gets_its_linked_layers_inside_it(db_session, org):
+    organization, admin, member, library = org
+    bucket = FakeBucketStore()
+    await _library_file(db_session, library, admin, bucket, "SLS/tokens.css", b":root{--brand:#0052FE}", "text/css")
+    files = ProjectFiles(db_session, organization.id, member.id, bucket)
+    drafts = await files.project("Borradores")
+    await files.write(drafts, "docs/core.css", b".doc{color:var(--brand)}")
+    page = (
+        '<html><head><link rel="stylesheet" href="core.css">'
+        f'<link href="project:{LIBRARY}/SLS/tokens.css" rel="stylesheet">'
+        '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Mada">'
+        '<link rel="stylesheet" href="nowhere.css"><link rel="icon" href="x.png">'
+        "</head><body></body></html>"
+    )
+
+    html, missing = await files.embed_stylesheets(drafts, "docs/plan.html", page)
+
+    assert "<style>\n.doc{color:var(--brand)}\n</style>" in html
+    assert "--brand:#0052FE" in html
+    assert "fonts.googleapis.com" in html  # a URL elsewhere is the renderer's to allow
+    assert 'rel="icon"' in html
+    assert missing == ["nowhere.css"]

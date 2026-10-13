@@ -20,13 +20,16 @@ from src.projects import tools as project_tools
 from src.projects.domain import Project, ProjectFile
 from src.projects.files import ProjectFiles
 from src.projects.sqlalchemy import adapter as projects_adapter
+from src.render_client import client as render_client
+from src.render_client.ports import Renderer
 from src.web import tools as web_tools
 
 from . import brand as brand_packs
 from . import config
+from .check import check_page
 from .design import archetype_guidance
 from .prompt import BUILDER_PROMPT, DESIGNER_PROMPT
-from .tool_schemas import BuildHtmlPage
+from .tool_schemas import BuildHtmlPage, CheckPage
 
 FAILURE_MARKER = "HTML BUILD FAILED"
 
@@ -53,11 +56,18 @@ class BrandPackMissing(Exception):
     pass
 
 
-def build(context: ToolContext) -> dict[str, Tool]:
+def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, Tool]:
     available = {**project_tools.build(context), **web_tools.build(context)}
     files = ProjectFiles(
         context.session, context.organization_id, context.user_id, context.bucket_store
     )
+    renderer = renderer or render_client.from_settings()
+
+    async def check(project: str, path: str) -> str:
+        return await check_page(files, renderer, project, path)
+
+    # the builder's own: it measures the page it is writing, nobody else's
+    available[CheckPage.__name__] = Tool(schema=CheckPage, handler=check)
 
     def executor_for(names: frozenset[str]) -> Executor:
         # Auto-approved: the builder revises the page it is writing, with nobody to ask,

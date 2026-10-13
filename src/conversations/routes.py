@@ -10,11 +10,11 @@ from src.api_keys import dependencies as api_keys_dependencies
 from src.api_keys import use_cases as api_keys_use_cases
 from src.api_keys.ports import ListApiKeysForUserFn
 from src.auth import dependencies as auth_dependencies
+from src.core.bucket.ports import BucketStore
 from src.core.database.sqlalchemy import dependencies as db_dependencies
 from src.core.events import sse
 from src.core.events.domain import EventStreamUnavailable
 from src.core.events.ports import EventStream
-from src.core.bucket.ports import BucketStore
 from src.core.exceptions import ServiceUnavailableError, ValidationError
 from src.projects import config as projects_config
 from src.projects.files import ProjectFiles

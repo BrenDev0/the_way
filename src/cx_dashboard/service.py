@@ -7,7 +7,6 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
-
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from . import config, engagement, insights, metrics
@@ -38,7 +37,7 @@ async def _section(name: str, work: Callable[[], Awaitable[dict]]) -> dict:
     except CXApiError as exc:
         logger.warning("cx dashboard section %s failed: %s", name, exc)
         return {"status": "error", "message": "El CX no respondió bien a esta sección. Intenta actualizar."}
-    except Exception:  # noqa: BLE001 -- a record shaped unlike any seen must cost one card, not the page
+    except Exception:
         logger.exception("cx dashboard section %s broke", name)
         return {"status": "error", "message": "Esta sección no se pudo calcular con los datos del CX."}
 
@@ -74,7 +73,7 @@ async def account(client: CXClient) -> dict | None:
         location = await client.location()
     except (MissingScope, InvalidToken, RateLimited, CXApiError):
         return None
-    except Exception:  # noqa: BLE001 -- optional: without it the dashboard uses the browser's zone
+    except Exception:
         logger.exception("cx dashboard could not read the location")
         return None
     return {"name": location.get("name"), "timezone": location.get("timezone"), "currency": location.get("currency")}

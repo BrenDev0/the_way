@@ -56,7 +56,7 @@ def parse_time(value: Any) -> datetime | None:
     if isinstance(value, int | float):
         return datetime.fromtimestamp(value / 1000, tz=ZoneInfo("UTC"))
     try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(str(value))  # reads a trailing Z since Python 3.11
     except ValueError:
         return None
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=ZoneInfo("UTC"))

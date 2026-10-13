@@ -1,6 +1,10 @@
 import pytest
 
-from src.conversations.schemas import ResolveToolCallsRequest, ResumeTurnRequest, SendMessageRequest
+from src.conversations.schemas import (
+    ResolveToolCallsRequest,
+    ResumeTurnRequest,
+    SendMessageRequest,
+)
 
 
 # The desktop app sends localFolder "" when no folder is open -- the prompt reads that as

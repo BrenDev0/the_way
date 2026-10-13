@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     )
 
     DATABASE_URL: str
+    # Connections per process. A conversation turn holds its session for the whole turn,
+    # so the worker needs about one per task it runs at once (TASKIQ_MAX_ASYNC_TASKS);
+    # SQLAlchemy's default of 5 + 10 timed turns out at 15. Every process's pool together
+    # must stay under Postgres's max_connections (100 by default).
+    DATABASE_POOL_SIZE: int = 10
+    DATABASE_MAX_OVERFLOW: int = 20
     CRYPTOGRAPHY_FERNET_KEY: str
     SESSION_COOKIE_NAME: str = "session"
     SESSION_COOKIE_SECURE: bool = True
@@ -42,6 +48,14 @@ class Settings(BaseSettings):
     # out -- which kills the worker process and the turn it was running.
     TASKIQ_XREAD_BLOCK_MS: int = 2000
     TASKIQ_SOCKET_TIMEOUT_SECONDS: float = 60
+    # A message unacknowledged this long is taken back and run again: how a turn whose
+    # worker died is recovered. A live worker renews every message it holds each
+    # TASKIQ_HEARTBEAT_SECONDS (broker.py), so a turn that is merely long is never run
+    # twice. Renewal stops after TASKIQ_HEARTBEAT_MAX_SECONDS, for a message that is never
+    # acknowledged (one taskiq could not parse or route).
+    TASKIQ_IDLE_TIMEOUT_SECONDS: int = 300
+    TASKIQ_HEARTBEAT_SECONDS: int = 60
+    TASKIQ_HEARTBEAT_MAX_SECONDS: int = 6 * 60 * 60
 
     def taskiq_result_backend_url(self) -> str:
         return self.TASKIQ_RESULT_BACKEND_URL or self.TASKIQ_BROKER_URL
@@ -76,6 +90,11 @@ class Settings(BaseSettings):
     FILE_LINK_SECRET: str | None = None
 
     INVITATION_ACCEPT_URL: str | None = None
+
+    # The render service (src/render): a real Chromium for screenshots, page checks and
+    # single-page PDFs. Unset, those fall back to WeasyPrint or are reported unavailable.
+    RENDER_URL: str | None = None
+    RENDER_SHARED_SECRET: str | None = None
 
     def require_invitation_accept_url(self) -> str:
         if not self.INVITATION_ACCEPT_URL:

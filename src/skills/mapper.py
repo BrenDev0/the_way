@@ -9,7 +9,7 @@ def domain_to_skill_response(skill: Skill) -> SkillResponse:
         description=skill.description,
         instructions=skill.instructions,
         triggers=skill.triggers,
-        files=sorted(skill.files or {}),
+        files=skill.file_names or sorted(skill.files or {}),
         created_by=skill.created_by,
         created_at=skill.created_at,
         updated_at=skill.updated_at,

@@ -7,15 +7,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.api import dependencies as api_dependencies
 from src.auth import dependencies as auth_dependencies
-from src.core.database.sqlalchemy.dependencies import get_db_session
 from src.core.bucket.ports import BucketStore
+from src.core.database.sqlalchemy.dependencies import get_db_session
 from src.users.domain import User
 
 from . import config, mapper
 from . import dependencies as projects_dependencies
 from . import use_cases as projects_use_cases
 from .domain import Project
-from .sqlalchemy import adapter as projects_adapter
 from .ports import (
     CreateFileFn,
     CreateFolderFn,
@@ -52,6 +51,7 @@ from .schemas import (
     RenameRequest,
     RequestFileUploadRequest,
 )
+from .sqlalchemy import adapter as projects_adapter
 
 router = APIRouter(tags=["projects"])
 

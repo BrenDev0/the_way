@@ -5,6 +5,7 @@ import pytest
 from helpers import FakeEncryptionService, make_completion
 from pydantic import BaseModel
 
+from src.conversations import prompt
 from src.conversations import tasks as conversation_tasks
 from src.conversations import use_cases as conversations_use_cases
 from src.conversations.domain import ConversationCreate, ConversationStatus
@@ -92,9 +93,12 @@ async def test_the_reply_is_persisted(db_session, conversation, scripted_llm):
     await db_session.rollback()
     messages = await conversations_adapter.list_messages(db_session, conversation.id)
 
-    assert [m["role"] for m in messages] == ["user", "assistant"]
+    # the turn's context note (date, connections...) is kept in the thread on purpose, so
+    # the next request finds the same prefix and stays cached
+    assert [m["role"] for m in messages] == ["user", "system", "assistant"]
     assert messages[0]["content"] == "hello there"
-    assert messages[1]["content"] == "the assistant reply"
+    assert messages[1]["content"].startswith(prompt.CONTEXT_HEADER)
+    assert messages[2]["content"] == "the assistant reply"
 
 
 async def test_the_system_prompt_is_not_persisted(db_session, conversation, scripted_llm):
@@ -103,7 +107,10 @@ async def test_the_system_prompt_is_not_persisted(db_session, conversation, scri
     await db_session.rollback()
     messages = await conversations_adapter.list_messages(db_session, conversation.id)
 
-    assert all(m["role"] != "system" for m in messages)
+    # only the per-turn context note is kept; the system prompt itself never is
+    systems = [m["content"] for m in messages if m["role"] == "system"]
+    assert prompt.SYSTEM not in systems
+    assert all(content.startswith(prompt.CONTEXT_HEADER) for content in systems)
 
 
 async def test_a_second_turn_keeps_the_history(db_session, conversation, scripted_llm):
@@ -117,7 +124,7 @@ async def test_a_second_turn_keeps_the_history(db_session, conversation, scripte
     await db_session.rollback()
     messages = await conversations_adapter.list_messages(db_session, conversation.id)
 
-    assert [m["content"] for m in messages] == [
+    assert [m["content"] for m in messages if m["role"] != "system"] == [
         "first question",
         "the assistant reply",
         "second question",

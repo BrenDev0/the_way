@@ -23,3 +23,10 @@ services:
       - .env
     volumes:
       - .:/app
+
+  # its own build target: the same code plus Chromium. No env_file -- this container gets
+  # only the shared secret, never the rest of .env.
+  render:
+    build:
+      context: .
+      target: render

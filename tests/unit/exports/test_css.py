@@ -39,3 +39,11 @@ def test_inline_styles_are_fixed_too_but_the_text_never_is():
 
     assert 'style="min-height: 900px"' in out
     assert "The 100vh hero, position: fixed" in out
+
+
+def test_a_box_that_scrolls_on_screen_shows_everything_on_paper():
+    out = css_of("<style>.marco { overflow-x: auto } pre { overflow: scroll } .clip { overflow: hidden }</style>")
+
+    assert ".marco { overflow-x: visible }" in out
+    assert "pre { overflow: visible }" in out
+    assert ".clip { overflow: hidden }" in out

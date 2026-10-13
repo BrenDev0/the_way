@@ -78,7 +78,7 @@ async def test_a_source_in_another_project_is_read_from_there(setup):
 
 
 async def test_a_worker_transforms_the_users_image_into_its_task_folder(db_session, setup):
-    files, drafts, workspace, original, bucket = setup
+    files, drafts, workspace, _original, bucket = setup
     tools = media_tools.build(context(db_session, files, bucket))  # type: ignore[arg-type]
 
     result = await tools["TransformImage"].handler(

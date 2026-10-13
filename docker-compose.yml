@@ -27,6 +27,8 @@ x-app-environment: &app-environment
   BUCKET_REGION: ${BUCKET_REGION}
   BUCKET_ACCESS_KEY_ID: ${BUCKET_ACCESS_KEY_ID}
   BUCKET_SECRET_ACCESS_KEY: ${BUCKET_SECRET_ACCESS_KEY}
+  RENDER_URL: http://render:8100
+  RENDER_SHARED_SECRET: ${RENDER_SHARED_SECRET:-}
 
 services:
   postgres:
@@ -76,39 +78,42 @@ services:
       retries: 30
 
 
-  # Project files' bytes live here; the database only lists them. S3Mock keeps everything
-  # inside the container unless told otherwise, so without this volume every rebuild or
-  # recreate wiped the files while their entries stayed -- listed, and gone.
+  # Project files' bytes live here; the database only lists them, so the volume is what
+  # keeps a file listed and present across rebuilds. MinIO speaks the S3 API at the same
+  # address S3Mock did (s3:9090), so nothing else changes. MinIO stopped publishing its own
+  # images in October 2025; Chainguard builds it from source and keeps it current.
+  # Its web console: http://localhost:9001, signed in with the bucket keys.
   s3:
-    image: adobe/s3mock:latest
+    image: cgr.dev/chainguard/minio:latest
     restart: unless-stopped
+    command: ["server", "/data", "--address", ":9090", "--console-address", ":9001"]
     environment:
-      COM_ADOBE_TESTING_S3MOCK_STORE_ROOT: /s3mockroot
-      COM_ADOBE_TESTING_S3MOCK_STORE_RETAIN_FILES_ON_EXIT: "true"
-      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ${BUCKET_NAME}
+      MINIO_ROOT_USER: ${BUCKET_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${BUCKET_SECRET_ACCESS_KEY}
+      MINIO_REGION: ${BUCKET_REGION:-us-east-1}
+      # where the health check finds it: mc assumes port 9000
+      MC_HOST_local: http://localhost:9090
     ports:
       - "9090:9090"
+      - "9001:9001"
     volumes:
-      # this exact path: the image runs as a non-root user, and a named volume is only
-      # writable for it at a directory that already exists with its ownership
-      - s3_data:/s3mockroot
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "/usr/bin/mc", "ready", "local"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
 
+  # Creates the bucket once MinIO is up; does nothing if it is already there.
   s3-bucket:
-    image: curlimages/curl:latest
+    image: cgr.dev/chainguard/minio-client:latest
     restart: "no"
     depends_on:
-      - s3
-    command:
-      - "-sS"
-      - "--retry"
-      - "60"
-      - "--retry-delay"
-      - "2"
-      - "--retry-connrefused"
-      - "--retry-all-errors"
-      - "-X"
-      - "PUT"
-      - "http://s3:9090/${BUCKET_NAME}"
+      s3:
+        condition: service_healthy
+    environment:
+      MC_HOST_local: http://${BUCKET_ACCESS_KEY_ID}:${BUCKET_SECRET_ACCESS_KEY}@s3:9090
+    command: ["mb", "--ignore-existing", "local/${BUCKET_NAME}"]
 
   migrate:
     image: ${APP_IMAGE}
@@ -124,6 +129,7 @@ services:
     restart: unless-stopped
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     environment: *app-environment
+    networks: [default, render]
     ports:
       - "8000:8000"
     healthcheck:
@@ -139,14 +145,29 @@ services:
         condition: service_healthy
       redis-queue:
         condition: service_healthy
-      s3:
-        condition: service_started
+      s3-bucket:
+        condition: service_completed_successfully
 
   worker:
     image: ${APP_IMAGE}
     restart: unless-stopped
-    command: taskiq worker src.worker.main:broker --workers 1
-    environment: *app-environment
+    # One process; concurrency inside it. --max-async-tasks is how many tasks (turns,
+    # document ingestions, background jobs) run at once -- the rest wait in Redis, safely:
+    # a message is acknowledged only once its task is done. The thread pool caps the
+    # CPU-heavy work done in threads (WeasyPrint exports, text extraction, images). To scale,
+    # add worker containers: each one is its own consumer.
+    command: >
+      taskiq worker src.worker.main:broker
+      --workers 1
+      --max-async-tasks ${TASKIQ_MAX_ASYNC_TASKS:-50}
+      --max-threadpool-threads ${TASKIQ_MAX_THREADPOOL_THREADS:-8}
+    environment:
+      <<: *app-environment
+      # about one connection per running task: 25 + 30 here, 10 + 20 for the api,
+      # 85 together under Postgres's 100
+      DATABASE_POOL_SIZE: ${WORKER_DATABASE_POOL_SIZE:-25}
+      DATABASE_MAX_OVERFLOW: ${WORKER_DATABASE_MAX_OVERFLOW:-30}
+    networks: [default, render]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -154,10 +175,39 @@ services:
         condition: service_healthy
       redis-queue:
         condition: service_healthy
-      s3:
-        condition: service_started
+      s3-bucket:
+        condition: service_completed_successfully
+
+  # A real Chromium for screenshots, page checks and single-page PDFs (src/render). It
+  # renders HTML an agent wrote, so it is fenced off: its own image (the only one with a
+  # browser), none of the app's secrets -- deliberately not *app-environment -- and only
+  # the `render` network, so it cannot reach postgres, redis or the bucket. The network
+  # still has a way out, for Google Fonts; every other address is refused in code
+  # (src/render/browser.py). No published port: only api and worker reach it.
+  render:
+    image: ${RENDER_IMAGE:-the-way-render:local}
+    restart: unless-stopped
+    environment:
+      RENDER_SHARED_SECRET: ${RENDER_SHARED_SECRET:-}
+    networks: [render]
+    mem_limit: 1g
+    cpus: 1.0
+    shm_size: 256m
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /home/app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8100/health').status==200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+networks:
+  render:
 
 volumes:
   postgres_data:
   redis_queue_data:
-  s3_data:
+  minio_data:

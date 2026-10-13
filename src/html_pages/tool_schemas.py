@@ -44,3 +44,13 @@ class BuildHtmlPage(BaseModel):
         "identity and voice -- then binds the page. Pass it whenever the page is for one "
         "of the brands in the library.",
     )
+
+
+class CheckPage(BaseModel):
+    """Open the page in a real browser and measure it: sideways scroll at phone width, CSS
+    the browser dropped, colours and spacing that are not tokens, small form fields and
+    text, images without dimensions or that did not load, text below contrast, typefaces
+    that never loaded. Returns the findings, each with examples to find it by."""
+
+    project: str = Field(description="The project the page is in")
+    path: str = Field(description="The page's path in the project, ending in .html")

@@ -1,9 +1,10 @@
 import pytest
 import taskiq_fastapi
 from taskiq import InMemoryBroker
+from taskiq_redis import RedisStreamBroker
 
 from src.core.settings import settings
-from src.core.tasks.broker import broker, build_broker
+from src.core.tasks.broker import HeartbeatStreamBroker, broker, build_broker
 from src.worker import health
 
 in_memory_only = pytest.mark.skipif(
@@ -22,10 +23,22 @@ def test_redis_url_builds_a_stream_broker(monkeypatch):
 
     built = build_broker()
 
-    assert type(built).__name__ == "RedisStreamBroker"
+    assert isinstance(built, RedisStreamBroker)
     assert built.result_backend is not None
     assert built.queue_name == settings.TASKIQ_STREAM_NAME
     assert built.consumer_group_name == settings.TASKIQ_CONSUMER_GROUP
+
+
+def test_the_stream_broker_renews_what_it_runs_and_reads_one_at_a_time(monkeypatch):
+    monkeypatch.setattr(settings, "TASKIQ_BROKER_URL", "redis://localhost:6379/1")
+
+    built = build_broker()
+
+    # behaviour proved against a real Redis in tests/integration/test_broker.py
+    assert isinstance(built, HeartbeatStreamBroker)
+    assert built.count == 1
+    assert built.idle_timeout == settings.TASKIQ_IDLE_TIMEOUT_SECONDS * 1000
+    assert built.heartbeat < settings.TASKIQ_IDLE_TIMEOUT_SECONDS  # renewed well inside the timeout
 
 
 def test_a_new_consumer_group_drains_the_backlog(monkeypatch):

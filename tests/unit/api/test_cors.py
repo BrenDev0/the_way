@@ -18,7 +18,8 @@ def origins(raw: str, monkeypatch) -> list[str]:
 def test_no_origins_are_allowed_by_default(monkeypatch):
     monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
 
-    assert Settings().CORS_ALLOWED_ORIGINS == []  # type: ignore[call-arg]
+    # not from a developer's .env either, which usually lists the local panel
+    assert Settings(_env_file=None).CORS_ALLOWED_ORIGINS == []  # type: ignore[call-arg]
 
 
 def test_a_json_list_parses(monkeypatch):

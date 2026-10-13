@@ -15,7 +15,6 @@ from src.core.exceptions import ConflictError, ServiceUnavailableError, Validati
 
 from . import config
 
-
 # One client per key, kept: a reply is spoken a sentence at a time, and a client made per
 # sentence paid a fresh TLS handshake to OpenAI on every one -- the stutter between them.
 # Keyed by a hash so no key sits in a dict in the clear; the oldest is let go past the cap.

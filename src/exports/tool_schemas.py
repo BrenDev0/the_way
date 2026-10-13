@@ -34,6 +34,15 @@ class HtmlToPdf(BaseModel):
         "keeps the on-screen look, colours and backgrounds edge to edge -- right for a "
         "deck-like or branded piece meant to be viewed, not printed.",
     )
+    layout: Literal["paged", "scroll"] = Field(
+        default="paged",
+        description="'paged' (the default): paper pages, for email, printing and anything "
+        "a lawyer touches. 'scroll': the whole document on ONE tall page, 440 px wide, "
+        "for WhatsApp and other messaging apps, where paging is hostile; wide tables become "
+        "stacked cards so no column is lost. Saved as <name>-scroll.pdf. A document often "
+        "goes as both -- same source, two PDFs. page_size and match_screen apply to "
+        "'paged' only.",
+    )
 
 
 class HtmlToPng(BaseModel):

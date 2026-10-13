@@ -10,6 +10,10 @@ things in each, and these are the ones that turn a good-looking page into a clip
   section grows with its content instead of clipping it.
 - position: fixed repeats on every page, over the content. It is placed once, where it
   sits at the top of the screen; sticky, which pages cannot do, stays where it is.
+- overflow: auto or scroll is a promise paper cannot keep: a wide table in a box that
+  scrolls sideways loses its right-hand columns in the PDF, silently (the kit's
+  output-documents law 1). Such a box overflows visibly instead, so the page is scaled to
+  fit it like any other wide content.
 
 Only <style> blocks and style="" attributes are touched -- never the page's text.
 """
@@ -27,6 +31,7 @@ _HEIGHT_IN_VIEWPORT = re.compile(
     rf"(?<![\w-])(max-height|height)(\s*:\s*)([^;{{}}]*?{_VIEWPORT}[^;{{}}]*)",
     re.IGNORECASE,
 )
+_SCROLLING = re.compile(r"(?<![\w-])(overflow(?:-x|-y)?)(\s*:\s*)(?:auto|scroll|overlay)\b", re.IGNORECASE)
 _POSITION = re.compile(r"(?<![\w-])position(\s*:\s*)(fixed|sticky)\b", re.IGNORECASE)
 
 
@@ -46,6 +51,7 @@ def _fix_css(css: str, width: float, height: float) -> str:
         return f"min-height{separator}{value}"
 
     css = _HEIGHT_IN_VIEWPORT.sub(height_rule, css)
+    css = _SCROLLING.sub(lambda m: f"{m.group(1)}{m.group(2)}visible", css)
     css = _POSITION.sub(
         lambda m: f"position{m.group(1)}{'absolute' if m.group(2).lower() == 'fixed' else 'relative'}",
         css,

@@ -25,6 +25,7 @@ BUILDER_TOOLS = frozenset(
         "CreateProjectFolder",
         "WriteProjectFile",
         "EditProjectFile",
+        "CheckPage",
         "WebSearch",
         "ExtractWebPages",
         "MapWebPages",

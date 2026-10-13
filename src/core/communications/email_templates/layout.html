@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!-- already dark: clients that honour these leave the colours alone instead of inverting them -->
+<meta name="color-scheme" content="dark">
+<meta name="supported-color-schemes" content="dark">
+<title>{{title}}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#060a0e;">
+<!-- the line inbox previews show next to the subject -->
+<div style="display:none;max-height:0;overflow:hidden;opacity:0;color:#060a0e;">{{preheader}}</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#060a0e" style="background-color:#060a0e;">
+  <tr>
+    <td align="center" style="padding:40px 16px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;">
+
+        <tr>
+          <td style="padding:0 4px 10px;">{{logo}}</td>
+        </tr>
+        <tr>
+          <td style="padding:0 4px 28px;font-family:'JetBrains Mono',Consolas,'Courier New',monospace;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#899ca8;">{{kicker}}</td>
+        </tr>
+
+        <tr>
+          <td bgcolor="#0c1319" style="background-color:#0c1319;border:1px solid #24333e;border-top:1px solid #3f5961;border-radius:6px;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td style="padding:22px 28px 0;">
+                  <span style="font-family:'JetBrains Mono',Consolas,'Courier New',monospace;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:#ff00ff;">{{tag}}</span>
+                </td>
+              </tr>
+              <tr>
+                <td style="padding:14px 28px 30px;font-family:'IBM Plex Sans','Segoe UI',Arial,sans-serif;font-size:15px;line-height:24px;color:#b9c9d1;">
+{{content}}
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+
+        <tr>
+          <td style="padding:22px 4px 0;font-family:'JetBrains Mono',Consolas,'Courier New',monospace;font-size:11px;line-height:18px;letter-spacing:1px;color:#71818d;">
+            THE WAY &middot; Xplorers<br>
+            {{footnote}}
+          </td>
+        </tr>
+
+      </table>
+    </td>
+  </tr>
+</table>
+</body>
+</html>

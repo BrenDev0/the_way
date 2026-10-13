@@ -59,7 +59,7 @@ async def org(db_session):
 
 
 async def test_the_overview_counts_seats_storage_and_orphans(db_session, org):
-    organization, owner, admin, orphan = org
+    _organization, owner, admin, _orphan = org
 
     result = await overview.overview_route(admin, db_session)
 

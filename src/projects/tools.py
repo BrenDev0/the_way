@@ -2,6 +2,7 @@ import re
 import tempfile
 from pathlib import Path
 
+from src.core.exceptions import NotFoundError
 from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool, truncate
 from src.documents import extraction
@@ -186,7 +187,10 @@ def build(context: ToolContext) -> dict[str, Tool]:
 
         # A move onto an existing folder would put this inside it, not rename it.
         # A case-only rename finds the source itself there, which is fine.
-        existing = await files.entry(target, destination)
+        try:
+            existing = await files.entry(target, destination)
+        except NotFoundError:  # the usual case: nothing has the new name yet
+            existing = None
         source = await files.entry(target, path)
         if existing is not None and (source is None or existing.id != source.id):
             return f"{target.name}/{destination} already exists. Pick another name or ask the user."

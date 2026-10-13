@@ -12,7 +12,15 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from . import config
-from .metrics import UNKNOWN, Period, _change, _value, channel_of_message, outliers, parse_time
+from .metrics import (
+    UNKNOWN,
+    Period,
+    _change,
+    _value,
+    channel_of_message,
+    outliers,
+    parse_time,
+)
 
 # --- growth -----------------------------------------------------------------------------
 
@@ -336,7 +344,7 @@ def retention(transactions: Sequence[dict], subscriptions: Sequence[dict] | None
         (t for t in transactions if str(t.get("status") or "").lower() in PAID and parse_time(t.get("createdAt"))),
         key=lambda t: parse_time(t["createdAt"]),
     )
-    customer_of = lambda t: t.get("contactId") or (t.get("contactSnapshot") or {}).get("id") or t.get("contactEmail")  # noqa: E731
+    customer_of = lambda t: t.get("contactId") or (t.get("contactSnapshot") or {}).get("id") or t.get("contactEmail")
     by_customer: dict[Any, list[dict]] = defaultdict(list)
     for t in paid:
         if customer_of(t):

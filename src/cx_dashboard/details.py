@@ -7,6 +7,7 @@ Pure functions like metrics.py: CX records in, what the panel shows out.
 from collections import Counter
 from collections.abc import Sequence
 from datetime import datetime, timedelta
+
 from . import config
 from .engagement import _interactions, _published
 from .metrics import UNKNOWN, Period, _value, channel_of_message, parse_time

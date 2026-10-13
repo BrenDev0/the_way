@@ -17,6 +17,8 @@ class Skill:
     # Reference files by relative path, e.g. {"laws.md": "..."}. None when the skill was
     # loaded in a listing, which leaves them behind: the index never needs their text.
     files: dict[str, str] | None = None
+    # Their paths, which a listing does carry: the panel shows them without the text.
+    file_names: list[str] = field(default_factory=list)
 
 
 @dataclass

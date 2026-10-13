@@ -289,8 +289,18 @@ async def test_a_background_task_writes_verifies_and_delivers(db_session, owner,
 
 
 async def test_a_background_task_reports_its_work_on_the_conversation_that_started_it(
-    db_session, owner, bucket
+    db_session, owner, bucket, monkeypatch
 ):
+    # The finished task opens a reporting turn on the idle conversation. Its enqueue is
+    # caught here: sent for real, it would tie the shared broker's connection to this
+    # test's event loop (breaking the next app that starts it) and hand a stray turn to
+    # whatever worker listens on the queue.
+    reports = []
+
+    async def enqueue(conversation_id):
+        reports.append(conversation_id)
+
+    monkeypatch.setattr(conversation_tasks.advance_conversation, "kiq", enqueue)
     conversation = await conversations_adapter.create(
         db_session, ConversationCreate(organization_id=owner.organization_id, user_id=owner.id, title="Desk")
     )
@@ -313,11 +323,18 @@ async def test_a_background_task_reports_its_work_on_the_conversation_that_start
     await background_jobs.run_task(task.id, bucket, llm_factory=factory, event_stream=stream)
 
     published = stream.of(conversation_events.topic(conversation.id))
-    assert [event.type for event in published] == ["task.started", "tool.started", "tool.finished", "task.finished"]
+    # the idle conversation opens a turn to report the task (its "status": running) before
+    # the end is announced, so whoever hears "finished" finds the report under way
+    assert [event.type for event in published] == [
+        "task.started", "tool.started", "tool.finished", "status", "task.finished"
+    ]
     assert published[0].data == {"taskId": str(task.id), "description": "Inventory"}
     assert published[1].data["taskId"] == str(task.id)
     assert published[1].data["name"] == "ListProjects"
+    assert published[3].data["id"] == str(conversation.id)
+    assert published[3].data["status"] == str(ConversationStatus.RUNNING)
     assert published[-1].data["status"] == str(TaskStatus.DONE)
+    assert reports == [conversation.id]
 
 
 async def test_a_worker_out_of_steps_is_failed_and_not_delivered(db_session, owner, bucket):
@@ -360,9 +377,12 @@ async def test_starting_a_task_commits_it_before_enqueueing(db_session, owner, b
     reply = await tools["StartBackgroundTask"].handler(description="Audit", instructions="Audit it")
 
     assert len(enqueued) == 1
-    assert "No delivery folder was set" in reply
     await db_session.rollback()
-    assert (await background_adapter.get_by_id(db_session, enqueued[0])).status is TaskStatus.RUNNING
+    task = await background_adapter.get_by_id(db_session, enqueued[0])
+    assert task.status is TaskStatus.RUNNING
+    # with no delivery folder given, the finished files go to the drafts project, in a
+    # folder named after the task
+    assert f"delivered to Borradores/{task.folder} automatically" in reply
 
 
 # --- CX datasets ----------------------------------------------------------------------
@@ -505,6 +525,8 @@ async def test_a_desktop_call_pauses_the_turn_and_resumes_with_its_output(db_ses
     await db_session.rollback()
     done = await conversations_adapter.get_by_id(db_session, conversation.id)
     messages = await conversations_adapter.list_messages(db_session, conversation.id)
+    # the turn's context note is kept in the thread too (for caching); this is about the rest
+    messages = [m for m in messages if m["role"] != "system"]
     assert status is ConversationStatus.IDLE
     assert done.turn.decisions == {}
     assert [m["role"] for m in messages] == ["user", "assistant", "tool", "assistant"]

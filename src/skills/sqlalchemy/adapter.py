@@ -1,7 +1,7 @@
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import ARRAY, Text, delete, func, literal_column, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import defer
 
@@ -48,14 +48,21 @@ async def count_for_organization(session: AsyncSession, organization_id: UUID) -
 async def list_for_organization(
     session: AsyncSession, organization_id: UUID
 ) -> Sequence[Skill]:
-    # Listed on every turn for the agent's index; the reference files stay behind.
+    # Listed on every turn for the agent's index; the reference files stay behind. Only
+    # their paths come along -- the keys, read in the database, never the text.
+    file_names = literal_column(
+        f"ARRAY(SELECT jsonb_object_keys({SkillRow.__tablename__}.files))", type_=ARRAY(Text)
+    ).label("file_names")
     result = await session.execute(
-        select(SkillRow)
+        select(SkillRow, file_names)
         .options(defer(SkillRow.files))
         .where(SkillRow.organization_id == organization_id)
         .order_by(SkillRow.name)
     )
-    return [mapper.row_to_domain(row, with_files=False) for row in result.scalars().all()]
+    return [
+        mapper.row_to_domain(row, with_files=False, file_names=list(names or []))
+        for row, names in result.all()
+    ]
 
 
 async def get_for_organization(

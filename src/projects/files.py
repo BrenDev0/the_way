@@ -8,13 +8,19 @@ routes.
 """
 
 import json
+import re
 from collections.abc import Sequence
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.core.bucket.ports import BucketStore
-from src.core.exceptions import ApplicationError, AuthorizationError, NotFoundError, ValidationError
+from src.core.exceptions import (
+    ApplicationError,
+    AuthorizationError,
+    NotFoundError,
+    ValidationError,
+)
 
 from . import config, html_images, links, paths, use_cases
 from .domain import FileStatus, Folder, Project, ProjectContents, ProjectFile
@@ -34,6 +40,11 @@ TEXT_TYPES = {
     ".yaml": "application/yaml",
     ".yml": "application/yaml",
 }
+
+
+_STYLESHEET_LINK = re.compile(r"<link\b[^>]*>", re.IGNORECASE)
+_REL_STYLESHEET = re.compile(r"""\brel\s*=\s*["']?[^"'>]*\bstylesheet\b""", re.IGNORECASE)
+_HREF = re.compile(r"""\bhref\s*=\s*(["'])(?P<value>.*?)\1""", re.IGNORECASE | re.DOTALL)
 
 
 def content_type_for(name: str) -> str:
@@ -319,6 +330,38 @@ class ProjectFiles:
 
         swaps = await html_images.swaps_for(html_images.references(html), embed)
         return html_images.replace(html, swaps), missing
+
+    async def embed_stylesheets(self, project: Project, page_path: str, html: str) -> tuple[str, list[str]]:
+        """The page with each stylesheet it links from a project -- a path from the page,
+        or project:<name>/<path> -- put inside it as a <style> block. A document made the
+        kit's way links its layers (core.css, the brand's tokens.css) rather than copying
+        them, and the renderers load no addresses: left as links, it renders unstyled.
+        Also says which could not be found."""
+        missing: list[str] = []
+        out: list[str] = []
+        last = 0
+        for match in _STYLESHEET_LINK.finditer(html):
+            tag = match.group(0)
+            href = _HREF.search(tag)
+            if not _REL_STYLESHEET.search(tag) or href is None:
+                continue
+            address = href.group("value").strip()
+            addressed = await self._addressed(project, page_path, address)
+            if addressed is None:
+                continue  # a URL elsewhere (Google Fonts): the renderer's allowlist decides
+            entry, owner = addressed
+            if not isinstance(entry, ProjectFile):
+                missing.append(address)
+                continue
+            try:
+                css = (await paths.load_file(owner, entry, self._bucket)).decode("utf-8", errors="replace")
+            except ApplicationError:
+                missing.append(f"{address} (its content could not be read)")
+                continue
+            out += [html[last : match.start()], f"<style>\n{css.replace('</style', '<\\/style')}\n</style>"]
+            last = match.end()
+        out.append(html[last:])
+        return "".join(out), missing
 
     # --- files the client uploads itself (a chat attachment) ----------------------------
 
