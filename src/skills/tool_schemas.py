@@ -23,3 +23,9 @@ class SaveSkill(BaseModel):
     name: str = Field(description="The kebab-case skill name")
     description: str = Field(description="1-2 sentences: what it does and when to use it")
     instructions: str = Field(description="The full step-by-step instructions")
+    triggers: list[str] = Field(
+        default_factory=list,
+        max_length=10,
+        description="2-5 requests a person would actually say when they need this skill, "
+        "e.g. 'write the minutes for today's meeting'. Keep the existing ones that still fit",
+    )

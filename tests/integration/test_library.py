@@ -167,3 +167,76 @@ async def _admin_upload(db_session, library, admin, bucket):
         bucket_store=bucket,
     )
     await db_session.commit()
+
+
+async def _library_file(db_session, library, admin, bucket, path: str, content: bytes, content_type: str):
+    from src.projects import paths
+
+    *folders, name = path.split("/")
+    folder_id = await paths.ensure_folder(
+        library, folders,
+        lambda project_id, parent_id, name: projects_adapter.find_entry(db_session, project_id, parent_id, name),
+        lambda folder: projects_adapter.create_folder(db_session, folder),
+    )
+    await paths.store_file(
+        project=library, folder_id=folder_id, name=name, content=content, content_type=content_type,
+        uploaded_by=admin.id, overwrite=False,
+        find_entry_fn=lambda project_id, parent_id, name: projects_adapter.find_entry(db_session, project_id, parent_id, name),
+        create_file_fn=lambda f: projects_adapter.create_file(db_session, f),
+        update_file_fn=lambda file_id, changes: projects_adapter.update_file(db_session, file_id, changes),
+        bucket_store=bucket,
+    )
+    await db_session.commit()
+
+
+def _page_builder(db_session, organization, member, bucket, llm):
+    from src.core.tools.context import ToolContext
+    from src.html_pages import tools as html_tools
+
+    async def llm_factory(_models, _temperature=None):
+        return llm
+
+    context = ToolContext(
+        session=db_session, organization_id=organization.id, user_id=member.id,
+        user_role=Role.MEMBER, bucket_store=bucket, credentials={}, llm_factory=llm_factory,
+    )
+    return html_tools.build(context)["BuildHtmlPage"].handler
+
+
+async def test_a_page_for_a_brand_carries_its_pack(db_session, org):
+    from helpers import FakeLLM
+
+    organization, admin, member, library = org
+    bucket = FakeBucketStore()
+    tokens = b":root { --paper: #FFFFFF; --fg: #0A0E1A; --brand: #0052FE; --ink: #0A0E1A; }"
+    await _library_file(db_session, library, admin, bucket, "SLS/tokens.css", tokens, "text/css")
+    await _library_file(db_session, library, admin, bucket, "SLS/voice.md", b"Never say synergy.", "text/markdown")
+    await _library_file(db_session, library, admin, bucket, "SLS/logo/logo.png", png(), "image/png")
+    llm = FakeLLM("Design brief.", "Built.")
+
+    await _page_builder(db_session, organization, member, bucket, llm)(
+        project="Borradores", output_path="p.html", page_type="landing", brief="A page.", brand="sls",
+    )
+
+    designer_request = llm.received[0][-1]["content"]
+    assert "=== BRAND PACK: SLS (binding) ===" in designer_request
+    assert "--accent: #0052FE;" in designer_request
+    assert f"project:{LIBRARY}/SLS/logo/logo.png" in designer_request
+    assert "Never say synergy." in designer_request
+
+
+async def test_a_brand_without_a_pack_builds_nothing_and_names_the_ones_there(db_session, org):
+    from helpers import FakeLLM
+
+    organization, admin, member, library = org
+    bucket = FakeBucketStore()
+    await _library_file(db_session, library, admin, bucket, "SLS/tokens.css", b":root { --brand: #000; }", "text/css")
+    llm = FakeLLM()
+
+    result = await _page_builder(db_session, organization, member, bucket, llm)(
+        project="Borradores", output_path="p.html", page_type="landing", brief="A page.", brand="GRE",
+    )
+
+    assert result.startswith("No page was built")
+    assert "Brand folders there: SLS." in result
+    assert llm.received == []

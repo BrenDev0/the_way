@@ -17,10 +17,12 @@ from src.core.tools.domain import Tool
 from src.core.tools.executor import Executor
 from src.core.tools.gates import AutoApproveGate
 from src.projects import tools as project_tools
-from src.projects.domain import ProjectFile
+from src.projects.domain import Project, ProjectFile
 from src.projects.files import ProjectFiles
+from src.projects.sqlalchemy import adapter as projects_adapter
 from src.web import tools as web_tools
 
+from . import brand as brand_packs
 from . import config
 from .design import archetype_guidance
 from .prompt import BUILDER_PROMPT, DESIGNER_PROMPT
@@ -33,6 +35,22 @@ NO_BRIEF = (
     "exactly, and make the concrete choices it leaves open yourself -- typefaces, the "
     "palette hex values, and the section structure -- before writing any markup.)"
 )
+
+
+NO_LIBRARY = (
+    "No page was built: the organization has no library, so there is no brand pack for "
+    "'{brand}'. Ask the user whether to build it without one."
+)
+
+NO_PACK = (
+    "No page was built: the library has no brand pack for '{brand}' (a brand folder with a "
+    "tokens.css). Brand folders there: {folders}. Call again with one of them, or ask the "
+    "user whether to build the page without a pack."
+)
+
+
+class BrandPackMissing(Exception):
+    pass
 
 
 def build(context: ToolContext) -> dict[str, Tool]:
@@ -57,12 +75,52 @@ def build(context: ToolContext) -> dict[str, Tool]:
             return f"NO FILE was written at {project}/{path}."
         return f"Wrote {project}/{path} ({entry.size_bytes:,} bytes)."
 
+    async def text_of(library: Project, path: str) -> str | None:
+        try:
+            _entry, content = await files.read_bytes(library, path)
+        except ApplicationError:
+            return None
+        return content.decode("utf-8", errors="replace")
+
+    async def brand_pack(name: str) -> str:
+        """The pack's section of the request, or a refusal naming the brands there are --
+        a page built without the pack it was asked for would look finished and be off-brand."""
+        library = await projects_adapter.get_library(context.session, context.organization_id)
+        if library is None:
+            raise BrandPackMissing(NO_LIBRARY.format(brand=name))
+
+        folders = sorted(
+            {path.split("/", 1)[0] for path, _entry in await files.tree(library) if "/" in path},
+            key=str.lower,
+        )
+        folder = next((held for held in folders if held.lower() == name.strip().lower()), None)
+        tokens = await text_of(library, f"{folder}/tokens.css") if folder else None
+        if folder is None or tokens is None:
+            raise BrandPackMissing(
+                NO_PACK.format(brand=name, folders=", ".join(folders) or "none")
+            )
+
+        logos = [
+            path
+            for path, entry in await files.tree(library)
+            if isinstance(entry, ProjectFile) and path.lower().startswith(f"{folder.lower()}/logo/")
+        ]
+        return brand_packs.render(
+            folder,
+            library.name,
+            tokens,
+            await text_of(library, f"{folder}/identity.md"),
+            await text_of(library, f"{folder}/voice.md"),
+            sorted(logos),
+        )
+
     async def build_html_page(
         project: str,
         output_path: str,
         page_type: str,
         brief: str,
         style_direction: str | None = None,
+        brand: str | None = None,
     ) -> str:
         request = (
             f"Page type: {page_type}\nProject: {project}\nOutput file: {output_path}\n\n"
@@ -70,6 +128,11 @@ def build(context: ToolContext) -> dict[str, Tool]:
         )
         if style_direction:
             request += f"\n\nStyle direction from the user (treat as binding):\n{style_direction}"
+        if brand:
+            try:
+                request += f"\n\n{await brand_pack(brand)}"
+            except BrandPackMissing as missing:
+                return str(missing)
         archetype = archetype_guidance(page_type)
 
         designer = await context.llm_factory(config.MODELS, config.DESIGNER_TEMPERATURE)

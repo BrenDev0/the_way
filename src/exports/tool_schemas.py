@@ -42,7 +42,11 @@ class HtmlToPng(BaseModel):
 
     When the user asks for a page, report or graphic as an image, build it as HTML first
     with BuildHtmlPage, then convert it with this. An existing file at the output path is
-    replaced."""
+    replaced.
+
+    An image meant for WhatsApp or another chat is a poster, not a strip: the chat fits it
+    by height, so a tall full-page capture reads tiny. Build that piece as its own short
+    page (roughly 4:5 or square, at width 1080) instead of capturing a long one."""
 
     project: str = Field(description=PROJECT)
     path: str = Field(description=SOURCE)

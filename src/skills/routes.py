@@ -15,7 +15,12 @@ from .ports import (
     ListSkillsForOrganizationFn,
     UpsertSkillFn,
 )
-from .schemas import DeleteSkillResponse, SaveSkillRequest, SkillResponse
+from .schemas import (
+    DeleteSkillResponse,
+    ImportSkillsRequest,
+    SaveSkillRequest,
+    SkillResponse,
+)
 
 router = APIRouter(tags=["skills"])
 
@@ -47,12 +52,45 @@ async def save_skill_route(
         name=payload.name,
         description=payload.description,
         instructions=payload.instructions,
+        triggers=payload.triggers,
+        files=payload.files,
         created_by=current_user.id,
         count_skills_fn=count_skills_fn,
         get_skill_fn=get_skill_fn,
         upsert_skill_fn=upsert_skill_fn,
     )
     return mapper.domain_to_skill_response(skill)
+
+
+@router.post("/import", response_model=list[SkillResponse])
+async def import_skills_route(
+    payload: ImportSkillsRequest,
+    current_user: CurrentUser,
+    count_skills_fn: Annotated[
+        CountSkillsFn,
+        Depends(skills_dependencies.provide_count_skills_fn),
+    ],
+    get_skill_fn: Annotated[
+        GetSkillFn,
+        Depends(skills_dependencies.provide_get_skill_fn),
+    ],
+    upsert_skill_fn: Annotated[
+        UpsertSkillFn,
+        Depends(skills_dependencies.provide_upsert_skill_fn),
+    ],
+) -> list[SkillResponse]:
+    skills = await skills_use_cases.import_skills(
+        organization_id=current_user.organization_id,
+        skills=[
+            skills_use_cases.SkillImport(instructions=item.instructions, files=item.files)
+            for item in payload.skills
+        ],
+        created_by=current_user.id,
+        count_skills_fn=count_skills_fn,
+        get_skill_fn=get_skill_fn,
+        upsert_skill_fn=upsert_skill_fn,
+    )
+    return [mapper.domain_to_skill_response(skill) for skill in skills]
 
 
 @router.get("", response_model=list[SkillResponse])

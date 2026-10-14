@@ -76,8 +76,6 @@ class Settings(BaseSettings):
     FILE_LINK_SECRET: str | None = None
 
     INVITATION_ACCEPT_URL: str | None = None
-    BUCKET_PUBLIC_ENDPOINT: str
-    PUBLIC_API_URL: str
 
     def require_invitation_accept_url(self) -> str:
         if not self.INVITATION_ACCEPT_URL:

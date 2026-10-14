@@ -49,7 +49,12 @@ class GenerateImages(BaseModel):
     10 images in this run, generated and edited together, so a few rounds of EditImage to
     refine the result go through without asking again. Put every image the request needs
     in one call (three banners are one call with three images), and never call it
-    speculatively."""
+    speculatively.
+
+    Scenes and objects can be generated; real people and real places cannot. Never present
+    a generated image as a specific real person, venue or property. And never ask for a
+    logo in words -- the result is an imitation of the brand. A logo goes in only as the
+    real file, with OverlayImage or as a source of EditImage."""
 
     project: str = Field(description=PROJECT)
     images: list[ImageSpec] = Field(min_length=1, max_length=config.MAX_IMAGES_PER_CALL)
@@ -65,7 +70,11 @@ class EditImage(BaseModel):
     Approval works as for GenerateImages: the run's first image call asks, and that
     approval covers up to 10 images in the run, edits included -- so refine over a few
     rounds when the result needs it, reading each one before the next. For the user's
-    own variations, ask for them in one call through output_paths."""
+    own variations, ask for them in one call through output_paths.
+
+    A logo in the result comes from a logo file among the sources, never from describing
+    it in the prompt; for exact placement use OverlayImage. Never present the result as a
+    specific real person or place it does not actually show."""
 
     project: str = Field(description=PROJECT)
     source_paths: list[str] = Field(

@@ -37,3 +37,10 @@ class BuildHtmlPage(BaseModel):
         "colours, a mood ('editorial', 'dark and technical'), a company to match, a "
         "typeface. Pass it through verbatim; it is binding and overrides the house defaults.",
     )
+    brand: str | None = Field(
+        default=None,
+        description="Optional. The brand the page is for, as its folder is named in the "
+        "organization's library (e.g. 'SLS'). Its brand pack -- tokens, typefaces, logos, "
+        "identity and voice -- then binds the page. Pass it whenever the page is for one "
+        "of the brands in the library.",
+    )

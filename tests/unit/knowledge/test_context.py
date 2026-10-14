@@ -163,3 +163,37 @@ def test_a_long_document_is_read_in_sections_that_say_where_the_next_starts():
     assert section(text, 15_002).startswith("[Characters 15,002-30,002 of 30,002. This is the end.]")
     assert section(text, 40_000).startswith("[End of document")
     assert section("short", 0) == "short"
+
+
+def test_a_skill_lists_a_few_of_its_triggers():
+    skill = make_skill(
+        name="meeting-minutes",
+        triggers=["write the minutes", "what did we agree on", "draft the recap", "fourth"],
+    )
+
+    block = context.render([skill], [])
+
+    assert 'Asked as: "write the minutes" · "what did we agree on" · "draft the recap"' in block
+    assert "fourth" not in block
+
+
+def test_a_skill_without_triggers_has_no_asked_as():
+    block = context.render([make_skill()], [])
+
+    assert "Asked as" not in block.split("\n", 3)[-1]
+
+
+def test_the_block_stays_small_with_triggers_too():
+    skills = [
+        make_skill(
+            name=f"skill-{index}",
+            description="x" * 400,
+            triggers=["t" * 200 for _ in range(10)],
+        )
+        for index in range(200)
+    ]
+    documents = [make_document(description="y" * 400) for _ in range(200)]
+
+    block = context.render(skills, documents)
+
+    assert len(block) < 40_000

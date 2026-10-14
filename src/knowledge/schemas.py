@@ -21,7 +21,18 @@ class ReadSkill(BaseModel):
     """Read the full instructions for one of the organization's skills.
 
     The name comes from the skill listing in your context. Read the skill before
-    acting on a request it covers, and follow its instructions.
+    acting on a request it covers, and follow its instructions -- the detail is the
+    method, so read all of it rather than acting on the description. A skill that
+    names reference files (a brief, a list of rules, a template) lists them at its
+    end; read the ones the instructions send you to with `file`.
     """
 
     name: str = Field(description="The skill name, exactly as listed")
+    file: str | None = Field(
+        default=None,
+        description="A reference file of the skill, by the path its listing gives "
+        "(e.g. 'laws.md'). Omit to read the skill itself",
+    )
+    offset: int = Field(
+        default=0, ge=0, description="Where to start, in characters: 0, then the offset the last section gave"
+    )

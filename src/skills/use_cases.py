@@ -1,5 +1,6 @@
 import re
 from collections.abc import Sequence
+from dataclasses import dataclass, field
 from uuid import UUID
 
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
@@ -37,19 +38,81 @@ def validate_name(name: str) -> str:
     return cleaned
 
 
-async def save_skill(
+def _clean_triggers(triggers: Sequence[str]) -> list[str]:
+    cleaned: list[str] = []
+    for trigger in triggers:
+        text = " ".join(trigger.split())
+        if text and text.lower() not in {seen.lower() for seen in cleaned}:
+            cleaned.append(text)
+
+    if len(cleaned) > config.MAX_TRIGGERS:
+        raise ValidationError(
+            message=f"A skill can have at most {config.MAX_TRIGGERS} triggers",
+            code="skill_triggers_too_many",
+        )
+    if any(len(trigger) > config.MAX_TRIGGER_CHARS for trigger in cleaned):
+        raise ValidationError(
+            message=f"Each trigger must be at most {config.MAX_TRIGGER_CHARS} characters",
+            code="skill_trigger_too_long",
+        )
+    return cleaned
+
+
+def _validate_files(files: dict[str, str]) -> dict[str, str]:
+    if len(files) > config.MAX_FILES_PER_SKILL:
+        raise ValidationError(
+            message=f"A skill can carry at most {config.MAX_FILES_PER_SKILL} reference files",
+            code="skill_files_too_many",
+        )
+
+    for path, content in files.items():
+        parts = path.split("/")
+        if (
+            len(path) > config.MAX_FILE_PATH_CHARS
+            or not re.match(config.FILE_PATH_PATTERN, path)
+            or any(part in {".", ".."} for part in parts)
+        ):
+            raise ValidationError(
+                message=f"'{path}' is not a valid reference file path",
+                code="skill_file_path_invalid",
+            )
+        if path.lower() == "skill.md":
+            raise ValidationError(
+                message="SKILL.md is the skill itself, not a reference file",
+                code="skill_file_path_invalid",
+            )
+        if len(content) > config.MAX_FILE_CHARS:
+            raise ValidationError(
+                message=f"'{path}' is longer than the {config.MAX_FILE_CHARS} character limit",
+                code="skill_file_too_long",
+            )
+
+    if sum(len(content) for content in files.values()) > config.MAX_FILES_TOTAL_CHARS:
+        raise ValidationError(
+            message=(
+                "A skill's reference files can hold at most "
+                f"{config.MAX_FILES_TOTAL_CHARS} characters in all"
+            ),
+            code="skill_files_too_large",
+        )
+    return dict(files)
+
+
+def prepare_skill(
     organization_id: UUID,
     instructions: str,
-    created_by: UUID,
-    count_skills_fn: CountSkillsFn,
-    get_skill_fn: GetSkillFn,
-    upsert_skill_fn: UpsertSkillFn,
+    created_by: UUID | None,
     name: str | None = None,
     description: str | None = None,
-) -> Skill:
-    parsed_name, parsed_description, body = frontmatter.parse(instructions)
+    triggers: Sequence[str] | None = None,
+    files: dict[str, str] | None = None,
+) -> SkillCreate:
+    """Everything that makes a skill valid on its own, checked before anything is saved.
+    An explicit value beats the frontmatter's, for triggers as for the name."""
+    parsed = frontmatter.parse(instructions)
+    body = parsed.body
 
-    chosen_name = name or parsed_name
+    chosen_name = name or parsed.name
     if not chosen_name:
         raise ValidationError(
             message="A skill needs a name, either supplied or in the frontmatter",
@@ -57,7 +120,7 @@ async def save_skill(
         )
 
     chosen_name = validate_name(chosen_name)
-    chosen_description = (description or parsed_description or "").strip()
+    chosen_description = (description or parsed.description or "").strip()
 
     if len(chosen_description) > config.MAX_DESCRIPTION_CHARS:
         raise ValidationError(
@@ -83,27 +146,114 @@ async def save_skill(
             code="skill_instructions_too_long",
         )
 
-    existing = await get_skill_fn(chosen_name, organization_id)
+    return SkillCreate(
+        organization_id=organization_id,
+        name=chosen_name,
+        description=chosen_description,
+        instructions=body,
+        created_by=created_by,
+        triggers=_clean_triggers(parsed.triggers if triggers is None else triggers),
+        files=None if files is None else _validate_files(files),
+    )
+
+
+def _limit_reached() -> ConflictError:
+    return ConflictError(
+        message=(
+            "This organization already holds the maximum of "
+            f"{config.MAX_SKILLS_PER_ORGANIZATION} skills"
+        ),
+        code="skill_limit_reached",
+    )
+
+
+async def save_skill(
+    organization_id: UUID,
+    instructions: str,
+    created_by: UUID,
+    count_skills_fn: CountSkillsFn,
+    get_skill_fn: GetSkillFn,
+    upsert_skill_fn: UpsertSkillFn,
+    name: str | None = None,
+    description: str | None = None,
+    triggers: Sequence[str] | None = None,
+    files: dict[str, str] | None = None,
+) -> Skill:
+    skill = prepare_skill(
+        organization_id=organization_id,
+        instructions=instructions,
+        created_by=created_by,
+        name=name,
+        description=description,
+        triggers=triggers,
+        files=files,
+    )
+
+    existing = await get_skill_fn(skill.name, organization_id)
     if existing is None:
         held = await count_skills_fn(organization_id)
         if held >= config.MAX_SKILLS_PER_ORGANIZATION:
-            raise ConflictError(
-                message=(
-                    "This organization already holds the maximum of "
-                    f"{config.MAX_SKILLS_PER_ORGANIZATION} skills"
-                ),
-                code="skill_limit_reached",
-            )
+            raise _limit_reached()
 
-    return await upsert_skill_fn(
-        SkillCreate(
-            organization_id=organization_id,
-            name=chosen_name,
-            description=chosen_description,
-            instructions=body,
-            created_by=created_by,
+    return await upsert_skill_fn(skill)
+
+
+@dataclass
+class SkillImport:
+    instructions: str
+    files: dict[str, str] = field(default_factory=dict)
+
+
+async def import_skills(
+    organization_id: UUID,
+    skills: Sequence[SkillImport],
+    created_by: UUID,
+    count_skills_fn: CountSkillsFn,
+    get_skill_fn: GetSkillFn,
+    upsert_skill_fn: UpsertSkillFn,
+) -> list[Skill]:
+    """A whole kit in one pass. Every skill is checked before any is saved, so a bad file
+    leaves the organization as it was instead of half imported. A skill with the same name
+    is replaced, its reference files included."""
+    if not skills:
+        raise ValidationError(message="There are no skills to import", code="skill_import_empty")
+    if len(skills) > config.MAX_SKILLS_PER_IMPORT:
+        raise ValidationError(
+            message=f"One import can carry at most {config.MAX_SKILLS_PER_IMPORT} skills",
+            code="skill_import_too_large",
         )
-    )
+
+    prepared: list[SkillCreate] = []
+    for position, item in enumerate(skills, start=1):
+        try:
+            prepared.append(
+                prepare_skill(
+                    organization_id=organization_id,
+                    instructions=item.instructions,
+                    created_by=created_by,
+                    files=item.files,
+                )
+            )
+        except ValidationError as error:
+            label = frontmatter.parse(item.instructions).name or f"Skill {position}"
+            raise ValidationError(message=f"{label}: {error.message}", code=error.code) from error
+
+    names = [skill.name for skill in prepared]
+    repeated = sorted({name for name in names if names.count(name) > 1})
+    if repeated:
+        raise ValidationError(
+            message=f"The import names the same skill twice: {', '.join(repeated)}",
+            code="skill_import_duplicate",
+        )
+
+    new = 0
+    for skill in prepared:
+        if await get_skill_fn(skill.name, organization_id) is None:
+            new += 1
+    if new and await count_skills_fn(organization_id) + new > config.MAX_SKILLS_PER_ORGANIZATION:
+        raise _limit_reached()
+
+    return [await upsert_skill_fn(skill) for skill in prepared]
 
 
 async def list_skills(

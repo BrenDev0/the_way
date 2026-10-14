@@ -3,6 +3,7 @@ from uuid import UUID
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import defer
 
 from src.skills.domain import Skill, SkillCreate
 
@@ -25,6 +26,9 @@ async def upsert(session: AsyncSession, skill: SkillCreate) -> Skill:
     else:
         row.description = skill.description
         row.instructions = skill.instructions
+        row.triggers = list(skill.triggers)
+        if skill.files is not None:
+            row.files = dict(skill.files)
         row.created_by = skill.created_by
 
     await session.flush()
@@ -44,12 +48,14 @@ async def count_for_organization(session: AsyncSession, organization_id: UUID) -
 async def list_for_organization(
     session: AsyncSession, organization_id: UUID
 ) -> Sequence[Skill]:
+    # Listed on every turn for the agent's index; the reference files stay behind.
     result = await session.execute(
         select(SkillRow)
+        .options(defer(SkillRow.files))
         .where(SkillRow.organization_id == organization_id)
         .order_by(SkillRow.name)
     )
-    return [mapper.row_to_domain(row) for row in result.scalars().all()]
+    return [mapper.row_to_domain(row, with_files=False) for row in result.scalars().all()]
 
 
 async def get_for_organization(

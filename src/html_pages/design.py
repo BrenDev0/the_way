@@ -133,7 +133,18 @@ layouts from ones that drift.
 - More than one accent colour
 - Placeholder text left in the output ("Lorem ipsum", "Your text here")
 
---- 8. OUTPUT SHAPE ---
+--- 8. TRUTH (a false page with good design is worse than an ugly one) ---
+- Every figure on the page is attributed, or it is not published. A figure from a
+  recurring series (a yearly report, a quarterly index) carries its period: "2025, per X".
+- Never publish a price, rate or commercial term the caller did not give you as signed
+  off. Mark it [TK: price pending sign-off] instead.
+- A third party's name comes from their own material, never guessed from their domain.
+- A generated image never stands in for a real person or a real place, and carries no
+  alt text describing it as one.
+- No HTML comments that hold notes, questions or instructions -- they ship with the file.
+  Anything unresolved is a visible [TK: ...], never a hidden one.
+
+--- 9. OUTPUT SHAPE ---
 - ONE self-contained .html file unless the caller asked otherwise: <style> in <head>, no
   external CSS or JS files, no build step. It must open correctly from a double-click and
   survive being emailed.
@@ -148,6 +159,14 @@ layouts from ones that drift.
   Saving turns either form into a link that works wherever the page is opened, and PDF/PNG
   export puts the image inside the file. Never base64 an image yourself, and never point at
   an image on another site -- the export cannot load it.
+- Every <img> carries its real width and height attributes (with max-width: 100%;
+  height: auto in CSS), so the page does not jump while images load.
+- Form fields (input, select, textarea) are at least 16px, or phones zoom in on focus and
+  break the layout.
+- No loading="lazy" on an image that starts hidden (a closed tab, gallery or dialog): lazy
+  loading does not fire inside a hidden element, and the image stays empty when shown.
+- A modal or overlay is a direct child of <body>, never nested in a transformed or
+  overflow-clipped container -- a transformed ancestor stops position: fixed working.
 - Semantic HTML: <header> <main> <section> <article> <figure> <table>. Headings descend in
   order without skipping.
 - <meta name="viewport" content="width=device-width, initial-scale=1"> and a real mobile

@@ -141,6 +141,72 @@ async def test_a_skill_upsert_replaces_rather_than_duplicating(db_session, tenan
     assert held[0].instructions == "two"
 
 
+async def test_triggers_and_reference_files_round_trip(db_session, tenant):
+    organization, user = tenant
+
+    await skills_adapter.upsert(
+        db_session,
+        SkillCreate(
+            organization_id=organization.id,
+            name="landing-pages",
+            description="Pages",
+            instructions="Read laws.md.",
+            created_by=user.id,
+            triggers=["build a landing page"],
+            files={"laws.md": "# Laws", "brief.md": "# Brief"},
+        ),
+    )
+    await db_session.commit()
+
+    skill = await skills_adapter.get_for_organization(db_session, "landing-pages", organization.id)
+
+    assert skill is not None
+    assert skill.triggers == ["build a landing page"]
+    assert skill.files == {"laws.md": "# Laws", "brief.md": "# Brief"}
+
+
+async def test_the_listing_leaves_the_reference_files_behind(db_session, tenant):
+    organization, user = tenant
+    await skills_adapter.upsert(
+        db_session,
+        SkillCreate(
+            organization_id=organization.id,
+            name="landing-pages",
+            description="Pages",
+            instructions="Read laws.md.",
+            created_by=user.id,
+            triggers=["build a landing page"],
+            files={"laws.md": "# Laws"},
+        ),
+    )
+    await db_session.commit()
+
+    [listed] = await skills_adapter.list_for_organization(db_session, organization.id)
+
+    assert listed.files is None
+    assert listed.triggers == ["build a landing page"]
+
+
+async def test_saving_without_files_keeps_the_ones_imported(db_session, tenant):
+    organization, user = tenant
+
+    def skill(files):
+        return SkillCreate(
+            organization_id=organization.id,
+            name="landing-pages",
+            description="Pages",
+            instructions="Read laws.md.",
+            created_by=user.id,
+            files=files,
+        )
+
+    await skills_adapter.upsert(db_session, skill({"laws.md": "# Laws"}))
+    edited = await skills_adapter.upsert(db_session, skill(None))
+    await db_session.commit()
+
+    assert edited.files == {"laws.md": "# Laws"}
+
+
 async def test_two_organizations_may_share_a_skill_name(db_session, tenant):
     organization, user = tenant
     other, other_user = await make_org(db_session, name="Rival Ltd")

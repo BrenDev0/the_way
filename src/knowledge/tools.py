@@ -2,7 +2,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.core.tools.domain import Tool, truncate
+from src.core.tools.domain import Tool
 from src.documents.sqlalchemy import adapter as documents_adapter
 from src.projects.sqlalchemy import adapter as projects_adapter
 from src.skills.sqlalchemy import adapter as skills_adapter
@@ -23,6 +23,15 @@ EMPTY_DOCUMENT = (
 UNKNOWN_SKILL = (
     "No skill named '{name}' is available to this organization. "
     "Use only the names listed in your context."
+)
+
+UNKNOWN_SKILL_FILE = (
+    "The skill '{name}' has no reference file '{file}'. Its files: {files}."
+)
+
+SKILL_FILES = (
+    "\n\n---\nReference files of this skill. Read one with ReadSkill name='{name}' "
+    "file='<path>' when the instructions send you to it:\n{files}"
 )
 
 
@@ -65,12 +74,25 @@ def build(session: AsyncSession, organization_id: UUID) -> dict[str, Tool]:
 
         return section(text, offset)
 
-    async def read_skill(name: str) -> str:
+    async def read_skill(name: str, file: str | None = None, offset: int = 0) -> str:
         skill = await skills_adapter.get_for_organization(session, name, organization_id)
         if skill is None:
             return UNKNOWN_SKILL.format(name=name)
 
-        return truncate(skill.instructions, config.MAX_TOOL_READ_CHARS)
+        files = skill.files or {}
+        if file is not None:
+            if file not in files:
+                return UNKNOWN_SKILL_FILE.format(
+                    name=name, file=file, files=", ".join(sorted(files)) or "none"
+                )
+            return section(files[file], offset)
+
+        # A skill is a method to follow, so it is paged like a document rather than cut:
+        # whatever lay past a cut was an instruction the agent never saw.
+        text = skill.instructions
+        if files:
+            text += SKILL_FILES.format(name=name, files="\n".join(f"- {path}" for path in sorted(files)))
+        return section(text, offset)
 
     return {
         ReadKnowledgeDocument.__name__: Tool(

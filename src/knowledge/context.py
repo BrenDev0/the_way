@@ -9,7 +9,8 @@ from . import config
 HEADER = "Organization knowledge available to you."
 
 SKILLS_HEADER = (
-    "Skills. Read the full instructions with ReadSkill before acting on one:"
+    "Skills. Read the full instructions with ReadSkill before acting on one. \"Asked as\" "
+    "gives requests a skill serves -- examples of meaning, not exact words to match:"
 )
 
 DOCUMENTS_HEADER = (
@@ -39,6 +40,20 @@ def _clip(text: str, limit: int) -> str:
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 1].rstrip() + "…"
+
+
+def _skill_line(skill: Skill) -> str:
+    line = (
+        f"- {skill.name}: "
+        f"{_clip(skill.description, config.MAX_DESCRIPTION_CHARS) or MISSING_DESCRIPTION}"
+    )
+    triggers = [
+        f'"{_clip(trigger, config.MAX_TRIGGER_CHARS)}"'
+        for trigger in skill.triggers[: config.MAX_INDEX_TRIGGERS]
+    ]
+    if triggers:
+        line += f" Asked as: {' · '.join(triggers)}"
+    return line
 
 
 def _overflow(total: int, shown: int, noun: str) -> list[str]:
@@ -102,11 +117,7 @@ def render(
     if skills:
         shown = list(skills)[: config.MAX_INDEX_ENTRIES]
         lines += ["", SKILLS_HEADER]
-        lines += [
-            f"- {skill.name}: "
-            f"{_clip(skill.description, config.MAX_DESCRIPTION_CHARS) or MISSING_DESCRIPTION}"
-            for skill in shown
-        ]
+        lines += [_skill_line(skill) for skill in shown]
         lines += _overflow(len(skills), len(shown), "skills")
 
     if readable:

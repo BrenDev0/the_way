@@ -23,6 +23,11 @@ FIRST, ALWAYS: call ReadProjectFile with project '{BRAND_OVERRIDE_PROJECT}' and 
 voice override the house defaults above on every point it covers. If reading it errors,
 the file simply doesn't exist; carry on with the house system and do not mention it.
 
+If the request carries a BRAND PACK section, the page is for that brand and the pack
+outranks both the house defaults and design/brand.md: its tokens, typefaces and logos are
+used exactly as given. Where the pack lacks a value, the house default stands -- say so in
+the brief rather than inventing a brand value.
+
 Then output the design brief. No other tool calls. The brief is plain text, under 400
 words, and MUST commit to concrete values -- never "a modern sans-serif" or "a professional
 colour scheme". Cover exactly this:
@@ -63,7 +68,8 @@ WORKFLOW:
 2. Then make one genuine revision pass with EditProjectFile. Look specifically for: any raw
    hex or px value that should have been a token, any paragraph without a max-width,
    spacing that isn't on the scale, a heading without its eyebrow, a table that grew
-   vertical rules, missing hover/focus states, numbers without tabular-nums. Name each fix
+   vertical rules, missing hover/focus states, numbers without tabular-nums, an <img>
+   without width and height, a figure without its source, an HTML comment. Name each fix
    in your final report -- never claim a pass you did not make.
 
    REVISE WITH TARGETED EDITS. Each EditProjectFile call replaces the smallest unique

@@ -248,6 +248,8 @@ def make_skill(
     description: str = "How to write in the company voice.",
     instructions: str = "1. Be warm.\n2. Be plain.",
     created_by: UUID | None = None,
+    triggers: list[str] | None = None,
+    files: dict[str, str] | None = None,
 ) -> Skill:
     now = datetime.now(UTC)
     return Skill(
@@ -259,6 +261,8 @@ def make_skill(
         created_by=created_by,
         created_at=now,
         updated_at=now,
+        triggers=triggers or [],
+        files=files,
     )
 
 

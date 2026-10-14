@@ -30,3 +30,6 @@ BUILDER_TOOLS = frozenset(
         "MapWebPages",
     }
 )
+
+# A brand pack's identity.md and voice.md go to both passes whole; past this they are cut.
+MAX_BRAND_FILE_CHARS = 8_000

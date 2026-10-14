@@ -34,13 +34,27 @@ def build(context: ToolContext) -> dict[str, Tool]:
     async def upsert_skill_fn(skill):
         return await adapter.upsert(context.session, skill)
 
-    async def read_skill(name: str) -> str:
+    async def read_skill(name: str, file: str | None = None, offset: int = 0) -> str:
         skill = await get_skill_fn(name, context.organization_id)
         if skill is None:
             return f"No skill named '{name}' exists yet."
-        return f"description: {skill.description}\n\n{skill.instructions}"
+        if file is not None:
+            # The builder rewrites the skill file only; its reference files are kept.
+            return f"Reference files are kept as they are when you save; '{file}' is not shown."
+        triggers = "\n".join(f"- {trigger}" for trigger in skill.triggers) or "(none)"
+        files = ", ".join(sorted(skill.files or {})) or "(none)"
+        return (
+            f"description: {skill.description}\n\ntriggers:\n{triggers}\n\n"
+            f"reference files (kept on save): {files}\n\n{skill.instructions}"
+        )
 
-    async def save_skill(name: str, description: str, instructions: str) -> str:
+    async def save_skill(
+        name: str, description: str, instructions: str, triggers: list[str] | None = None
+    ) -> str:
+        if not triggers:
+            # A builder that leaves them out has not decided to drop them.
+            existing = await get_skill_fn(name, context.organization_id)
+            triggers = existing.triggers if existing else []
         skill = await skills_use_cases.save_skill(
             organization_id=context.organization_id,
             instructions=instructions,
@@ -50,6 +64,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
             upsert_skill_fn=upsert_skill_fn,
             name=name,
             description=description,
+            triggers=triggers,
         )
         return f"Saved skill '{skill.name}'."
 

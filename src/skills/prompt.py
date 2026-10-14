@@ -9,6 +9,9 @@ A SKILL IS:
 - name: the kebab-case name you were given, used verbatim
 - description: 1-2 sentences on what it does and WHEN to use it -- this line is all the
   other assistant sees when deciding whether the skill applies, so make it specific
+- triggers: 2-5 requests phrased the way a person would actually say them when they need
+  this skill ("draft the recap for the client"), not keywords. They are listed beside the
+  description and route requests to the skill
 - instructions: numbered or bulleted step-by-step instructions, written for an AI
   assistant audience. Concrete steps, the conventions to follow, the checks to make, and
   what the finished result looks like. Templates or snippets go inline, in fenced blocks.
