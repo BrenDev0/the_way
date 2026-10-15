@@ -377,3 +377,28 @@ async def test_an_empty_registry_binds_nothing():
     await advance(LoopState(messages=[llm_domain.user("hi")]), llm, Executor({}, DenyGate()))
 
     assert llm.tools_received[0] == ()
+
+
+async def test_a_picture_is_counted_at_its_token_weight_not_its_base64():
+    from src.core.agents.loop import IMAGE_CHARS
+
+    result = llm_domain.tool_result("c1", "abc", [("A" * 500_000, "image/png")])
+
+    assert conversation_size(LoopState(messages=[result])) == 3 + IMAGE_CHARS
+
+
+async def test_a_tool_that_returns_pictures_hands_them_to_the_model():
+    from src.core.tools.domain import ToolImage, ToolOutput
+
+    async def look(path: str) -> ToolOutput:
+        return ToolOutput(text=f"screenshot of {path}", images=(ToolImage(base64="QUJD", mime_type="image/png"),))
+
+    tools = {"ReadFile": Tool(schema=ReadFile, handler=look)}
+    llm = FakeLLM(make_completion("", (call("ReadFile", path="a.html"),)), "looks fine")
+
+    await advance(LoopState(messages=[llm_domain.user("check it")]), llm, Executor(tools, DenyGate()))
+
+    result = llm.received[1][-1]
+    assert result["role"] == "tool"
+    assert result["content"][0] == {"type": "text", "text": "screenshot of a.html"}
+    assert result["content"][1] == {"type": "image", "base64": "QUJD", "mime_type": "image/png"}

@@ -24,6 +24,17 @@ class StartBackgroundTask(BaseModel):
             "other than English, state that language explicitly."
         )
     )
+    skills: list[str] | None = Field(
+        default=None,
+        description=(
+            "The organization skills this work falls under, by name exactly as your skill "
+            "listing gives them. The worker is told to read each one in full and follow it "
+            "before it starts. Pass every skill that matches the request; leave it out only "
+            "when none does. Anything a skill needs the user to decide (a brief, an approval) "
+            "must be settled with them first and written into the instructions -- the worker "
+            "cannot ask."
+        ),
+    )
     deliver_to_project: str | None = Field(
         default=None,
         description=(

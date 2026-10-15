@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # must stay under Postgres's max_connections (100 by default).
     DATABASE_POOL_SIZE: int = 10
     DATABASE_MAX_OVERFLOW: int = 20
+    # Each process brings the database to the code's schema as it starts (one at a time,
+    # under a lock). Off where the schema is built some other way -- the test suites.
+    DATABASE_MIGRATE_ON_STARTUP: bool = True
     CRYPTOGRAPHY_FERNET_KEY: str
     SESSION_COOKIE_NAME: str = "session"
     SESSION_COOKIE_SECURE: bool = True

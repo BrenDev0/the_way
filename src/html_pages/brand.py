@@ -1,7 +1,7 @@
 """A brand pack, put into the house's own terms.
 
 A pack (one folder per brand in the organization's library: tokens.css, identity.md,
-voice.md, logo/) names its tokens its own way, and one of those names collides with ours:
+voice.md, and its logos -- in logo/, or named *logo* at the top of the folder) names its tokens its own way, and one of those names collides with ours:
 a pack's --ink is the dark ground of an inverted band, the house's --ink is body text.
 Left to the model, that mapping is a guess made again on every page. Here it is made once,
 from the names every pack shares, and a role the pack does not fill is said to be missing
@@ -9,8 +9,12 @@ rather than invented.
 """
 
 import re
+from collections.abc import Iterable
 
 from . import config
+
+LOGO_FOLDERS = frozenset({"logo", "logos"})
+LOGO_SUFFIXES = (".svg", ".png", ".webp", ".jpg", ".jpeg")
 
 _COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
 _DECLARATION = re.compile(r"(--[\w-]+)\s*:\s*([^;{}]+);")
@@ -84,6 +88,24 @@ def _clip(text: str) -> str:
     if len(text) <= config.MAX_BRAND_FILE_CHARS:
         return text
     return text[: config.MAX_BRAND_FILE_CHARS].rstrip() + "\n[... cut here; the rest is in the pack]"
+
+
+def logo_paths(folder: str, paths: Iterable[str]) -> list[str]:
+    """A brand's logo files, by library path. A pack loaded from the kit keeps them in
+    logo/; a brand set up in the panel has them beside everything else at the top of its
+    folder, since the panel uploads into the brand folder itself. There, a logo is told
+    apart from the other images by its name."""
+    prefix = f"{folder.lower()}/"
+    found = []
+    for path in paths:
+        lowered = path.lower()
+        if not lowered.startswith(prefix) or not lowered.endswith(LOGO_SUFFIXES):
+            continue
+        inside = lowered[len(prefix) :]
+        subfolder, _, name = inside.rpartition("/")
+        if subfolder.split("/", 1)[0] in LOGO_FOLDERS or (not subfolder and "logo" in name):
+            found.append(path)
+    return sorted(found, key=str.lower)
 
 
 def render(

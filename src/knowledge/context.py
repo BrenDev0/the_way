@@ -9,8 +9,9 @@ from . import config
 HEADER = "Organization knowledge available to you."
 
 SKILLS_HEADER = (
-    "Skills. Read the full instructions with ReadSkill before acting on one. \"Asked as\" "
-    "gives requests a skill serves -- examples of meaning, not exact words to match:"
+    "Skills -- check these before choosing a tool; when one covers the request, read it in "
+    "full with ReadSkill and follow it. \"Asked as\" gives example requests (meaning, not "
+    "exact words; <client>, <brand>... stand for any name):"
 )
 
 DOCUMENTS_HEADER = (

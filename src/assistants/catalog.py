@@ -14,6 +14,7 @@ from src.images import tools as image_tools
 from src.knowledge import tools as knowledge_tools
 from src.media import tools as media_tools
 from src.projects import tools as project_tools
+from src.transcripts import tools as transcript_tools
 from src.web import tools as web_tools
 
 
@@ -26,6 +27,7 @@ def server_tools(context: ToolContext) -> dict[str, Tool]:
         **html_tools.build(context),
         **export_tools.build(context),
         **media_tools.build(context),
+        **transcript_tools.build(context),
         **(image_tools.build(context) if image_tools.available(context) else {}),
     }
 

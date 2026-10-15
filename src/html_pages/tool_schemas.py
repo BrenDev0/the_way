@@ -44,6 +44,13 @@ class BuildHtmlPage(BaseModel):
         "identity and voice -- then binds the page. Pass it whenever the page is for one "
         "of the brands in the library.",
     )
+    skill: str | None = Field(
+        default=None,
+        description="Optional. The organization skill this page is made under, by name "
+        "exactly as your skill listing gives it (e.g. 'landing-pages', 'output-documents'). "
+        "The page builder then follows that skill's method, rules and templates too -- "
+        "without it, it never sees them. Pass it whenever you read a skill for this work.",
+    )
 
 
 class CheckPage(BaseModel):

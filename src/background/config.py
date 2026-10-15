@@ -47,6 +47,7 @@ TOOLS = frozenset(
         "ExtractWebPages",
         "CrawlWebPages",
         "WebResearch",
+        "TranscribeMedia",
         "SearchCXOperations",
         "DescribeCXOperation",
         "ExecuteCXOperation",

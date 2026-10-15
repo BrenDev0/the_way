@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from src.core.exceptions import InternalServerError
 
-from ..domain import Completion, Message, TokenUsage, ToolCall, assistant
+from ..domain import Completion, Message, TokenUsage, ToolCall, assistant, text_of
 from ..ports import TextListener
 from .errors import unavailable
 
@@ -45,7 +45,7 @@ class LangchainLLM:
         tools: Sequence[type[BaseModel]],
         on_text: TextListener | None = None,
     ) -> AIMessage:
-        converted = convert_to_messages(_canonical(messages))
+        converted = convert_to_messages(_canonical(_pictures_after_tools(messages)))
         model: Runnable = self._model.bind_tools(list(tools)) if tools else self._model
 
         # Streamed whenever someone is listening, so the reply appears as it is written.
@@ -66,6 +66,40 @@ class LangchainLLM:
                 code="llm_empty_response",
             )
         return cast("AIMessage", result)
+
+
+PICTURES = "[The pictures returned by the tool calls above, in order.]"
+PICTURES_BELOW = "\n[{count} picture(s) attached in the next message.]"
+
+
+def _pictures_after_tools(messages: list[Message]) -> list[Message]:
+    """A tool's pictures, moved out of its result into a user message straight after the
+    run of results. OpenAI takes text only in a tool result; Claude takes pictures there
+    too, but this form is one both read, so a tool returns pictures the same way whichever
+    model is behind it."""
+    out: list[Message] = []
+    pictures: list[dict[str, Any]] = []
+
+    def flush() -> None:
+        if pictures:
+            out.append({"role": "user", "content": [{"type": "text", "text": PICTURES}, *pictures]})
+            pictures.clear()
+
+    for message in messages:
+        content = message.get("content")
+        if message.get("role") != "tool":
+            flush()
+            out.append(message)
+            continue
+        if not isinstance(content, list):
+            out.append(message)
+            continue
+        images = [block for block in content if isinstance(block, dict) and block.get("type") == "image"]
+        text = text_of(content) + (PICTURES_BELOW.format(count=len(images)) if images else "")
+        out.append({**message, "content": text})
+        pictures += images
+    flush()
+    return out
 
 
 def _canonical(value: Any) -> Any:

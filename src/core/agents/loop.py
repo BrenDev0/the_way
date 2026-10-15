@@ -20,6 +20,10 @@ from .domain import (
     LoopStatus,
 )
 
+# What one picture weighs against the conversation budget: a model reads an image of the
+# largest size we send as roughly 1 600 tokens, about the length of this much text.
+IMAGE_CHARS = 6_400
+
 
 class LoopObserver(Protocol):
     """Watches a turn as it happens: reply text as the model writes it, and every message
@@ -38,7 +42,17 @@ Checkpoint = Callable[[LoopState], Awaitable[None]]
 
 
 def conversation_size(state: LoopState) -> int:
-    return sum(len(str(message.get("content", ""))) for message in state.messages)
+    # A picture's base64 is not text the model reads: counted as text, one screenshot would
+    # look like most of the budget. It is counted at about what it costs in tokens instead.
+    total = 0
+    for message in state.messages:
+        content = message.get("content", "")
+        total += len(llm_domain.text_of(content))
+        if isinstance(content, list):
+            total += IMAGE_CHARS * sum(
+                1 for block in content if isinstance(block, dict) and block.get("type") == "image"
+            )
+    return total
 
 
 async def advance(
@@ -140,4 +154,9 @@ async def advance(
 
 
 def _result_messages(results: tuple[ToolResult, ...]) -> list[Message]:
-    return [llm_domain.tool_result(result.tool_call_id, result.content) for result in results]
+    return [
+        llm_domain.tool_result(
+            result.tool_call_id, result.content, [(image.base64, image.mime_type) for image in result.images]
+        )
+        for result in results
+    ]

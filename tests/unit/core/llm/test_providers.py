@@ -202,3 +202,42 @@ def test_temperature_is_omitted_when_the_model_rejects_it():
     model = providers.build_model("gpt-5.4", temperature=0.9, api_key=OPENAI_KEY)
 
     assert model.temperature != 0.9
+
+
+def _with_pictures():
+    return [
+        domain.system("prompt"),
+        domain.user("build the page"),
+        domain.assistant("", (ToolCall(id="toolu_1", name="CheckPage", args={"path": "a.html"}),)),
+        domain.tool_result("toolu_1", "2 findings", [("QUFB", "image/jpeg"), ("QkJC", "image/jpeg")]),
+    ]
+
+
+def test_claude_gets_a_tools_pictures_in_the_same_turn_as_its_result():
+    from src.core.llm.langchain.adapter import _pictures_after_tools
+
+    model = providers.build_model("claude-sonnet-5", api_key=ANTHROPIC_KEY)
+    payload = model._get_request_payload(convert_to_messages(_canonical(_pictures_after_tools(_with_pictures()))))
+
+    turn = payload["messages"][-1]
+    assert turn["role"] == "user"
+    assert turn["content"][0]["type"] == "tool_result"
+    assert "2 picture(s) attached" in str(turn["content"][0]["content"])
+    images = [block for block in turn["content"] if block.get("type") == "image"]
+    assert [image["source"]["data"] for image in images] == ["QUFB", "QkJC"]
+
+
+def test_openai_gets_a_tools_pictures_in_a_message_after_its_result():
+    from src.core.llm.langchain.adapter import _pictures_after_tools
+
+    model = providers.build_model("gpt-5.4", api_key=OPENAI_KEY)
+    payload = model._get_request_payload(convert_to_messages(_canonical(_pictures_after_tools(_with_pictures()))))
+
+    tool, pictures = payload["messages"][-2:]
+    # a tool result takes text only on OpenAI
+    assert tool["role"] == "tool" and isinstance(tool["content"], str)
+    assert pictures["role"] == "user"
+    assert [part["image_url"]["url"] for part in pictures["content"] if part["type"] == "image_url"] == [
+        "data:image/jpeg;base64,QUFB",
+        "data:image/jpeg;base64,QkJC",
+    ]

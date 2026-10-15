@@ -68,3 +68,31 @@ async def test_an_unknown_reference_file_names_the_ones_that_exist(read_skill):
 
 async def test_an_unknown_skill_is_reported(read_skill):
     assert "No skill named 'nope'" in await read_skill(name="nope")
+
+
+async def test_a_skill_written_for_a_shell_says_first_how_it_runs_here(read_skill):
+    read_skill.stored["output-documents"] = make_skill(
+        name="output-documents", instructions="Run `node engine/render.js <file>.html`."
+    )
+
+    text = await read_skill(name="output-documents")
+
+    # the note comes ahead of the skill, so it is on the first page of a long one
+    assert text.index("RUNNING THIS SKILL HERE") < text.index("node engine/render.js")
+    assert "HtmlToPdf" in text
+
+
+async def test_a_skill_that_runs_as_written_gets_no_note(read_skill):
+    read_skill.stored["brand-voice"] = make_skill()
+
+    assert "RUNNING THIS SKILL HERE" not in await read_skill(name="brand-voice")
+
+
+async def test_a_brand_landing_page_reads_the_pack_before_asking_and_flags_the_request(read_skill):
+    read_skill.stored["landing-pages"] = make_skill(name="landing-pages", instructions="0 Brief.")
+
+    text = await read_skill(name="landing-pages")
+    note = text.split("=== THE SKILL")[0]
+
+    assert "<brand>/voice.md" in note and "BEFORE asking" in note
+    assert "forbids" in note and "another library brand's name" in note

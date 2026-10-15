@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import select, update
@@ -42,6 +43,17 @@ async def list_for_user(session: AsyncSession, user_id: UUID) -> Sequence[Backgr
         .order_by(BackgroundTaskRow.created_at.desc())
     )
     return [mapper.row_to_domain(row) for row in result.scalars().all()]
+
+
+async def record_calls(session: AsyncSession, task_id: UUID, calls: list[dict[str, Any]]) -> None:
+    """Adds the worker's calls to those already kept -- a run resumed after an approval
+    records the calls it made since."""
+    if not calls:
+        return
+    row = await session.get(BackgroundTaskRow, task_id)
+    if row is not None:
+        row.tool_calls = [*(row.tool_calls or []), *calls]
+        await session.flush()
 
 
 async def finish(

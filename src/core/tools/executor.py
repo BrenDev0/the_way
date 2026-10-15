@@ -15,6 +15,7 @@ from .domain import (
     Decision,
     Tool,
     ToolLocation,
+    ToolOutput,
     ToolResult,
     chosen_args,
     truncate,
@@ -163,6 +164,12 @@ class Executor:
                 failed=True,
             )
 
+        if isinstance(output, ToolOutput):
+            return ToolResult(
+                tool_call_id=call.id,
+                content=truncate(output.text, self._max_output_chars),
+                images=output.images,
+            )
         return ToolResult(
             tool_call_id=call.id, content=truncate(str(output), self._max_output_chars)
         )

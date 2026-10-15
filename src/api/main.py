@@ -10,6 +10,7 @@ from src.core.cache.redis import adapter as redis_adapter
 from src.core.communications.smtp import adapter as smtp_adapter
 from src.core.cryptography.bcrypt import adapter as bcrypt_adapter
 from src.core.cryptography.fernet import adapter as fernet_adapter
+from src.core.database import migrations
 from src.core.events.redis import adapter as events_adapter
 from src.core.exception_handlers import register_exception_handlers
 from src.core.sessions.config import SessionCookieConfig
@@ -24,6 +25,10 @@ from .v1.routes import router as v1_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # First, before anything can touch the database: new code must not run on an old schema.
+    if settings.DATABASE_MIGRATE_ON_STARTUP:
+        await migrations.upgrade_to_head(settings.DATABASE_URL)
+
     app.state.encryption_service = fernet_adapter.FernetEncryptionService(
         settings.CRYPTOGRAPHY_FERNET_KEY
     )

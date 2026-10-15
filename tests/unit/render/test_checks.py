@@ -20,7 +20,7 @@ async def browser():
     await browser.stop()
 
 
-CLEAN = """<!doctype html><html><head><style>
+CLEAN = """<!doctype html><html lang="es"><head><style>
 :root { --ink: #1a1a1a; --ground: #ffffff; --accent: #0052fe; --space-1: 8px; --space-2: 16px; --space-3: 24px; }
 body { margin: 0; color: var(--ink); background: var(--ground); font-family: sans-serif; font-size: 16px; }
 main { padding: var(--space-3) var(--space-2); max-width: 100%; }
@@ -31,7 +31,7 @@ input { font-size: 16px; padding: var(--space-1); color: var(--ink); background:
 </style></head><body><main>
 <h1>Informe</h1><p>Texto claro. <a href="#x">Enlace</a></p>
 <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="1" height="1" alt="">
-<input type="text" value="Nombre">
+<input type="text" value="Nombre" aria-label="Nombre">
 </main></body></html>"""
 
 
@@ -127,3 +127,37 @@ async def test_a_token_at_partial_opacity_is_still_the_token(browser):
     html = page(".veil { background: color-mix(in srgb, var(--accent) 10%, transparent); }", '<div class="veil">x</div>')
 
     assert of(await checks.run(browser, html), "tokens") == []
+
+
+async def test_controls_without_names_and_a_page_without_lang_are_caught(browser):
+    html = page(
+        "",
+        '<img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" width="1" height="1">'
+        '<input type="email"><button></button><h4>Salto</h4>',
+    ).replace('<html lang="es">', "<html>")
+
+    result = await checks.run(browser, html)
+    messages = " ".join(f["message"] for f in of(result, "names"))
+
+    assert "no lang" in messages
+    assert "without alt" in messages
+    assert "form fields with no label" in messages
+    assert "buttons and links with no name" in messages
+    assert "heading levels skipped" in messages
+    assert of(result, "accessibility")[0]["message"].startswith("FAILS the accessibility pass mark")
+
+
+async def test_a_control_whose_focus_cannot_be_seen_is_caught_by_the_keyboard(browser):
+    html = page("a:focus, a:focus-visible { outline: none; }", "")
+
+    result = await checks.run(browser, html)
+
+    assert any("no visible change when reached by Tab" in f["message"] for f in of(result, "keyboard"))
+    assert any('a ("Enlace")' in example for f in of(result, "keyboard") for example in f["examples"])
+
+
+async def test_a_clean_page_passes_the_accessibility_mark(browser):
+    result = await checks.run(browser, CLEAN)
+
+    assert of(result, "keyboard") == []
+    assert of(result, "accessibility") == []

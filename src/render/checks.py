@@ -289,6 +289,55 @@ _JS = r"""
     return out;
   };
 
+  checks.names = () => {
+    // what a screen reader announces: nothing, for each of these
+    const out = [];
+    const labelled = (el) => {
+      if ((el.getAttribute('aria-label') || '').trim()) return true;
+      const by = el.getAttribute('aria-labelledby');
+      if (by && by.split(/\s+/).some(id => (document.getElementById(id)?.textContent || '').trim())) return true;
+      if ((el.getAttribute('title') || '').trim()) return true;
+      return false;
+    };
+    if (!(document.documentElement.getAttribute('lang') || '').trim()) out.push({
+      message: '<html> has no lang: a screen reader cannot tell which language to read the page in',
+      examples: [],
+    });
+    const noAlt = [...document.images].filter(img => !img.hasAttribute('alt') && !labelled(img));
+    if (noAlt.length) out.push({
+      message: '<img> without alt: give it one that says what it shows, or alt="" when it is decoration',
+      examples: noAlt.slice(0, MAX).map(img => describe(img) + ' ' + (img.getAttribute('src') || '').slice(0, 50)),
+    });
+    const fields = all.filter(el => ['INPUT','SELECT','TEXTAREA'].includes(el.tagName) && visible(el)
+      && !['hidden','submit','button','reset','image'].includes(el.type));
+    const unlabelled = fields.filter(el => !labelled(el) && !el.closest('label')
+      && !(el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`)));
+    if (unlabelled.length) out.push({
+      message: 'form fields with no label (a <label>, or aria-label): a placeholder is not one',
+      examples: unlabelled.slice(0, MAX).map(describe),
+    });
+    const controls = all.filter(el => visible(el) && (el.tagName === 'BUTTON' || (el.tagName === 'A' && el.hasAttribute('href'))
+      || el.getAttribute('role') === 'button'));
+    const nameless = controls.filter(el => !labelled(el) && !(el.textContent || '').trim()
+      && ![...el.querySelectorAll('img[alt], svg title')].some(n => (n.getAttribute('alt') || n.textContent || '').trim()));
+    if (nameless.length) out.push({
+      message: 'buttons and links with no name: announced as just "button" or "link"',
+      examples: nameless.slice(0, MAX).map(el => describe(el) + (el.getAttribute('href') ? ' ' + el.getAttribute('href').slice(0, 50) : '')),
+    });
+    const levels = [...document.querySelectorAll('h1,h2,h3,h4,h5,h6')].filter(visible).map(h => [h, +h.tagName[1]]);
+    const skips = [];
+    for (let i = 1; i < levels.length; i++) {
+      if (levels[i][1] > levels[i - 1][1] + 1) skips.push(`${describe(levels[i][0])} follows an h${levels[i - 1][1]}`);
+    }
+    if (skips.length) out.push({ message: 'heading levels skipped: the outline a screen reader navigates by has holes', examples: skips.slice(0, MAX) });
+    const positive = all.filter(el => parseInt(el.getAttribute('tabindex') || '0') > 0);
+    if (positive.length) out.push({
+      message: 'tabindex above 0: it takes those elements out of reading order for keyboard users',
+      examples: positive.slice(0, MAX).map(describe),
+    });
+    return out;
+  };
+
   const wanted = __CHECKS__;
   const result = {};
   for (const name of wanted) {
@@ -302,7 +351,97 @@ _JS = r"""
 
 # Width-dependent checks run on the phone; the rest once, on the desktop layout.
 MOBILE_CHECKS = ("overflow", "small_text")
-DESKTOP_CHECKS = ("css", "tokens", "images", "contrast", "fonts")
+DESKTOP_CHECKS = ("css", "tokens", "images", "contrast", "fonts", "names")
+
+
+# The keyboard test, by real Tab presses -- a focus style written in the CSS proves nothing
+# until something is focused the way a keyboard user focuses it (:focus-visible).
+_KEYBOARD_MARK = r"""
+() => {
+  const visible = (el) => {
+    const s = getComputedStyle(el);
+    if (s.display === 'none' || s.visibility === 'hidden') return false;
+    const r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  };
+  const focusable = [...document.querySelectorAll(
+    'a[href], button, input, select, textarea, summary, [tabindex], [contenteditable="true"]'
+  )].filter(el => !el.disabled && el.type !== 'hidden' && el.getAttribute('tabindex') !== '-1' && visible(el));
+  focusable.forEach((el, i) => el.setAttribute('data-kb', String(i)));
+  return focusable.length;
+}
+"""
+
+# How an element looks, in the properties a focus indicator changes.
+_KEYBOARD_LOOK = r"""
+(el) => {
+  if (!el) return null;
+  const s = getComputedStyle(el);
+  return [s.outlineStyle, s.outlineWidth, s.outlineColor, s.boxShadow, s.borderTopColor,
+          s.borderBottomColor, s.backgroundColor, s.color, s.textDecorationLine].join('|');
+}
+"""
+
+_KEYBOARD_ACTIVE = r"""
+() => {
+  const el = document.activeElement;
+  if (!el || el === document.body || !el.hasAttribute('data-kb')) return null;
+  let out = el.tagName.toLowerCase();
+  const text = (el.textContent || el.getAttribute('aria-label') || el.getAttribute('value') || '').trim().replace(/\s+/g, ' ').slice(0, 40);
+  if (text) out += ` ("${text}")`;
+  const s = getComputedStyle(el);
+  const r = el.getBoundingClientRect();
+  return { index: el.getAttribute('data-kb'), name: out, hidden: parseFloat(s.opacity) === 0 || r.width === 0 || r.height === 0 };
+}
+"""
+
+# a page with more stops than this is checked up to here
+MAX_TAB_STOPS = 80
+
+
+async def _keyboard(page: Any) -> list[dict[str, Any]]:
+    count = await page.evaluate(_KEYBOARD_MARK)
+    if not count:
+        return []
+    resting = {
+        str(i): await page.evaluate(_KEYBOARD_LOOK, await page.query_selector(f'[data-kb="{i}"]'))
+        for i in range(min(count, MAX_TAB_STOPS))
+    }
+    reached: dict[str, str] = {}
+    no_focus, hidden = [], []
+    for _ in range(min(count, MAX_TAB_STOPS) + 2):
+        await page.keyboard.press("Tab")
+        active = await page.evaluate(_KEYBOARD_ACTIVE)
+        if active is None:
+            if reached:
+                break  # past the last stop
+            continue
+        if active["index"] in reached:
+            break  # round again: every stop seen
+        reached[active["index"]] = active["name"]
+        focused = await page.evaluate(_KEYBOARD_LOOK, await page.query_selector(":focus"))
+        if focused == resting.get(active["index"]):
+            no_focus.append(active["name"])
+        if active["hidden"]:
+            hidden.append(active["name"])
+
+    out = []
+    if no_focus:
+        out.append({
+            "message": f"{len(no_focus)} control(s) show no visible change when reached by Tab: a keyboard user cannot see where they are",
+            "examples": no_focus[:MAX_EXAMPLES],
+        })
+    if hidden:
+        out.append({"message": "Tab lands on something invisible", "examples": hidden[:MAX_EXAMPLES]})
+    unreached = min(count, MAX_TAB_STOPS) - len(reached)
+    if unreached > 0:
+        names = await page.evaluate(
+            "(seen) => [...document.querySelectorAll('[data-kb]')].filter(el => !seen.includes(el.getAttribute('data-kb')))"
+            ".slice(0, 6).map(el => el.tagName.toLowerCase() + ' (\"' + (el.textContent || '').trim().slice(0, 40) + '\")')",
+            list(reached),
+        )
+        out.append({"message": f"{unreached} control(s) the keyboard never reaches", "examples": names})
+    return out
 
 
 def _script(checks: tuple[str, ...]) -> str:
@@ -310,20 +449,48 @@ def _script(checks: tuple[str, ...]) -> str:
     return _JS.replace("__MAX__", str(MAX_EXAMPLES)).replace("__CHECKS__", names)
 
 
-async def _measure(browser: Browser, html: str, width: int, checks: tuple[str, ...]) -> dict[str, Any]:
+async def _measure(
+    browser: Browser, html: str, width: int, checks: tuple[str, ...], keyboard: bool = False
+) -> dict[str, Any]:
     async with browser.open(html, width) as session:
         found = await session.page.evaluate(_script(checks))
+        if keyboard:
+            try:
+                found["keyboard"] = await _keyboard(session.page)
+            except Exception as exc:  # noqa: BLE001 -- reported, as the other checks are
+                found["keyboard"] = [{"message": f"the keyboard check could not run: {exc}", "examples": []}]
         return {"findings": found, "blocked": session.blocked}
+
+
+# The accessibility pass mark: none of these may have a finding. A threshold, not a vibe --
+# the kit's law -- and the one a page is held to before it is called accessible.
+ACCESSIBILITY_CHECKS = ("contrast", "names", "keyboard")
+
+
+def _pass_mark(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    failing = sorted({f["check"] for f in findings if f["check"] in ACCESSIBILITY_CHECKS})
+    if not failing:
+        return []
+    count = sum(1 for f in findings if f["check"] in ACCESSIBILITY_CHECKS)
+    return [{
+        "check": "accessibility",
+        "width": DESKTOP_WIDTH,
+        "message": (
+            f"FAILS the accessibility pass mark: {count} finding(s) in {', '.join(failing)}. "
+            "The mark is none in contrast, names and keyboard; fix those findings above"
+        ),
+        "examples": [],
+    }]
 
 
 async def run(browser: Browser, html: str) -> dict[str, Any]:
     """Every finding, grouped by check, with the width it was measured at."""
     mobile = await _measure(browser, html, MOBILE_WIDTH, MOBILE_CHECKS)
-    desktop = await _measure(browser, html, DESKTOP_WIDTH, DESKTOP_CHECKS)
+    desktop = await _measure(browser, html, DESKTOP_WIDTH, DESKTOP_CHECKS, keyboard=True)
     findings = []
     for width, measured in ((MOBILE_WIDTH, mobile), (DESKTOP_WIDTH, desktop)):
         for check, items in measured["findings"].items():
             for item in items:
                 findings.append({"check": check, "width": width, **item})
     blocked = sorted(set(mobile["blocked"]) | set(desktop["blocked"]))
-    return {"findings": findings, "blocked": blocked}
+    return {"findings": findings + _pass_mark(findings), "blocked": blocked}

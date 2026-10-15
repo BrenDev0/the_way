@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -82,5 +83,20 @@ def assistant(content: Any, tool_calls: tuple[ToolCall, ...] = ()) -> Message:
     return message
 
 
-def tool_result(tool_call_id: str, content: str) -> Message:
-    return {"role": "tool", "content": content, "tool_call_id": tool_call_id}
+def tool_result(tool_call_id: str, content: str, images: Sequence[tuple[str, str]] = ()) -> Message:
+    """A tool's answer. With images (base64, media type), its content is typed blocks: the
+    text, then each picture -- the same blocks an attached image goes to the model as."""
+    if not images:
+        return {"role": "tool", "content": content, "tool_call_id": tool_call_id}
+    blocks: list[dict[str, Any]] = [{"type": "text", "text": content}]
+    blocks += [{"type": "image", "base64": data, "mime_type": mime} for data, mime in images]
+    return {"role": "tool", "content": blocks, "tool_call_id": tool_call_id}
+
+
+def text_of(content: Any) -> str:
+    """A message's content as text: typed blocks are read for their text, pictures left out."""
+    if isinstance(content, list):
+        return "\n".join(
+            str(block.get("text", "")) for block in content if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return str(content)

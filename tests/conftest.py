@@ -7,6 +7,8 @@ os.environ.setdefault("CRYPTOGRAPHY_FERNET_KEY", Fernet.generate_key().decode("u
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379")
 os.environ.setdefault("REQUEST_SIGNING_SECRET", "test-signing-secret")
 os.environ.setdefault("TASKIQ_BROKER_URL", "memory://")
+# the suites build their schema from the models, not by migrating
+os.environ.setdefault("DATABASE_MIGRATE_ON_STARTUP", "false")
 os.environ.setdefault(
     "CORS_ALLOWED_ORIGINS", '["https://app.example.com","https://admin.example.com"]'
 )

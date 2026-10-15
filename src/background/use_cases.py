@@ -41,6 +41,21 @@ TASK_RELAYED = (
 )
 
 
+# Heads a task's instructions when the assistant named the skills it falls under. Kept in
+# the instructions themselves, so a resumed or re-read task carries it too.
+SKILLS_TO_FOLLOW = (
+    "SKILLS TO FOLLOW. Before anything else, read each of these in full with ReadSkill "
+    "(and the reference files they send you to), then do the task the way they say. Where "
+    "a skill asks for someone's decision, the answer is in the task below; if it is not, "
+    "do not invent one -- mark it [TK] and say so in your report.\n{skills}"
+)
+
+
+def with_skills(instructions: str, skills: Sequence[str]) -> str:
+    listed = "\n".join(f"- {name}" for name in skills)
+    return f"{SKILLS_TO_FOLLOW.format(skills=listed)}\n\n{instructions}"
+
+
 def _not_found() -> NotFoundError:
     return NotFoundError(message="Background task not found", code="background_task_not_found")
 

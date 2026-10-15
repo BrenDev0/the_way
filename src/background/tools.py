@@ -6,6 +6,7 @@ from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool
 from src.projects import config as projects_config
 from src.projects.files import ProjectFiles
+from src.skills.sqlalchemy import adapter as skills_adapter
 
 from . import use_cases as background_use_cases
 from .domain import BackgroundTaskCreate, TaskStatus
@@ -13,6 +14,11 @@ from .sqlalchemy import adapter
 from .tool_schemas import CheckBackgroundTask, DeliverTask, StartBackgroundTask
 
 Enqueue = Callable[[UUID], Awaitable[object]]
+
+UNKNOWN_SKILLS = (
+    "No task was started: this organization has no skill named {unknown}. Its skills: "
+    "{held}. Call again with names exactly as listed, or without skills if none applies."
+)
 
 
 async def _enqueue(task_id: UUID) -> object:
@@ -42,6 +48,7 @@ def build(
         instructions: str,
         deliver_to_project: str | None = None,
         deliver_to_path: str | None = None,
+        skills: list[str] | None = None,
     ) -> str:
         # Unless the user named a folder, finished work goes to the drafts project rather
         # than being left in the workspace they never browse.
@@ -49,6 +56,21 @@ def build(
         # checked now, while someone can still answer -- a wrong name found after the work
         # is done means a finished deliverable with nowhere to go
         await files.project(deliver_to_project)
+
+        # Likewise a skill name: a worker told to follow a skill that is not there would
+        # improvise and report it as done the skill's way.
+        named = list(dict.fromkeys(name.strip() for name in skills or [] if name.strip()))
+        if named:
+            held = {
+                skill.name
+                for skill in await skills_adapter.list_for_organization(context.session, context.organization_id)
+            }
+            unknown = [name for name in named if name not in held]
+            if unknown:
+                return UNKNOWN_SKILLS.format(
+                    unknown=", ".join(unknown), held=", ".join(sorted(held)) or "none"
+                )
+            instructions = background_use_cases.with_skills(instructions, named)
 
         # Committed in its own session, not the turn's: the worker picks the task up in
         # seconds, and the turn may not commit for minutes.

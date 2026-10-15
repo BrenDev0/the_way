@@ -23,7 +23,12 @@ from src.core.settings import settings
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.DATABASE_URL)
 
-if config.config_file_name is not None:
+# Handed a connection, this is the app migrating on start (src/core/database/migrations.py):
+# it runs on that connection, and leaves the app's logging as it is -- fileConfig would
+# switch off every logger already set up, uvicorn's included.
+provided: Connection | None = config.attributes.get("connection")
+
+if config.config_file_name is not None and provided is None:
     fileConfig(config.config_file_name)
 
 target_metadata = Base.metadata
@@ -62,6 +67,9 @@ async def run_async_migrations() -> None:
 
 
 def run_migrations_online() -> None:
+    if provided is not None:
+        do_run_migrations(provided)
+        return
     asyncio.run(run_async_migrations())
 
 

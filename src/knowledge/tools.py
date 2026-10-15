@@ -7,7 +7,7 @@ from src.documents.sqlalchemy import adapter as documents_adapter
 from src.projects.sqlalchemy import adapter as projects_adapter
 from src.skills.sqlalchemy import adapter as skills_adapter
 
-from . import config, context
+from . import config, context, skill_notes
 from .schemas import ReadKnowledgeDocument, ReadSkill
 
 UNKNOWN_DOCUMENT = (
@@ -89,7 +89,7 @@ def build(session: AsyncSession, organization_id: UUID) -> dict[str, Tool]:
 
         # A skill is a method to follow, so it is paged like a document rather than cut:
         # whatever lay past a cut was an instruction the agent never saw.
-        text = skill.instructions
+        text = skill_notes.note_for(skill.name) + skill.instructions
         if files:
             text += SKILL_FILES.format(name=name, files="\n".join(f"- {path}" for path in sorted(files)))
         return section(text, offset)

@@ -68,10 +68,31 @@ class Tool:
 
 
 @dataclass(frozen=True)
+class ToolImage:
+    """A picture a tool hands back for the model to look at -- a screenshot of the page it
+    built, say. Base64, at a size the model reads without scaling it down itself."""
+
+    base64: str
+    mime_type: str = "image/png"
+
+
+@dataclass(frozen=True)
+class ToolOutput:
+    """What a handler returns when it has pictures to show as well as text. A plain string
+    is still the usual return. The pictures go to the model with the text; keep them for
+    an assistant's own short loop (the page builder), since in a stored conversation each
+    one would be resent with every later turn."""
+
+    text: str
+    images: tuple[ToolImage, ...] = ()
+
+
+@dataclass(frozen=True)
 class ToolResult:
     tool_call_id: str
     content: str
     failed: bool = False
+    images: tuple[ToolImage, ...] = ()
 
 
 @dataclass(frozen=True)

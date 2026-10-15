@@ -225,6 +225,28 @@ async def test_a_page_for_a_brand_carries_its_pack(db_session, org):
     assert "Never say synergy." in designer_request
 
 
+async def test_a_logo_uploaded_in_the_panel_reaches_the_builder(db_session, org):
+    from helpers import FakeLLM
+
+    # The panel uploads into the brand folder itself: no logo/ subfolder.
+    organization, admin, member, library = org
+    bucket = FakeBucketStore()
+    tokens = b":root { --paper: #FFFFFF; --fg: #0A0E1A; --brand: #0052FE; }"
+    await _library_file(db_session, library, admin, bucket, "SLS/tokens.css", tokens, "text/css")
+    await _library_file(db_session, library, admin, bucket, "SLS/logo-claro.png", png(), "image/png")
+    await _library_file(db_session, library, admin, bucket, "SLS/hero.png", png(), "image/png")
+    llm = FakeLLM("Design brief.", "Built.")
+
+    await _page_builder(db_session, organization, member, bucket, llm)(
+        project="Borradores", output_path="p.html", page_type="landing", brief="A page.", brand="SLS",
+    )
+
+    designer_request = llm.received[0][-1]["content"]
+    assert f"- project:{LIBRARY}/SLS/logo-claro.png" in designer_request
+    assert f"project:{LIBRARY}/SLS/hero.png" not in designer_request
+    assert "The pack has no logo file" not in designer_request
+
+
 async def test_a_brand_without_a_pack_builds_nothing_and_names_the_ones_there(db_session, org):
     from helpers import FakeLLM
 
@@ -313,3 +335,40 @@ async def test_a_kit_document_gets_its_linked_layers_inside_it(db_session, org):
     assert "fonts.googleapis.com" in html  # a URL elsewhere is the renderer's to allow
     assert 'rel="icon"' in html
     assert missing == ["nowhere.css"]
+
+
+async def test_the_page_checker_holds_a_brand_page_to_its_voice_and_away_from_other_brands(db_session, org):
+    from helpers import FakeLLM, make_completion
+
+    from src.core.llm.domain import ToolCall
+
+    organization, admin, member, library = org
+    bucket = FakeBucketStore()
+    sls_tokens = b":root { --paper: #FFFFFF; --fg: #0A0E1A; --brand: #0052FE; }"
+    sls_voice = "## Words that never appear\n\nCotización / propuesta (say Plan Maestro instead); \"gratis\".".encode()
+    await _library_file(db_session, library, admin, bucket, "SLS/tokens.css", sls_tokens, "text/css")
+    await _library_file(db_session, library, admin, bucket, "SLS/voice.md", sls_voice, "text/markdown")
+    gre_tokens = b":root { --brand: #C8A24B; }"
+    gre_identity = "# GRE (Gin Real Estate) — Identity\n".encode()
+    await _library_file(db_session, library, admin, bucket, "GRE/tokens.css", gre_tokens, "text/css")
+    await _library_file(db_session, library, admin, bucket, "GRE/identity.md", gre_identity, "text/markdown")
+    page = (
+        '<!doctype html><html lang="es"><body><!-- precio por confirmar -->'
+        "<h1>Pide tu cotización gratis</h1><p>Un proyecto de Gin Real Estate</p></body></html>"
+    )
+    llm = FakeLLM(
+        "Design brief.",
+        make_completion("", (ToolCall(id="w", name="WriteProjectFile", args={"project": "Borradores", "path": "p.html", "content": page}),)),
+        make_completion("", (ToolCall(id="c", name="CheckPage", args={"project": "Borradores", "path": "p.html"}),)),
+        "Built.",
+    )
+
+    await _page_builder(db_session, organization, member, bucket, llm)(
+        project="Borradores", output_path="p.html", page_type="landing", brief="A page.", brand="SLS",
+    )
+
+    report = llm.received[-1][-1]["content"]
+    report = report if isinstance(report, str) else report[0]["text"]
+    assert "precio por confirmar" in report
+    assert "'Cotización'" in report and "'gratis'" in report
+    assert "the name 'Gin Real Estate' (GRE) appears in the copy" in report

@@ -69,7 +69,13 @@ WORKFLOW:
    real browser at 375px and 1440px and reports what reading the file cannot show --
    sideways scroll, CSS the browser dropped, colours and spacing that are not tokens, form
    fields under 16px, images without width and height, text below contrast, typefaces that
-   never loaded. Fix each finding with EditProjectFile, then call CheckPage once more to
+   never loaded, and the accessibility pass: whether the keyboard reaches every control
+   with a visible focus, and images, fields and buttons that have no name. It also reads
+   the raw HTML for notes left in comments, the brand's forbidden words (from its
+   voice.md) and any trace of another brand. And it sends back screenshots of the top of
+   the page at desktop and phone width: LOOK at them, as a visitor would, and fix what is
+   wrong that no measurement names -- weak hierarchy, crowding, overlap, something cut off.
+   Fix each finding with EditProjectFile, then call CheckPage once more to
    confirm; at most two checks per page. Anything you leave unfixed, say so and why.
    If CheckPage says the checker is unavailable, look for these yourself instead: any raw
    hex or px value that should have been a token, spacing that isn't on the scale, an

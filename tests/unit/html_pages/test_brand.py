@@ -79,6 +79,25 @@ def test_logos_are_offered_by_their_library_path():
     assert "never redraw it" in section
 
 
+def test_logos_are_found_in_the_logo_folder_and_by_name_at_the_top():
+    paths = [
+        "SLS/logo/logo.webp",            # loaded from the kit
+        "SLS/logos/dark/mark.svg",       # a folder of logos, any depth
+        "SLS/Logo-Claro.PNG",            # uploaded in the panel, beside everything else
+        "SLS/hero.jpg",                  # an image, not a logo
+        "SLS/logo/README.md",            # not an image
+        "SLS/fotos/logo-evento.jpg",     # named logo, but in another folder
+        "SLS-old/logo/logo.png",         # another brand whose name starts the same
+        "GRE/logo.svg",
+    ]
+
+    assert brand.logo_paths("sls", paths) == [
+        "SLS/Logo-Claro.PNG",
+        "SLS/logo/logo.webp",
+        "SLS/logos/dark/mark.svg",
+    ]
+
+
 def test_without_a_logo_the_page_is_told_not_to_draw_one():
     section = brand.render("XST", "Biblioteca", TOKENS_CSS, None, None, [])
 

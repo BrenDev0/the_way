@@ -29,6 +29,8 @@ dependencies = [
     "pypdfium2>=4.30.0",
     "pillow>=11.0.0",
     "tzdata>=2026.5",
+    "yt-dlp>=2025.9.26",
+    "youtube-transcript-api>=1.2.2",
 ]
 
 [dependency-groups]

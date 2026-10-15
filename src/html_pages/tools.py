@@ -13,7 +13,7 @@ from src.core.agents.runner import run_assistant
 from src.core.exceptions import ApplicationError
 from src.core.llm import domain as llm_domain
 from src.core.tools.context import ToolContext
-from src.core.tools.domain import Tool
+from src.core.tools.domain import Tool, ToolOutput
 from src.core.tools.executor import Executor
 from src.core.tools.gates import AutoApproveGate
 from src.projects import tools as project_tools
@@ -22,11 +22,14 @@ from src.projects.files import ProjectFiles
 from src.projects.sqlalchemy import adapter as projects_adapter
 from src.render_client import client as render_client
 from src.render_client.ports import Renderer
+from src.skills.sqlalchemy import adapter as skills_adapter
 from src.web import tools as web_tools
 
 from . import brand as brand_packs
-from . import config
-from .check import check_page
+from . import check as page_checks
+from . import config, lexical
+from . import skill as page_skill
+from .check import PageRun, check_page
 from .design import archetype_guidance
 from .prompt import BUILDER_PROMPT, DESIGNER_PROMPT
 from .tool_schemas import BuildHtmlPage, CheckPage
@@ -52,6 +55,12 @@ NO_PACK = (
 )
 
 
+NO_SKILL = (
+    "No page was built: this organization has no skill named '{skill}'. Its skills: {held}. "
+    "Call again with a name exactly as listed, or without skill if none applies."
+)
+
+
 class BrandPackMissing(Exception):
     pass
 
@@ -63,7 +72,7 @@ def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, T
     )
     renderer = renderer or render_client.from_settings()
 
-    async def check(project: str, path: str) -> str:
+    async def check(project: str, path: str) -> str | ToolOutput:
         return await check_page(files, renderer, project, path)
 
     # the builder's own: it measures the page it is writing, nobody else's
@@ -92,17 +101,17 @@ def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, T
             return None
         return content.decode("utf-8", errors="replace")
 
-    async def brand_pack(name: str) -> str:
+    async def brand_pack(name: str, run: PageRun) -> str:
         """The pack's section of the request, or a refusal naming the brands there are --
-        a page built without the pack it was asked for would look finished and be off-brand."""
+        a page built without the pack it was asked for would look finished and be off-brand.
+        Fills in what CheckPage needs to hold the page to the pack: the brand's forbidden
+        words and colours, and the other brands whose traces must not appear."""
         library = await projects_adapter.get_library(context.session, context.organization_id)
         if library is None:
             raise BrandPackMissing(NO_LIBRARY.format(brand=name))
 
-        folders = sorted(
-            {path.split("/", 1)[0] for path, _entry in await files.tree(library) if "/" in path},
-            key=str.lower,
-        )
+        tree = await files.tree(library)
+        folders = sorted({path.split("/", 1)[0] for path, _entry in tree if "/" in path}, key=str.lower)
         folder = next((held for held in folders if held.lower() == name.strip().lower()), None)
         tokens = await text_of(library, f"{folder}/tokens.css") if folder else None
         if folder is None or tokens is None:
@@ -110,18 +119,28 @@ def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, T
                 NO_PACK.format(brand=name, folders=", ".join(folders) or "none")
             )
 
-        logos = [
-            path
-            for path, entry in await files.tree(library)
-            if isinstance(entry, ProjectFile) and path.lower().startswith(f"{folder.lower()}/logo/")
-        ]
+        logos = brand_packs.logo_paths(folder, [path for path, entry in tree if isinstance(entry, ProjectFile)])
+        voice = await text_of(library, f"{folder}/voice.md")
+        run.library, run.brand = library.name, folder
+        run.forbidden = lexical.forbidden_terms(voice)
+        run.own_colours = {colour.upper() for colour in brand_packs.parse_tokens(tokens).values() if colour.startswith("#")}
+        for other in folders:
+            if other == folder:
+                continue
+            run.others.append(
+                lexical.OtherBrand(
+                    folder=other,
+                    names=lexical.brand_names(other, await text_of(library, f"{other}/identity.md")),
+                    colours=lexical.accent_colours(await text_of(library, f"{other}/tokens.css")),
+                )
+            )
         return brand_packs.render(
             folder,
             library.name,
             tokens,
             await text_of(library, f"{folder}/identity.md"),
-            await text_of(library, f"{folder}/voice.md"),
-            sorted(logos),
+            voice,
+            logos,
         )
 
     async def build_html_page(
@@ -131,6 +150,7 @@ def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, T
         brief: str,
         style_direction: str | None = None,
         brand: str | None = None,
+        skill: str | None = None,
     ) -> str:
         request = (
             f"Page type: {page_type}\nProject: {project}\nOutput file: {output_path}\n\n"
@@ -138,11 +158,31 @@ def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, T
         )
         if style_direction:
             request += f"\n\nStyle direction from the user (treat as binding):\n{style_direction}"
+        if skill and skill.strip():
+            # checked before the brand: neither pass has run, so a wrong name costs nothing
+            found = await skills_adapter.get_for_organization(
+                context.session, skill.strip(), context.organization_id
+            )
+            if found is None:
+                held = await skills_adapter.list_for_organization(context.session, context.organization_id)
+                return NO_SKILL.format(
+                    skill=skill, held=", ".join(held_skill.name for held_skill in held) or "none"
+                )
+            request += f"\n\n{page_skill.render(found)}"
+        run = PageRun()
         if brand:
             try:
-                request += f"\n\n{await brand_pack(brand)}"
+                request += f"\n\n{await brand_pack(brand, run)}"
             except BrandPackMissing as missing:
                 return str(missing)
+        # what CheckPage holds this page to, for as long as this call builds it
+        running = page_checks.start(run)
+        try:
+            return await build_page(project, output_path, request, page_type)
+        finally:
+            page_checks.finish(running)
+
+    async def build_page(project: str, output_path: str, request: str, page_type: str) -> str:
         archetype = archetype_guidance(page_type)
 
         designer = await context.llm_factory(config.MODELS, config.DESIGNER_TEMPERATURE)

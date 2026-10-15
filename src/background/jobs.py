@@ -1,4 +1,5 @@
-from typing import Annotated
+from datetime import UTC, datetime
+from typing import Annotated, Any
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,12 +18,15 @@ from src.core.cryptography.ports import EncryptionService
 from src.core.database.sqlalchemy.core import async_session_factory
 from src.core.events.ports import EventStream
 from src.core.llm import domain as llm_domain
+from src.core.llm.domain import ToolCall
 from src.core.tasks.broker import broker
 from src.core.tools.context import LLMFactory, ToolContext
+from src.core.tools.domain import ToolResult
 from src.core.tools.executor import Executor
 from src.core.tools.gates import Allowance, AllowanceGate
 from src.core.tools.ports import ToolEvents
 from src.images import config as images_config
+from src.knowledge import tools as knowledge_tools
 from src.projects.files import ProjectFiles
 from src.users.sqlalchemy import adapter as users_adapter
 from src.worker import dependencies as worker_dependencies
@@ -32,6 +36,44 @@ from . import use_cases as background_use_cases
 from .domain import BackgroundTask, TaskStatus
 from .prompt import SYSTEM_PROMPT
 from .sqlalchemy import adapter
+
+# A recorded argument past this is cut: the calls are kept to see what the worker read and
+# did, not to keep a second copy of what it wrote.
+MAX_RECORDED_ARG_CHARS = 200
+
+
+class CallRecorder:
+    """Passes the worker's tool events on, and keeps each call it starts -- by name, with
+    its arguments clipped -- for the task's record."""
+
+    def __init__(self, inner: ToolEvents | None) -> None:
+        self._inner = inner
+        self.calls: list[dict[str, Any]] = []
+
+    async def tool_started(self, call: ToolCall) -> None:
+        self.calls.append(
+            {
+                "name": call.name,
+                "args": {key: _clipped(value) for key, value in call.args.items()},
+                "at": datetime.now(UTC).isoformat(),
+            }
+        )
+        if self._inner is not None:
+            await self._inner.tool_started(call)
+
+    async def tool_finished(self, call: ToolCall, result: ToolResult) -> None:
+        if self._inner is not None:
+            await self._inner.tool_finished(call, result)
+
+
+def _clipped(value: Any) -> Any:
+    if isinstance(value, str):
+        return value[:MAX_RECORDED_ARG_CHARS]
+    if isinstance(value, list):
+        return [_clipped(item) for item in value[:20]]
+    if isinstance(value, dict):
+        return {key: _clipped(item) for key, item in list(value.items())[:20]}
+    return value
 
 
 @broker.task
@@ -75,6 +117,7 @@ async def run_task(
     when a paused run is saved for it."""
     events: ConversationEvents | None = None
     task: BackgroundTask | None = None
+    recorder = CallRecorder(None)
     async with async_session_factory() as session:
         try:
             task = await adapter.get_by_id(session, task_id)
@@ -87,11 +130,13 @@ async def run_task(
                 events = ConversationEvents(event_stream, task.conversation_id, task_id=task.id)
                 await events.task_started(task.id, task.description)
 
+            recorder = CallRecorder(events)
             context = await _context(session, task, bucket_store, encryption_service, llm_factory, events)
             files = ProjectFiles(session, task.organization_id, task.user_id, bucket_store)
             await files.make_folder(await files.workspace(), background_use_cases.task_path(task))
 
-            outcome = await _work(context, files, task, resumed)
+            outcome = await _work(context, files, task, resumed, recorder)
+            await adapter.record_calls(session, task.id, recorder.calls)
             if isinstance(outcome, Suspended):
                 return await _suspend(session, task, outcome, cache, events)
             if cache and resumed:
@@ -114,7 +159,9 @@ async def run_task(
             return str(status)
         except Exception as exc:
             await session.rollback()
-            await _mark_failed(task_id, f"{background_use_cases.FAILURE_MARKER} -- {type(exc).__name__}: {exc}")
+            await _mark_failed(
+                task_id, f"{background_use_cases.FAILURE_MARKER} -- {type(exc).__name__}: {exc}", recorder.calls
+            )
             if task:
                 await _report(task, event_stream)
             if events and task:
@@ -175,6 +222,7 @@ async def _work(
     files: ProjectFiles,
     task: BackgroundTask,
     resumed: paused.PausedRun | None = None,
+    recorder: CallRecorder | None = None,
 ) -> str | Suspended:
     tools = {name: tool for name, tool in server_tools(context).items() if name in config.TOOLS}
     llm = await context.llm_factory(config.MODELS, config.TEMPERATURE)
@@ -187,9 +235,15 @@ async def _work(
         lambda request: images_config.images_in(request.call.name, request.call.args),
     )
 
+    # The same knowledge listing the conversation sees. Without it the worker held ReadSkill
+    # but no names to read, so a skill reached it only if the instructions spelled one out.
+    knowledge = (
+        "" if resumed else await knowledge_tools.build_context(context.session, context.organization_id)
+    )
     state = resumed.state if resumed else LoopState(
         messages=[
             llm_domain.system(SYSTEM_PROMPT),
+            *([llm_domain.system(knowledge)] if knowledge else []),
             llm_domain.user(
                 f"Task folder: .the_way/{background_use_cases.task_path(task)}/\n\n"
                 f"Task:\n{task.instructions}"
@@ -198,7 +252,9 @@ async def _work(
     )
     outcome = await continue_assistant(
         llm,
-        Executor(tools, gate, context.events),
+        # the worker's own calls only: a page builder inside one of them reports on
+        # context.events, and its calls are not the worker's
+        Executor(tools, gate, recorder or context.events),
         state,
         decisions=resumed.decisions if resumed else None,
         max_iterations=config.MAX_ITERATIONS,
@@ -286,7 +342,8 @@ async def _deliver(files: ProjectFiles, task: BackgroundTask) -> str:
         )
 
 
-async def _mark_failed(task_id: UUID, result: str) -> None:
+async def _mark_failed(task_id: UUID, result: str, calls: list[dict[str, Any]] | None = None) -> None:
     async with async_session_factory() as session:
+        await adapter.record_calls(session, task_id, calls or [])
         await adapter.finish(session, task_id, TaskStatus.FAILED, result)
         await session.commit()

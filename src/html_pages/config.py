@@ -34,3 +34,23 @@ BUILDER_TOOLS = frozenset(
 
 # A brand pack's identity.md and voice.md go to both passes whole; past this they are cut.
 MAX_BRAND_FILE_CHARS = 8_000
+
+# A skill named for the page goes to both passes: its text, then its reference files, until
+# this budget is spent (the kit's largest, output-documents, is about 47 000 without its
+# script). Files past it are named, not sent.
+MAX_SKILL_CHARS = 60_000
+
+# Reference files that are programs, not method: the builder cannot run them, and a page
+# carries no runtime script.
+SKILL_FILES_LEFT_OUT = (".js", ".mjs", ".py", ".sh")
+
+# CheckPage hands the builder screenshots of its page: the top of it at desktop and phone
+# width, two per check. A page gets this many in all -- two check rounds, as the prompt asks.
+MAX_SCREENSHOTS_PER_PAGE = 4
+DESKTOP_WIDTH = 1440
+PHONE_WIDTH = 375
+# how much of the page, from the top, each shows (two screens' worth)
+DESKTOP_KEEP_HEIGHT = 1800
+PHONE_KEEP_HEIGHT = 1624
+# the long side models read at without scaling an image down themselves
+SCREENSHOT_MAX_SIDE = 1568
