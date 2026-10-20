@@ -1,4 +1,5 @@
 import ipaddress
+import logging
 from collections.abc import Mapping
 
 from fastapi import Request, Response
@@ -8,6 +9,9 @@ from starlette.types import ASGIApp
 
 from src.core.cache.ports import CacheStore
 from src.core.schemas import ErrorResponse
+
+# uvicorn's own logger, so the line shows up whatever the app's logging setup.
+logger = logging.getLogger("uvicorn.error")
 
 RATE_LIMIT_COUNT_KEY = "rate_limit:count"
 RATE_LIMIT_BLOCK_KEY = "rate_limit:block"
@@ -62,6 +66,16 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         client_ip = resolve_client_ip(request, hops)
+        # TEMPORARY: remove once the address the limiter sees matches the visitor's.
+        logger.warning(
+            "rate-limit-ip-debug path=%s hops=%s chosen=%s peer=%s x-forwarded-for=%s x-real-ip=%s",
+            request.url.path,
+            hops,
+            client_ip,
+            request.client.host if request.client else None,
+            request.headers.get("x-forwarded-for"),
+            request.headers.get("x-real-ip"),
+        )
         if client_ip is None:
             return self._error(403, "client_ip_unavailable", "Unable to identify the client")
 
