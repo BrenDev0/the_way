@@ -1,3 +1,4 @@
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Request
@@ -21,6 +22,8 @@ from . import use_cases as auth_use_cases
 from .schemas import DesktopLoginRequest, DesktopLoginResponse, LogoutResponse
 
 router = APIRouter(tags=["desktop-auth"])
+# uvicorn's own logger, so the line shows up whatever the app's logging setup.
+logger = logging.getLogger("uvicorn.error")
 
 UNKNOWN_ADDRESS = "unknown"
 
@@ -52,6 +55,13 @@ async def desktop_login_route(
     ],
     cache_store: Annotated[CacheStore, Depends(api_dependencies.get_cache_store)],
 ) -> DesktopLoginResponse:
+    # TEMPORARY: remove once we know what address the limiter sees behind Railway.
+    logger.warning(
+        "login-ip-debug client.host=%s x-forwarded-for=%s x-real-ip=%s",
+        request.client.host if request.client else None,
+        request.headers.get("x-forwarded-for"),
+        request.headers.get("x-real-ip"),
+    )
     user, session, token = await auth_use_cases.login_desktop(
         email=payload.email,
         password=payload.password,
