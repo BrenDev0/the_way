@@ -37,6 +37,18 @@ class Settings(BaseSettings):
     DESKTOP_LOGIN_MAX_FAILURES_PER_IP: int = 30
     REDIS_URL: str
 
+    # Per address, on the sign-in and registration paths (api/rate_limit.py). Past the cap in
+    # one window the address is blocked for the block time.
+    RATE_LIMIT_MAX_REQUESTS: int = 20
+    RATE_LIMIT_WINDOW_SECONDS: int = 60
+    RATE_LIMIT_BLOCK_SECONDS: int = 60 * 15
+    # How many proxies in front of this API append to X-Forwarded-For; the client is that
+    # many entries from the right. 1 for Railway's edge in front of the API, and for the web
+    # service calling it over the private network (api.railway.internal). If the web service
+    # calls the API's public URL, the edge adds the web service's address after the visitor's
+    # and this must be 2 -- which then misreads the desktop app's requests. Use the private URL.
+    TRUSTED_PROXY_HOPS: int = 1
+
     REQUEST_SIGNING_SECRET: str
     REQUEST_SIGNATURE_WINDOW_SECONDS: int = 30
 

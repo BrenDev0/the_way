@@ -20,6 +20,7 @@ from src.core.tasks.broker import broker
 from src.projects.public_routes import router as project_images_router
 
 from .desktop.routes import router as desktop_router
+from .rate_limit import RateLimitMiddleware
 from .v1.routes import router as v1_router
 
 
@@ -70,6 +71,21 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
+# Added before CORS so CORS wraps it and a 429 still carries the CORS headers.
+app.add_middleware(
+    RateLimitMiddleware,
+    paths=frozenset(
+        {
+            f"{auth_config.WEB_API_PREFIX}/auth/login",
+            f"{auth_config.WEB_API_PREFIX}/auth/register/request-verification",
+            f"{auth_config.DESKTOP_API_PREFIX}/auth/login",
+        }
+    ),
+    max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
+    window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
+    block_seconds=settings.RATE_LIMIT_BLOCK_SECONDS,
+    trusted_proxy_hops=settings.TRUSTED_PROXY_HOPS,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ALLOWED_ORIGINS,
