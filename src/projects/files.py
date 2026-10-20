@@ -12,8 +12,6 @@ import re
 from collections.abc import Sequence
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from src.core.bucket.ports import BucketStore
 from src.core.exceptions import (
     ApplicationError,
@@ -22,9 +20,13 @@ from src.core.exceptions import (
     ValidationError,
 )
 
-from . import config, html_images, links, paths, use_cases
+from . import config, html_images, links, paths
 from .domain import FileStatus, Folder, Project, ProjectContents, ProjectFile
-from .sqlalchemy import adapter
+from .ports import ProjectStore
+from .use_cases import files as file_use_cases
+from .use_cases import folders as folder_use_cases
+from .use_cases import projects as project_use_cases
+from .use_cases.common import validate_name
 
 TEXT_TYPES = {
     ".md": "text/markdown",
@@ -55,52 +57,52 @@ def content_type_for(name: str) -> str:
 class ProjectFiles:
     def __init__(
         self,
-        session: AsyncSession,
+        store: ProjectStore,
         organization_id: UUID,
         user_id: UUID,
         bucket_store: BucketStore,
     ) -> None:
-        self._session = session
+        self._store = store
         self._organization_id = organization_id
         self._user_id = user_id
         self._bucket = bucket_store
 
-    # --- ports, bound to this session, in the shape the use cases take ---------------
+    # --- ports, bound to the store, in the shape the use cases take ---------------
 
     async def _find_entry(self, project_id: UUID, folder_id: UUID | None, name: str):
-        return await adapter.find_entry(self._session, project_id, folder_id, name)
+        return await self._store.find_entry(project_id, folder_id, name)
 
     async def _create_folder(self, folder):
-        return await adapter.create_folder(self._session, folder)
+        return await self._store.create_folder(folder)
 
     async def _get_folder(self, folder_id: UUID, project_id: UUID):
-        return await adapter.get_folder(self._session, folder_id, project_id)
+        return await self._store.get_folder(folder_id, project_id)
 
     async def _update_folder(self, folder_id: UUID, changes):
-        return await adapter.update_folder(self._session, folder_id, changes)
+        return await self._store.update_folder(folder_id, changes)
 
     async def _create_file(self, project_file):
-        return await adapter.create_file(self._session, project_file)
+        return await self._store.create_file(project_file)
 
     async def _get_file(self, file_id: UUID, project_id: UUID):
-        return await adapter.get_file(self._session, file_id, project_id)
+        return await self._store.get_file(file_id, project_id)
 
     async def _update_file(self, file_id: UUID, changes):
-        return await adapter.update_file(self._session, file_id, changes)
+        return await self._store.update_file(file_id, changes)
 
     async def _list_contents(self, project_id: UUID, folder_id: UUID | None):
-        return await adapter.list_contents(self._session, project_id, folder_id)
+        return await self._store.list_contents(project_id, folder_id)
 
     async def _list_tree(self, project_id: UUID):
-        return await adapter.list_tree(self._session, project_id)
+        return await self._store.list_tree(project_id)
 
     # --- projects ---------------------------------------------------------------------
 
     async def projects(self) -> Sequence[Project]:
         """The user's own projects, then the organization's library, which they read but
         never change from here (see _writable)."""
-        own = await adapter.list_projects_for_owner(self._session, self._user_id)
-        library = await adapter.get_library(self._session, self._organization_id)
+        own = await self._store.list_projects_for_owner(self._user_id)
+        library = await self._store.get_library(self._organization_id)
         return [*own, library] if library is not None else own
 
     @staticmethod
@@ -118,13 +120,11 @@ class ProjectFiles:
             )
 
     async def create_project(self, name: str) -> Project:
-        return await use_cases.create_project(
+        return await project_use_cases.create_project(
             owner=_Owner(self._user_id, self._organization_id),  # type: ignore[arg-type]
             name=name,
-            list_projects_for_owner_fn=lambda owner_id: adapter.list_projects_for_owner(
-                self._session, owner_id
-            ),
-            create_project_fn=lambda project: adapter.create_project(self._session, project),
+            list_projects_for_owner_fn=self._store.list_projects_for_owner,
+            create_project_fn=self._store.create_project,
         )
 
     async def project(self, name: str) -> Project:
@@ -302,7 +302,7 @@ class ProjectFiles:
         async def embed(address: str) -> str | None:
             found: tuple[ProjectFile, Project] | None = None
             if (file_id := links.parse(address)) is not None:
-                held = await adapter.get_file_with_project(self._session, file_id)
+                held = await self._store.get_file_with_project(file_id)
                 # a link from this organization only: a page cannot pull in another's files
                 if held is not None and held[1].organization_id == self._organization_id:
                     found = held
@@ -374,7 +374,7 @@ class ProjectFiles:
         folder_id = await paths.ensure_folder(
             project, paths.split(folder_path), self._find_entry, self._create_folder
         )
-        wanted = use_cases.validate_name(name)
+        wanted = validate_name(name)
         free = wanted
         stem, dot, suffix = wanted.rpartition(".")
         if not dot:
@@ -384,7 +384,7 @@ class ProjectFiles:
                 break
             free = f"{stem} ({number}){dot}{suffix}"
 
-        return await use_cases.request_upload(
+        return await file_use_cases.request_upload(
             project=project,
             name=free,
             folder_id=folder_id,
@@ -393,7 +393,7 @@ class ProjectFiles:
             uploaded_by=self._user_id,
             get_folder_fn=self._get_folder,
             find_entry_fn=self._find_entry,
-            delete_file_fn=lambda file_id: adapter.delete_file(self._session, file_id),
+            delete_file_fn=lambda file_id: self._store.delete_file(file_id),
             create_file_fn=self._create_file,
             bucket_store=self._bucket,
         )
@@ -401,7 +401,7 @@ class ProjectFiles:
     async def owned_file(self, file_id: UUID) -> tuple[ProjectFile, Project, str] | None:
         """A finished file in one of this user's projects, with its path there; None for
         anything else -- someone else's, still uploading, or gone."""
-        found = await adapter.get_file_with_project(self._session, file_id)
+        found = await self._store.get_file_with_project(file_id)
         if found is None:
             return None
         project_file, project = found
@@ -416,7 +416,7 @@ class ProjectFiles:
 
     async def bytes_of(self, file_id: UUID) -> tuple[bytes, str] | None:
         """An organization file's content and type, by its id."""
-        found = await adapter.get_file_with_project(self._session, file_id)
+        found = await self._store.get_file_with_project(file_id)
         if found is None or found[1].organization_id != self._organization_id:
             return None
         project_file, project = found
@@ -468,27 +468,27 @@ class ProjectFiles:
 
         if isinstance(entry, Folder):
             if entry.name != name:
-                entry = await use_cases.rename_folder(
+                entry = await folder_use_cases.rename_folder(
                     project, entry.id, name, self._get_folder, self._find_entry, self._update_folder
                 )
             if entry.parent_id != folder_id:
-                await use_cases.move_folder(
+                await folder_use_cases.move_folder(
                     project,
                     entry.id,
                     folder_id,
                     self._get_folder,
-                    lambda folder: adapter.list_folder_ancestor_ids(self._session, folder),
+                    lambda folder: self._store.list_folder_ancestor_ids(folder),
                     self._find_entry,
                     self._update_folder,
                 )
             return landed
 
         if entry.name != name:
-            entry = await use_cases.rename_file(
+            entry = await file_use_cases.rename_file(
                 project, entry.id, name, self._get_file, self._find_entry, self._update_file
             )
         if entry.folder_id != folder_id:
-            await use_cases.move_file(
+            await file_use_cases.move_file(
                 project,
                 entry.id,
                 folder_id,
@@ -509,21 +509,21 @@ class ProjectFiles:
             )
 
         if isinstance(entry, Folder):
-            await use_cases.delete_folder(
+            await folder_use_cases.delete_folder(
                 project,
                 entry.id,
                 self._get_folder,
-                lambda folder: adapter.list_subtree_file_ids(self._session, folder),
-                lambda folder: adapter.delete_folder(self._session, folder),
+                lambda folder: self._store.list_subtree_file_ids(folder),
+                lambda folder: self._store.delete_folder(folder),
                 self._bucket,
             )
             return f"{paths.join(paths.split(path))}/"
 
-        await use_cases.delete_file(
+        await file_use_cases.delete_file(
             project,
             entry.id,
             self._get_file,
-            lambda file_id: adapter.delete_file(self._session, file_id),
+            lambda file_id: self._store.delete_file(file_id),
             self._bucket,
         )
         return paths.join(paths.split(path))

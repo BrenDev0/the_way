@@ -1,14 +1,13 @@
 import re
 
 from src.assistants.catalog import server_tools
+from src.assistants.context import ToolContext
 from src.background import tools as background_tools
-from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool
 from src.desktop import tools as desktop_tools
 from src.preferences import tools as preference_tools
 from src.skills import tools as skill_tools
 
-from .sqlalchemy import adapter
 from .tool_schemas import SearchConversationHistory
 
 STOPWORDS = frozenset(
@@ -41,9 +40,7 @@ def build(context: ToolContext, desktop: bool) -> dict[str, Tool]:
         if not wanted:
             return "Query had no searchable words. Use specific terms from what you are looking for."
 
-        candidates = await adapter.search_messages(
-            context.session, context.user_id, sorted(wanted), CANDIDATES
-        )
+        candidates = await context.ports.search_messages_fn(context.user_id, sorted(wanted), CANDIDATES)
         if not candidates:
             return f"Nothing in the saved conversations matches '{query}'."
 

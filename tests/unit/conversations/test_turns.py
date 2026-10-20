@@ -4,13 +4,15 @@ from uuid import uuid4
 import pytest
 from helpers import FakeLLM, make_completion
 
-from src.conversations import prompt, use_cases
+from src.conversations import prompt
 from src.conversations.domain import (
     Conversation,
     ConversationStatus,
     TurnContext,
     TurnState,
 )
+from src.conversations.use_cases import advance as advance_use_cases
+from src.conversations.use_cases import turns as turn_use_cases
 from src.core.exceptions import ConflictError, NotFoundError
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import TokenUsage, ToolCall
@@ -66,7 +68,7 @@ def executor():
 async def test_sending_a_message_stores_it():
     store = Store(make_conversation())
 
-    await use_cases.send_message(
+    await turn_use_cases.send_message(
         store.conversation.id,
         store.conversation.user_id,
         "hello",
@@ -81,7 +83,7 @@ async def test_sending_a_message_stores_it():
 async def test_sending_a_message_marks_the_conversation_running():
     store = Store(make_conversation())
 
-    await use_cases.send_message(
+    await turn_use_cases.send_message(
         store.conversation.id,
         store.conversation.user_id,
         "hello",
@@ -96,7 +98,7 @@ async def test_sending_a_message_marks_the_conversation_running():
 async def test_cumulative_usage_survives_a_new_turn():
     store = Store(make_conversation(turn=TurnState(usage=TokenUsage(10, 5, 15))))
 
-    await use_cases.send_message(
+    await turn_use_cases.send_message(
         store.conversation.id,
         store.conversation.user_id,
         "hello",
@@ -113,7 +115,7 @@ async def test_sending_to_someone_elses_conversation_is_not_found():
     store = Store(make_conversation())
 
     with pytest.raises(NotFoundError):
-        await use_cases.send_message(
+        await turn_use_cases.send_message(
             store.conversation.id, uuid4(), "hello", store.get_for_user, store.append, store.save
         )
 
@@ -127,7 +129,7 @@ async def test_sending_while_busy_is_rejected(status):
     store = Store(make_conversation(status=status))
 
     with pytest.raises(ConflictError) as exc:
-        await use_cases.send_message(
+        await turn_use_cases.send_message(
             store.conversation.id,
             store.conversation.user_id,
             "hello",
@@ -147,7 +149,7 @@ async def test_advancing_appends_only_the_new_messages():
     )
     llm = FakeLLM("hi there")
 
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         executor(),
@@ -166,7 +168,7 @@ async def test_the_system_prompt_is_never_persisted():
         history=[llm_domain.user("hello")],
     )
 
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.conversation.id,
         FakeLLM("hi"),
         executor(),
@@ -186,7 +188,7 @@ async def test_the_system_prompt_is_sent_to_the_model():
     )
     llm = FakeLLM("hi")
 
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         executor(),
@@ -207,7 +209,7 @@ def _context(current, stable=("index",)):
 
 
 async def _advance(store, llm, build):
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.conversation.id, llm, executor(), store.get_by_id, store.list_messages,
         store.append, store.save, build_context_fn=build,
     )
@@ -273,7 +275,7 @@ async def test_the_context_never_comes_between_tool_calls_and_their_results():
 async def test_a_finished_turn_goes_back_to_idle():
     store = Store(make_conversation(status=ConversationStatus.RUNNING))
 
-    status = await use_cases.advance_turn(
+    status = await advance_use_cases.advance_turn(
         store.conversation.id,
         FakeLLM("done"),
         executor(),
@@ -292,7 +294,7 @@ async def test_running_out_of_iterations_marks_it_failed():
     store = Store(make_conversation(status=ConversationStatus.RUNNING))
     llm = FakeLLM(*[make_completion("", (call,)) for _ in range(3)])
 
-    status = await use_cases.advance_turn(
+    status = await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         executor(),
@@ -311,7 +313,7 @@ async def test_usage_accumulates_onto_the_conversation():
                                                    usage=TokenUsage(10, 5, 15))))
     llm = FakeLLM(make_completion("done", usage=TokenUsage(20, 10, 30)))
 
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         executor(),
@@ -328,7 +330,7 @@ async def test_a_conversation_that_is_not_running_is_left_alone():
     store = Store(make_conversation(status=ConversationStatus.IDLE))
     llm = FakeLLM("should not be called")
 
-    status = await use_cases.advance_turn(
+    status = await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         executor(),
@@ -349,7 +351,7 @@ async def test_a_missing_conversation_is_left_alone():
     store = Store(make_conversation())
     llm = FakeLLM("should not be called")
 
-    status = await use_cases.advance_turn(
+    status = await advance_use_cases.advance_turn(
         uuid4(), llm, executor(), missing, store.list_messages, store.append, store.save
     )
 
@@ -376,7 +378,7 @@ async def test_a_gated_tool_leaves_the_conversation_awaiting_client():
     store = Store(make_conversation(status=ConversationStatus.RUNNING))
     call = ToolCall(id="c1", name="DeleteFile", args={"path": "x"})
 
-    status = await use_cases.advance_turn(
+    status = await advance_use_cases.advance_turn(
         store.conversation.id,
         FakeLLM(make_completion("", (call,))),
         Executor(tools, Suspending()),

@@ -1,7 +1,6 @@
 from dataclasses import dataclass
+from http import HTTPStatus
 from typing import ClassVar
-
-from fastapi import status
 
 
 @dataclass(eq=False)
@@ -15,56 +14,56 @@ class ApplicationError(Exception):
 
 
 class AuthenticationError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_401_UNAUTHORIZED
+    default_status_code: ClassVar[int] = int(HTTPStatus.UNAUTHORIZED)
 
     def __init__(self, message: str = "Not authenticated", code: str = "authentication_error") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
 class AuthorizationError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_403_FORBIDDEN
+    default_status_code: ClassVar[int] = int(HTTPStatus.FORBIDDEN)
 
     def __init__(self, message: str = "Not authorized", code: str = "authorization_error") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
 class NotFoundError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_404_NOT_FOUND
+    default_status_code: ClassVar[int] = int(HTTPStatus.NOT_FOUND)
 
     def __init__(self, message: str = "Resource not found", code: str = "not_found") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
 class ConflictError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_409_CONFLICT
+    default_status_code: ClassVar[int] = int(HTTPStatus.CONFLICT)
 
     def __init__(self, message: str = "Resource conflict", code: str = "conflict") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
 class ValidationError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_422_UNPROCESSABLE_CONTENT
+    default_status_code: ClassVar[int] = int(HTTPStatus.UNPROCESSABLE_ENTITY)
 
     def __init__(self, message: str = "Validation failed", code: str = "validation_error") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
 class RateLimitError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_429_TOO_MANY_REQUESTS
+    default_status_code: ClassVar[int] = int(HTTPStatus.TOO_MANY_REQUESTS)
 
     def __init__(self, message: str = "Too many requests", code: str = "rate_limited") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
 class ServiceUnavailableError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_status_code: ClassVar[int] = int(HTTPStatus.SERVICE_UNAVAILABLE)
 
     def __init__(self, message: str = "Service temporarily unavailable", code: str = "service_unavailable") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)
 
 
 class InternalServerError(ApplicationError):
-    default_status_code: ClassVar[int] = status.HTTP_500_INTERNAL_SERVER_ERROR
+    default_status_code: ClassVar[int] = int(HTTPStatus.INTERNAL_SERVER_ERROR)
 
     def __init__(self, message: str = "Unable to process request at this time", code: str = "internal_server_error") -> None:
         super().__init__(message=message, code=code, status_code=self.default_status_code)

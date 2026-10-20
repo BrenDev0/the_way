@@ -1,12 +1,12 @@
 from collections.abc import Mapping, Sequence
 from uuid import UUID
 
+from src.assistants.context import Credential, LLMFactory
 from src.core.cryptography.ports import EncryptionService
 from src.core.exceptions import ConflictError
 from src.core.llm.langchain import providers as llm_providers
 from src.core.llm.langchain.adapter import LangchainLLM
 from src.core.llm.ports import LLM
-from src.core.tools.context import Credential, LLMFactory
 
 from . import config
 from .domain import Provider

@@ -1,8 +1,10 @@
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from .exceptions import InternalServerError
-from .sessions.config import SameSitePolicy
+
+SameSitePolicy = Literal["lax", "strict", "none"]
 
 
 class Settings(BaseSettings):

@@ -7,8 +7,8 @@ from helpers import FakeLLM, make_completion
 from pydantic import BaseModel
 
 from src.conversations import events as conversation_events
-from src.conversations import use_cases
 from src.conversations.domain import Conversation, ConversationStatus, TurnState
+from src.conversations.use_cases import advance as advance_use_cases
 from src.core.events import sse
 from src.core.events.domain import EventStreamUnavailable
 from src.core.events.memory import InMemoryEventStream
@@ -64,7 +64,7 @@ async def test_a_turn_streams_its_text_messages_and_tool_activity():
         "You have one project.",
     )
 
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.current.id,
         llm,
         Executor({"ListProjects": Tool(schema=ListProjects, handler=list_projects)}, SuspendGate(), events),

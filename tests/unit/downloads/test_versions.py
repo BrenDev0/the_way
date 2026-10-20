@@ -4,7 +4,8 @@ import pytest
 from helpers import FakeBucketStore
 
 from src.core.settings import settings
-from src.downloads import config, desktop_routes, publish, routes, versions
+from src.downloads import config, publish, versions
+from src.downloads.fastapi import desktop_routes, routes
 
 
 @pytest.fixture(autouse=True)

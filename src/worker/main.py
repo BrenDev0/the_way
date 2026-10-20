@@ -9,4 +9,4 @@ from . import health as health_tasks
 
 TASK_MODULES = (health_tasks, conversation_tasks, document_tasks, background_jobs)
 
-taskiq_fastapi.init(broker, "src.api.main:app")
+taskiq_fastapi.init(broker, "src.fastapi.main:app")

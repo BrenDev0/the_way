@@ -3,13 +3,13 @@ from typing import Annotated
 from starlette.requests import Request
 from taskiq import TaskiqDepends
 
-from src.api import dependencies as api_dependencies
 from src.core.bucket.ports import BucketStore
 from src.core.cache.ports import CacheStore
 from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
 from src.core.events.ports import EventStream
-from src.core.sessions.tokens import SessionTokenService
+from src.fastapi import dependencies as api_dependencies
+from src.sessions.tokens import SessionTokenService
 
 WorkerRequest = Annotated[Request, TaskiqDepends()]
 

@@ -16,7 +16,7 @@ from src.core.exceptions import NotFoundError
 from src.media import tools as media_tools
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
-from src.projects.files import ProjectFiles
+from src.projects.sqlalchemy.store import project_files
 from src.users.domain import Role, UserCreate
 from src.users.sqlalchemy import adapter as users_adapter
 
@@ -47,7 +47,7 @@ def png(color: str, size: tuple[int, int] = (40, 20)) -> bytes:
 async def setup(db_session):
     user = await make_user(db_session)
     bucket = FakeBucketStore()
-    files = ProjectFiles(db_session, user.organization_id, user.id, bucket)
+    files = project_files(db_session, user.organization_id, user.id, bucket)
     drafts = await files.create_project("Borradores")
     workspace = await files.create_project(".the_way")
     original = await files.write(drafts, "capibara/capibara.png", png("red"), content_type="image/png")
@@ -57,12 +57,13 @@ async def setup(db_session):
 
 def context(db_session, files, bucket):
     class Context:
-        session = db_session
         organization_id = files._organization_id
         user_id = files._user_id
         bucket_store = bucket
 
-    return Context()
+    stand_in = Context()
+    stand_in.files = files  # type: ignore[attr-defined]
+    return stand_in
 
 
 async def test_a_source_in_another_project_is_read_from_there(setup):

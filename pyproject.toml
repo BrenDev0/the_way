@@ -45,6 +45,11 @@ render = [
     "playwright>=1.50",
 ]
 
+# src/fastapi/ would otherwise make ruff file `import fastapi` under first-party code.
+[tool.ruff.lint.isort]
+known-first-party = ["src", "tests"]
+known-third-party = ["fastapi"]
+
 [tool.mypy]
 plugins = ["pydantic.mypy"]
 

@@ -1,4 +1,5 @@
 from collections.abc import Awaitable, Callable, Sequence
+from datetime import datetime
 from typing import Protocol
 from uuid import UUID
 
@@ -17,6 +18,9 @@ RenameConversationFn = Callable[[UUID, str], Awaitable[Conversation | None]]
 CommitFn = Callable[[], Awaitable[None]]
 # The history as the model is sent it: attachments opened up (attachments.expand).
 ExpandFn = Callable[[Sequence[Message]], Awaitable[list[Message]]]
+# The user's own chat messages containing any of the terms, newest first, each with when it
+# was written: candidates only, up to `limit` -- ranking them is the caller's job.
+SearchMessagesFn = Callable[[UUID, Sequence[str], int], Awaitable[list[tuple[Message, datetime]]]]
 
 
 class GetConversationForUserFn(Protocol):

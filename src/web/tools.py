@@ -4,7 +4,7 @@ import json
 import httpx
 
 from src.api_keys.domain import Provider
-from src.core.tools.context import ToolContext
+from src.assistants.context import ToolContext
 from src.core.tools.domain import Tool
 
 from . import config

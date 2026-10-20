@@ -5,9 +5,9 @@ from helpers import FakeLLM, make_completion
 
 from src.conversations import events as conversation_events
 from src.conversations import tasks as conversation_tasks
-from src.conversations import use_cases as conversations_use_cases
 from src.conversations.domain import ConversationCreate
 from src.conversations.sqlalchemy import adapter as conversations_adapter
+from src.conversations.use_cases import turns as turn_use_cases
 from src.core.events.domain import EventStreamUnavailable
 from src.core.events.memory import InMemoryEventStream
 from src.core.events.redis.adapter import RedisEventStream
@@ -80,7 +80,7 @@ async def test_the_pause_is_published_only_after_it_is_committed(db_session):
     async def save(cid, turn):
         return await conversations_adapter.save_turn_state(db_session, cid, turn)
 
-    await conversations_use_cases.send_message(conversation.id, user.id, "read notes.txt", get, append, save)
+    await turn_use_cases.send_message(conversation.id, user.id, "read notes.txt", get, append, save)
     await db_session.commit()
 
     stream = InMemoryEventStream()

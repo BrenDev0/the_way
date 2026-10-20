@@ -1,7 +1,11 @@
 from uuid import uuid4
 
 import pytest
-from helpers import FakeEncryptionService, make_completion
+from helpers import (
+    FakeEncryptionService,
+    knowledge_block_on,
+    make_completion,
+)
 
 from src.api_keys.domain import ApiKeyCreate, Provider
 from src.api_keys.sqlalchemy import adapter as api_keys_adapter
@@ -9,7 +13,6 @@ from src.documents import config, summaries
 from src.documents import tasks as document_tasks
 from src.documents.domain import DocumentCreate, DocumentStatus
 from src.documents.sqlalchemy import adapter as documents_adapter
-from src.knowledge import tools as knowledge_tools
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
 from src.users.domain import Role, UserCreate
@@ -130,7 +133,7 @@ async def test_an_extracted_document_is_offered_before_any_training(db_session, 
     organization, user = tenant
     await extracted_document(db_session, organization, user)
 
-    assert "Brand Book" in await knowledge_tools.build_context(db_session, organization.id)
+    assert "Brand Book" in await knowledge_block_on(db_session, organization.id)
 
 
 async def test_training_makes_it_visible(db_session, tenant, model):
@@ -140,7 +143,7 @@ async def test_training_makes_it_visible(db_session, tenant, model):
 
     await train(db_session, organization, user)
 
-    block = await knowledge_tools.build_context(db_session, organization.id)
+    block = await knowledge_block_on(db_session, organization.id)
     assert "Brand Book" in block
 
 
@@ -163,7 +166,7 @@ async def test_the_generated_line_is_what_the_agent_sees(db_session, tenant, mod
 
     await train(db_session, organization, user)
 
-    block = await knowledge_tools.build_context(db_session, organization.id)
+    block = await knowledge_block_on(db_session, organization.id)
     assert GENERATED in block
 
 

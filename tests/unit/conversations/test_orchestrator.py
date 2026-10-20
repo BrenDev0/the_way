@@ -1,19 +1,20 @@
 import pytest
 from helpers import FakeLLM, make_completion
 
-from src.conversations import config, prompt, use_cases
+from src.conversations import config, prompt
+from src.conversations.use_cases import conversations as conversation_use_cases
 from src.core.llm import domain
 
 
 def test_the_system_prompt_comes_first():
-    messages = use_cases.build_messages("hello")
+    messages = conversation_use_cases.build_messages("hello")
 
     assert messages[0]["role"] == "system"
     assert messages[0]["content"] == prompt.SYSTEM
 
 
 def test_the_user_message_comes_last():
-    messages = use_cases.build_messages("hello")
+    messages = conversation_use_cases.build_messages("hello")
 
     assert messages[-1] == {"role": "user", "content": "hello"}
 
@@ -21,7 +22,7 @@ def test_the_user_message_comes_last():
 def test_history_sits_between_the_prompt_and_the_new_message():
     history = [domain.user("earlier"), domain.assistant("reply")]
 
-    messages = use_cases.build_messages("now", history)
+    messages = conversation_use_cases.build_messages("now", history)
 
     assert [m["role"] for m in messages] == ["system", "user", "assistant", "user"]
 
@@ -29,7 +30,7 @@ def test_history_sits_between_the_prompt_and_the_new_message():
 def test_history_is_not_mutated():
     history = [domain.user("earlier")]
 
-    use_cases.build_messages("now", history)
+    conversation_use_cases.build_messages("now", history)
 
     assert len(history) == 1
 
@@ -37,7 +38,7 @@ def test_history_is_not_mutated():
 def test_the_prompt_is_not_stored_in_history():
     history = [domain.user("earlier"), domain.assistant("reply")]
 
-    messages = use_cases.build_messages("now", history)
+    messages = conversation_use_cases.build_messages("now", history)
 
     assert sum(1 for m in messages if m["role"] == "system") == 1
 
@@ -45,7 +46,7 @@ def test_the_prompt_is_not_stored_in_history():
 async def test_reply_returns_the_completion():
     llm = FakeLLM("the answer")
 
-    completion = await use_cases.reply("hello", llm)
+    completion = await conversation_use_cases.reply("hello", llm)
 
     assert completion.text == "the answer"
 
@@ -53,7 +54,7 @@ async def test_reply_returns_the_completion():
 async def test_reply_sends_the_built_conversation():
     llm = FakeLLM("the answer")
 
-    await use_cases.reply("hello", llm)
+    await conversation_use_cases.reply("hello", llm)
 
     sent = llm.received[0]
     assert sent[0]["role"] == "system"
@@ -64,7 +65,7 @@ async def test_reply_carries_history_through():
     llm = FakeLLM("the answer")
     history = [domain.user("earlier"), domain.assistant("reply")]
 
-    await use_cases.reply("now", llm, history)
+    await conversation_use_cases.reply("now", llm, history)
 
     assert [m["role"] for m in llm.received[0]] == ["system", "user", "assistant", "user"]
 
@@ -72,7 +73,7 @@ async def test_reply_carries_history_through():
 async def test_the_returned_message_can_be_appended_to_history():
     llm = FakeLLM("the answer")
 
-    completion = await use_cases.reply("hello", llm)
+    completion = await conversation_use_cases.reply("hello", llm)
 
     assert completion.message["role"] == "assistant"
     assert completion.message["content"] == "the answer"
@@ -81,7 +82,7 @@ async def test_the_returned_message_can_be_appended_to_history():
 async def test_an_empty_answer_is_passed_through_not_swallowed():
     llm = FakeLLM(make_completion(""))
 
-    completion = await use_cases.reply("hello", llm)
+    completion = await conversation_use_cases.reply("hello", llm)
 
     assert completion.text == ""
 
@@ -91,7 +92,7 @@ async def test_usage_is_reported():
 
     llm = FakeLLM(make_completion("hi", usage=TokenUsage(10, 4, 14)))
 
-    completion = await use_cases.reply("hello", llm)
+    completion = await conversation_use_cases.reply("hello", llm)
 
     assert completion.usage.total_tokens == 14
 

@@ -13,12 +13,12 @@ from sqlalchemy.pool import NullPool
 import src.api_keys.sqlalchemy
 import src.background.sqlalchemy
 import src.conversations.sqlalchemy
-import src.core.sessions.sqlalchemy
 import src.documents.sqlalchemy
 import src.invitations.sqlalchemy
 import src.organizations.sqlalchemy
 import src.preferences.sqlalchemy
 import src.projects.sqlalchemy
+import src.sessions.sqlalchemy
 import src.skills.sqlalchemy
 import src.users.sqlalchemy  # noqa: F401
 from src.core.database.sqlalchemy.models import Base
@@ -128,6 +128,26 @@ def worker():
         except subprocess.TimeoutExpired:
             process.kill()
         handle.close()
+
+
+@pytest.fixture(autouse=True)
+async def reset_rate_limits():
+    """The limiter counts per address, and every test client is the same address: without
+    this the logins of one test count against the next, and a block (15 minutes) outlives
+    the test that caused it."""
+    if not services_configured():
+        yield
+        return
+
+    import redis.asyncio as redis
+
+    client = redis.from_url(settings.REDIS_URL)
+    try:
+        async for key in client.scan_iter("rate_limit:*"):
+            await client.delete(key)
+    finally:
+        await client.aclose()
+    yield
 
 
 @pytest.fixture(autouse=True)

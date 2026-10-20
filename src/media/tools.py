@@ -15,11 +15,10 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel
 from pypdf.errors import PdfReadError
 
+from src.assistants.context import ToolContext
 from src.core.exceptions import NotFoundError
-from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool
 from src.projects.domain import Project, ProjectFile
-from src.projects.files import ProjectFiles
 
 from . import config, image_ops, pdf_ops
 from .pages import PageSpecError
@@ -55,7 +54,7 @@ def _edited(path: str, extension: str | None = None) -> str:
 
 
 def build(context: ToolContext) -> dict[str, Tool]:
-    files = ProjectFiles(context.session, context.organization_id, context.user_id, context.bucket_store)
+    files = context.files
 
     async def load(target: Project, path: str) -> bytes:
         # a source may be in another project (project:<name>/<path>); results stay in target

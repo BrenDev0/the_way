@@ -3,10 +3,10 @@ from uuid import UUID
 
 from src.core.cache.ports import CacheStore
 from src.core.exceptions import ConflictError
-from src.core.sessions import service as sessions_service
-from src.core.sessions.ports import RevokeSessionsByUserIdFn
+from src.sessions import service as sessions_service
+from src.sessions.ports import RevokeSessionsByUserIdFn
 
-from . import cache, mapper
+from . import cache
 from .domain import Role, User
 from .ports import DeleteUserFn, GetUserByIdFn, ListUsersFn
 
@@ -24,13 +24,13 @@ async def get_user(
 
     cached = await cache_store.get_json(key)
     if cached is not None:
-        return mapper.cache_to_domain(cached)
+        return cache.cache_to_domain(cached)
 
     user = await get_user_by_id_fn(user_id)
     if user is None:
         return None
 
-    await cache_store.store_json(key, mapper.domain_to_cache(user), cache.CACHE_TTL_SECONDS)
+    await cache_store.store_json(key, cache.domain_to_cache(user), cache.CACHE_TTL_SECONDS)
     return user
 
 

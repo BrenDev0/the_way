@@ -20,7 +20,7 @@ from src.core.exceptions import (
     ValidationError,
 )
 
-from . import keys, use_cases
+from . import keys
 from .domain import (
     FileStatus,
     Folder,
@@ -38,6 +38,7 @@ from .ports import (
     ListTreeFn,
     UpdateFileFn,
 )
+from .use_cases.common import validate_name
 
 Entry = Folder | ProjectFile
 
@@ -51,7 +52,7 @@ def split(path: str) -> list[str]:
             message=f"'{path}' climbs out of the project with '..'",
             code="project_path_invalid",
         )
-    return [use_cases.validate_name(segment) for segment in segments]
+    return [validate_name(segment) for segment in segments]
 
 
 def join(segments: Sequence[str]) -> str:

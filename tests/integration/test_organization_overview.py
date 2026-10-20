@@ -1,15 +1,22 @@
 """The organization tab's numbers: seats, storage, orphaned projects and AI use."""
 
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from uuid import uuid4
 
 import pytest
 from sqlalchemy import update
 
 from src.conversations.sqlalchemy.models import ConversationRow
-from src.organizations import overview
+from src.invitations.sqlalchemy import adapter as invitations_adapter
+from src.organizations import use_cases as organizations_use_cases
 from src.organizations.domain import OrganizationCreate
+from src.organizations.fastapi.schemas import (
+    OrganizationOverviewResponse,
+    UsageResponse,
+)
 from src.organizations.sqlalchemy import adapter as organizations_adapter
+from src.organizations.sqlalchemy import reports
 from src.organizations.sqlalchemy.models import OrganizationRow
 from src.projects.domain import FileStatus, ProjectCreate, ProjectFileCreate
 from src.projects.sqlalchemy import adapter as projects_adapter
@@ -58,10 +65,37 @@ async def org(db_session):
     return organization, owner, admin, orphan
 
 
+async def overview_of(db_session, user):
+    """What /me/overview answers for `user`, on the wire: the use case over the real
+    adapters and queries, shaped by the response schema."""
+    overview = await organizations_use_cases.get_overview(
+        organization_id=user.organization_id,
+        get_organization_by_id_fn=partial(organizations_adapter.get_by_id, db_session),
+        count_users_for_organization_fn=partial(users_adapter.count_for_organization, db_session),
+        count_pending_for_organization_fn=partial(
+            invitations_adapter.count_pending_for_organization, db_session
+        ),
+        list_users_fn=partial(users_adapter.list_users, db_session),
+        list_project_storage_fn=partial(reports.list_project_storage, db_session),
+    )
+    return OrganizationOverviewResponse.from_domain(overview).model_dump(by_alias=True)
+
+
+async def usage_of(db_session, user, months):
+    """What /me/usage answers for `user`, on the wire."""
+    report = await organizations_use_cases.get_usage(
+        organization_id=user.organization_id,
+        months=months,
+        now=datetime.now(UTC),
+        list_monthly_usage_fn=partial(reports.list_monthly_usage, db_session),
+    )
+    return UsageResponse.from_domain(report).model_dump(by_alias=True)
+
+
 async def test_the_overview_counts_seats_storage_and_orphans(db_session, org):
     _organization, owner, admin, _orphan = org
 
-    result = await overview.overview_route(admin, db_session)
+    result = await overview_of(db_session, admin)
 
     assert result["seats"] == {"limit": 5, "members": 2, "pending": 0}
     assert result["ownerId"] == str(owner.id)
@@ -76,7 +110,7 @@ async def test_the_overview_counts_seats_storage_and_orphans(db_session, org):
 async def test_usage_is_counted_per_person_and_month(db_session, org):
     _, owner, admin, _ = org
 
-    result = await overview.usage_route(owner, db_session, months=6)
+    result = await usage_of(db_session, owner, months=6)
 
     assert len(result["months"]) == 6 and result["months"][-1] == datetime.now(UTC).date().replace(day=1).isoformat()
     by_user = {}
@@ -90,6 +124,6 @@ async def test_usage_is_counted_per_person_and_month(db_session, org):
 
 
 def test_months_step_back_over_the_year_end():
-    starts = overview.month_starts(datetime(2026, 2, 10, tzinfo=UTC), 4)
+    starts = organizations_use_cases.month_starts(datetime(2026, 2, 10, tzinfo=UTC), 4)
 
     assert [s.date().isoformat() for s in starts] == ["2025-11-01", "2025-12-01", "2026-01-01", "2026-02-01"]

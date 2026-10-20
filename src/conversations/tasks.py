@@ -10,6 +10,8 @@ from taskiq import Context, TaskiqDepends
 from src.api_keys import credentials as api_keys_credentials
 from src.api_keys.sqlalchemy import adapter as api_keys_adapter
 from src.assistants import catalog
+from src.assistants.context import LLMFactory, ToolContext
+from src.assistants.sql import sql_tool_context
 from src.background import tools as background_tools
 from src.core.bucket.ports import BucketStore
 from src.core.bucket.unavailable import UnavailableBucketStore
@@ -19,20 +21,16 @@ from src.core.events.ports import EventStream
 from src.core.llm.domain import LLMUnavailable, Message
 from src.core.llm.ports import LLM
 from src.core.tasks.broker import broker
-from src.core.tools.context import LLMFactory, ToolContext
 from src.core.tools.executor import Executor
 from src.core.tools.gates import SuspendGate
 from src.crm import tools as crm_tools
 from src.crm.prompt import WORKFLOW
-from src.knowledge import tools as knowledge_tools
 from src.preferences import tools as preference_tools
-from src.projects.files import ProjectFiles
 from src.users.sqlalchemy import adapter as users_adapter
 from src.worker import dependencies as worker_dependencies
 
 from . import attachments, config, prompt, relay
 from . import tools as conversation_tools
-from . import use_cases as conversations_use_cases
 from .domain import (
     Conversation,
     ConversationClient,
@@ -44,6 +42,8 @@ from .domain import (
 )
 from .events import ConversationEvents
 from .sqlalchemy import adapter
+from .use_cases import advance as advance_use_cases
+from .use_cases import naming as naming_use_cases
 
 READY_ATTEMPTS = 40
 READY_INTERVAL_SECONDS = 0.1
@@ -146,8 +146,8 @@ async def run_turn(
                 llm = await factory()
 
             user = await users_adapter.get_user_by_id(session, conversation.user_id)
-            context = ToolContext(
-                session=session,
+            context = sql_tool_context(
+                session,
                 organization_id=conversation.organization_id,
                 user_id=conversation.user_id,
                 user_role=str(user.role) if user else "",
@@ -174,7 +174,7 @@ async def run_turn(
             async def append_messages_fn(cid: UUID, messages: Sequence[Message]):
                 return await adapter.append_messages(session, cid, messages)
 
-            files = ProjectFiles(session, conversation.organization_id, conversation.user_id, context.bucket_store)
+            files = context.files
 
             async def expand_fn(history: Sequence[Message]) -> list[Message]:
                 return await attachments.expand(history, files.bytes_of)
@@ -187,7 +187,7 @@ async def run_turn(
                     saved.append(updated)
                 return updated
 
-            status = await conversations_use_cases.advance_turn(
+            status = await advance_use_cases.advance_turn(
                 conversation_id=conversation_id,
                 llm=llm,
                 executor=Executor(conversation_tools.build(context, desktop), SuspendGate(), events),
@@ -219,14 +219,14 @@ async def run_turn(
             # The loop pauses on the model being unreachable; this is the rare call outside
             # it (building the model, say). Same outcome: kept, paused, retryable.
             await session.rollback()
-            pause = conversations_use_cases.paused(PauseReason(exc.reason), exc.detail, exc.retry_after)
+            pause = advance_use_cases.paused(PauseReason(exc.reason), exc.detail, exc.retry_after)
             await _announce(events, await _mark_paused(conversation_id, pause))
             return ConversationStatus.PAUSED
         except asyncio.CancelledError:
             # The worker is going down mid-turn. What the turn did up to its last checkpoint
             # is committed; it is paused, not failed, so the user can carry on from there.
             await session.rollback()
-            pause = conversations_use_cases.paused(PauseReason.INTERRUPTED)
+            pause = advance_use_cases.paused(PauseReason.INTERRUPTED)
             await asyncio.shield(_pause_and_announce(conversation_id, pause, events))
             raise
         except Exception:
@@ -250,7 +250,7 @@ async def turn_context(
     stable = []
     if crm_tools.available(context):
         stable.append(WORKFLOW)
-    stable.append(await knowledge_tools.build_context(context.session, context.organization_id))
+    stable.append(await catalog.knowledge_context(context))
 
     now = datetime.now(UTC)
     current = prompt.turn_context(
@@ -274,13 +274,13 @@ async def _name(session: AsyncSession, conversation_id: UUID, factory: LLMFactor
             return None
         history = await adapter.list_messages(session, conversation_id)
         # checked before a model is built: most turns are in a conversation already named
-        if not conversations_use_cases.unnamed(conversation.title, history):
+        if not naming_use_cases.unnamed(conversation.title, history):
             return None
 
         async def rename_fn(cid: UUID, title: str) -> Conversation | None:
             return await adapter.rename(session, cid, title)
 
-        named = await conversations_use_cases.name_conversation(
+        named = await naming_use_cases.name_conversation(
             conversation,
             history,
             await factory(config.TITLE_MODELS, config.TITLE_TEMPERATURE),

@@ -2,14 +2,13 @@ import re
 import tempfile
 from pathlib import Path
 
+from src.assistants.context import ToolContext
 from src.core.exceptions import NotFoundError
-from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool, truncate
 from src.documents import extraction
 
 from . import config
 from .domain import Folder
-from .files import ProjectFiles
 from .tool_schemas import (
     CopyProjectPath,
     CreateProject,
@@ -80,9 +79,7 @@ def _listing(entries) -> str:
 
 
 def build(context: ToolContext) -> dict[str, Tool]:
-    files = ProjectFiles(
-        context.session, context.organization_id, context.user_id, context.bucket_store
-    )
+    files = context.files
 
     async def list_projects() -> str:
         projects = await files.projects()

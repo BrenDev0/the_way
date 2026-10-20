@@ -2,8 +2,8 @@ import re
 from datetime import UTC, datetime
 
 from src.api_keys.domain import Provider
+from src.assistants.context import ToolContext
 from src.core.exceptions import ApplicationError
-from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool
 from src.projects.files import ProjectFiles
 from src.projects.html_images import project_ref
@@ -30,7 +30,7 @@ def _slug(text: str) -> str:
 
 
 def build(context: ToolContext) -> dict[str, Tool]:
-    files = ProjectFiles(context.session, context.organization_id, context.user_id, context.bucket_store)
+    files = context.files
     credential = context.credentials.get(str(Provider.OPENAI))
     api_key = credential.secret if credential else None
 

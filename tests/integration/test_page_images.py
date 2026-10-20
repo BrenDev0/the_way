@@ -5,14 +5,14 @@ import pytest
 from helpers import FakeBucketStore
 from starlette.testclient import TestClient
 
-from src.api import dependencies as api_dependencies
-from src.api.main import app
 from src.core.settings import settings
 from src.exports import tools as export_tools
+from src.fastapi import dependencies as api_dependencies
+from src.fastapi.main import app
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
 from src.projects import html_images, links
-from src.projects.files import ProjectFiles
+from src.projects.sqlalchemy.store import project_files
 from src.users.domain import Role, UserCreate
 from src.users.sqlalchemy import adapter as users_adapter
 
@@ -44,7 +44,7 @@ def public_api(monkeypatch):
 async def drafts(db_session):
     user = await make_user(db_session)
     bucket = FakeBucketStore()
-    files = ProjectFiles(db_session, user.organization_id, user.id, bucket)
+    files = project_files(db_session, user.organization_id, user.id, bucket)
     project = await files.create_project("Borradores")
     image = await files.write(project, "cat-mouse-merida/cat.png", PNG, content_type="image/png")
     await db_session.commit()
@@ -130,7 +130,7 @@ async def test_export_names_the_images_it_could_not_include(db_session, drafts):
 async def test_export_will_not_pull_in_another_organizations_image(db_session, drafts, public_api):
     files, project, _, _ = drafts
     other = await make_user(db_session, "Other")
-    theirs_files = ProjectFiles(db_session, other.organization_id, other.id, FakeBucketStore())
+    theirs_files = project_files(db_session, other.organization_id, other.id, FakeBucketStore())
     theirs = await theirs_files.write(
         await theirs_files.create_project("Private"), "secret.png", PNG, content_type="image/png"
     )
@@ -151,12 +151,13 @@ async def test_the_conversion_result_warns_about_missing_images(db_session, draf
     monkeypatch.setattr(render, "to_pdf", lambda html, **_: render.Rendered(b"%PDF", 1.0, 1))
 
     class Context:
-        session = db_session
         organization_id = files._organization_id
         user_id = files._user_id
         bucket_store = bucket
 
-    tool = export_tools.build(Context())["HtmlToPdf"]  # type: ignore[arg-type]
+    stand_in = Context()
+    stand_in.files = files  # type: ignore[attr-defined]
+    tool = export_tools.build(stand_in)["HtmlToPdf"]  # type: ignore[arg-type]
     result = await tool.handler(project="Borradores", path="report/report.html")
 
     assert "WARNING: 1 image(s)" in result

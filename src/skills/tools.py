@@ -1,6 +1,6 @@
+from src.assistants.context import ToolContext
 from src.core.agents.runner import run_assistant
 from src.core.llm import domain as llm_domain
-from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool
 from src.core.tools.executor import Executor
 from src.core.tools.gates import AutoApproveGate
@@ -9,7 +9,6 @@ from src.users.domain import Role
 
 from . import use_cases as skills_use_cases
 from .prompt import BUILDER_PROMPT
-from .sqlalchemy import adapter
 from .tool_schemas import BuildSkill, SaveSkill
 
 # Writing a skill to a layout the prompt spells out is templated work, not reasoning.
@@ -25,14 +24,9 @@ def build(context: ToolContext) -> dict[str, Tool]:
     if context.user_role not in AUTHORS:
         return {}
 
-    async def get_skill_fn(name, organization_id):
-        return await adapter.get_for_organization(context.session, name, organization_id)
-
-    async def count_skills_fn(organization_id):
-        return await adapter.count_for_organization(context.session, organization_id)
-
-    async def upsert_skill_fn(skill):
-        return await adapter.upsert(context.session, skill)
+    get_skill_fn = context.ports.get_skill_fn
+    count_skills_fn = context.ports.count_skills_fn
+    upsert_skill_fn = context.ports.upsert_skill_fn
 
     async def read_skill(name: str, file: str | None = None, offset: int = 0) -> str:
         skill = await get_skill_fn(name, context.organization_id)

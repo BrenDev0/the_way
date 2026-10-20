@@ -5,6 +5,7 @@ from uuid import uuid4
 import pytest
 from helpers import FakeBucketStore, FakeLLM, make_completion
 
+from src.assistants.sql import sql_tool_context
 from src.background import jobs as background_jobs
 from src.background import tools as background_tools
 from src.background.domain import BackgroundTaskCreate, TaskStatus
@@ -12,16 +13,15 @@ from src.background.sqlalchemy import adapter as background_adapter
 from src.conversations import events as conversation_events
 from src.conversations import tasks as conversation_tasks
 from src.conversations import tools as conversation_tools
-from src.conversations import use_cases as conversations_use_cases
 from src.conversations.domain import (
     ConversationCreate,
     ConversationStatus,
     ToolResolution,
 )
 from src.conversations.sqlalchemy import adapter as conversations_adapter
+from src.conversations.use_cases import turns as turn_use_cases
 from src.core.events.memory import InMemoryEventStream
 from src.core.llm.domain import ToolCall
-from src.core.tools.context import ToolContext
 from src.core.tools.domain import ToolLocation
 from src.crm import datasets
 from src.crm import query as crm_query
@@ -29,7 +29,7 @@ from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
 from src.preferences import tools as preference_tools
 from src.projects import tools as project_tools
-from src.projects.files import ProjectFiles
+from src.projects.sqlalchemy.store import project_files
 from src.users.domain import Role, UserCreate
 from src.users.sqlalchemy import adapter as users_adapter
 
@@ -60,9 +60,8 @@ def context_for(db_session, user, bucket, llm_factory=None, conversation_id=None
     async def refuse(preferred=(), temperature=0.0):
         raise AssertionError("this test builds no model")
 
-    return ToolContext(
-        session=db_session,
-        organization_id=user.organization_id,
+    return sql_tool_context(
+        db_session, organization_id=user.organization_id,
         user_id=user.id,
         user_role=str(user.role),
         bucket_store=bucket,
@@ -241,7 +240,7 @@ async def test_a_remembered_preference_reaches_the_turn_context(db_session, owne
 
 
 async def test_a_background_task_writes_verifies_and_delivers(db_session, owner, bucket):
-    await ProjectFiles(db_session, owner.organization_id, owner.id, bucket).create_project("Reports")
+    await project_files(db_session, owner.organization_id, owner.id, bucket).create_project("Reports")
     task = await background_adapter.create(
         db_session,
         BackgroundTaskCreate(
@@ -283,7 +282,7 @@ async def test_a_background_task_writes_verifies_and_delivers(db_session, owner,
     assert "q3/report.md" in finished.result
     assert "dropped the redundant q3/" in finished.result
 
-    files = ProjectFiles(db_session, owner.organization_id, owner.id, bucket)
+    files = project_files(db_session, owner.organization_id, owner.id, bucket)
     _, data = await files.read_bytes(await files.project("Reports"), "q3/report.md")
     assert data == b"# Q3"
 
@@ -425,7 +424,7 @@ class FakeCX:
 
 
 async def test_a_dataset_pages_to_the_end_and_counts_exactly(db_session, owner, bucket):
-    files = ProjectFiles(db_session, owner.organization_id, owner.id, bucket)
+    files = project_files(db_session, owner.organization_id, owner.id, bucket)
     cx = FakeCX()
 
     report = await datasets.fetch(cx, files, "contacts", "search-contacts-advanced")
@@ -439,7 +438,7 @@ async def test_a_dataset_pages_to_the_end_and_counts_exactly(db_session, owner, 
 
 
 async def test_a_second_ask_is_served_from_the_day_cache(db_session, owner, bucket):
-    files = ProjectFiles(db_session, owner.organization_id, owner.id, bucket)
+    files = project_files(db_session, owner.organization_id, owner.id, bucket)
     cx = FakeCX()
     await datasets.fetch(cx, files, "contacts", "search-contacts-advanced")
     calls = cx.calls
@@ -456,7 +455,7 @@ async def test_a_write_operation_is_refused(db_session, owner, bucket):
             return json.dumps({"operation": {"kind": "delete"}})
 
     report = await datasets.fetch(
-        WritingCX(), ProjectFiles(db_session, owner.organization_id, owner.id, bucket), "x", "delete-contact"
+        WritingCX(), project_files(db_session, owner.organization_id, owner.id, bucket), "x", "delete-contact"
     )
 
     assert report.startswith("Refusing to fetch")
@@ -497,7 +496,7 @@ async def test_a_desktop_call_pauses_the_turn_and_resumes_with_its_output(db_ses
     async def save(cid, turn):
         return await conversations_adapter.save_turn_state(db_session, cid, turn)
 
-    await conversations_use_cases.send_message(conversation.id, owner.id, "what is in notes.txt?", get, append, save)
+    await turn_use_cases.send_message(conversation.id, owner.id, "what is in notes.txt?", get, append, save)
     await db_session.commit()
 
     read = ToolCall(id="read-1", name="ReadFile", args={"file_path": "notes.txt"})
@@ -511,7 +510,7 @@ async def test_a_desktop_call_pauses_the_turn_and_resumes_with_its_output(db_ses
     assert paused.turn.pending_requests[0].location is ToolLocation.DESKTOP
     assert paused.turn.pending_requests[0].call.args == {"file_path": "notes.txt"}
 
-    await conversations_use_cases.resolve_tool_calls(
+    await turn_use_cases.resolve_tool_calls(
         conversation.id,
         owner.id,
         [ToolResolution("read-1", approved=True, output="buy milk")],

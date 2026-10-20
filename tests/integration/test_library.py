@@ -5,18 +5,17 @@ import io
 from uuid import uuid4
 
 import pytest
-from helpers import FakeBucketStore
+from helpers import FakeBucketStore, knowledge_block_on
 from PIL import Image
 
 from src.core.exceptions import AuthorizationError, ConflictError, NotFoundError
-from src.knowledge.tools import build_context
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
 from src.projects import config as projects_config
-from src.projects import use_cases
-from src.projects.files import ProjectFiles
-from src.projects.management import use_cases as management_use_cases
 from src.projects.sqlalchemy import adapter as projects_adapter
+from src.projects.sqlalchemy.store import project_files
+from src.projects.use_cases import management as management_use_cases
+from src.projects.use_cases import projects as projects_use_cases
 from src.users.domain import Role, UserCreate
 from src.users.sqlalchemy import adapter as users_adapter
 
@@ -69,13 +68,13 @@ async def test_every_member_reads_it_and_only_managers_change_it(db_session, org
     _, admin, member, library = org
     get = getter(db_session)
 
-    assert (await use_cases.resolve_readable_project(library.id, member, get)).id == library.id
-    assert (await use_cases.resolve_writable_project(library.id, admin, get)).id == library.id
+    assert (await projects_use_cases.resolve_readable_project(library.id, member, get)).id == library.id
+    assert (await projects_use_cases.resolve_writable_project(library.id, admin, get)).id == library.id
     with pytest.raises(AuthorizationError):
-        await use_cases.resolve_writable_project(library.id, member, get)
+        await projects_use_cases.resolve_writable_project(library.id, member, get)
     # it is no one's, so no one can rename or delete it as their own
     with pytest.raises(NotFoundError):
-        await use_cases.resolve_owned_project(library.id, admin, get)
+        await projects_use_cases.resolve_owned_project(library.id, admin, get)
 
 
 async def test_another_organization_cannot_see_it(db_session, org):
@@ -84,17 +83,17 @@ async def test_another_organization_cannot_see_it(db_session, org):
     stranger = await make_user(db_session, other.id, Role.OWNER)
 
     with pytest.raises(NotFoundError):
-        await use_cases.resolve_readable_project(library.id, stranger, getter(db_session))
+        await projects_use_cases.resolve_readable_project(library.id, stranger, getter(db_session))
 
 
 async def test_an_orphaned_project_is_not_shared(db_session, org):
     organization, admin, member, _ = org
-    mine = await ProjectFiles(db_session, organization.id, admin.id, FakeBucketStore()).create_project("Privado")
+    mine = await project_files(db_session, organization.id, admin.id, FakeBucketStore()).create_project("Privado")
     # what deleting the admin's account leaves: an orphan, for managers to reassign
     await projects_adapter.update_project(db_session, mine.id, {"owner_id": None})
 
     with pytest.raises(NotFoundError):
-        await use_cases.resolve_readable_project(mine.id, member, getter(db_session))
+        await projects_use_cases.resolve_readable_project(mine.id, member, getter(db_session))
 
 
 async def test_management_neither_lists_nor_touches_it(db_session, org):
@@ -109,7 +108,7 @@ async def test_management_neither_lists_nor_touches_it(db_session, org):
 
 async def test_its_name_is_reserved(db_session, org):
     organization, _, member, _ = org
-    files = ProjectFiles(db_session, organization.id, member.id, FakeBucketStore())
+    files = project_files(db_session, organization.id, member.id, FakeBucketStore())
 
     with pytest.raises(ConflictError):
         await files.create_project("biblioteca")
@@ -119,7 +118,7 @@ async def test_an_agent_reads_it_but_never_writes_there(db_session, org):
     organization, admin, member, library = org
     bucket = FakeBucketStore()
     await _admin_upload(db_session, library, admin, bucket)
-    files = ProjectFiles(db_session, organization.id, member.id, bucket)
+    files = project_files(db_session, organization.id, member.id, bucket)
 
     found, inner = await files.source(await files.workspace(), f"project:{LIBRARY}/Soullens/logo.png")
     assert (found.id, inner) == (library.id, "Soullens/logo.png")
@@ -136,14 +135,14 @@ async def test_an_agent_reads_it_but_never_writes_there(db_session, org):
             await attempt()
     # even working for an admin
     with pytest.raises(AuthorizationError):
-        await ProjectFiles(db_session, organization.id, admin.id, bucket).write(library, "x.png", png())
+        await project_files(db_session, organization.id, admin.id, bucket).write(library, "x.png", png())
 
 
 async def test_the_agent_is_told_what_each_brand_has(db_session, org):
     organization, admin, _, library = org
     await _admin_upload(db_session, library, admin, FakeBucketStore())
 
-    listing = await build_context(db_session, organization.id)
+    listing = await knowledge_block_on(db_session, organization.id)
 
     assert f"project:{LIBRARY}/Soullens/logo.png" in listing
     assert "- Soullens/: logo.png" in listing
@@ -190,14 +189,14 @@ async def _library_file(db_session, library, admin, bucket, path: str, content: 
 
 
 def _page_builder(db_session, organization, member, bucket, llm):
-    from src.core.tools.context import ToolContext
+    from src.assistants.sql import sql_tool_context
     from src.html_pages import tools as html_tools
 
     async def llm_factory(_models, _temperature=None):
         return llm
 
-    context = ToolContext(
-        session=db_session, organization_id=organization.id, user_id=member.id,
+    context = sql_tool_context(
+        db_session, organization_id=organization.id, user_id=member.id,
         user_role=Role.MEMBER, bucket_store=bucket, credentials={}, llm_factory=llm_factory,
     )
     return html_tools.build(context)["BuildHtmlPage"].handler
@@ -317,7 +316,7 @@ async def test_a_kit_document_gets_its_linked_layers_inside_it(db_session, org):
     organization, admin, member, library = org
     bucket = FakeBucketStore()
     await _library_file(db_session, library, admin, bucket, "SLS/tokens.css", b":root{--brand:#0052FE}", "text/css")
-    files = ProjectFiles(db_session, organization.id, member.id, bucket)
+    files = project_files(db_session, organization.id, member.id, bucket)
     drafts = await files.project("Borradores")
     await files.write(drafts, "docs/core.css", b".doc{color:var(--brand)}")
     page = (

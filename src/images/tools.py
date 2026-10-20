@@ -15,9 +15,8 @@ import openai
 from openai import AsyncOpenAI
 
 from src.api_keys.domain import Provider
-from src.core.tools.context import ToolContext
+from src.assistants.context import ToolContext
 from src.core.tools.domain import Tool
-from src.projects.files import ProjectFiles
 
 from . import config
 from .tool_schemas import EditImage, GenerateImages
@@ -75,9 +74,7 @@ def _preview_edit(project: str, source_paths: list[str], prompt: str, output_pat
 
 
 def build(context: ToolContext) -> dict[str, Tool]:
-    files = ProjectFiles(
-        context.session, context.organization_id, context.user_id, context.bucket_store
-    )
+    files = context.files
     credential = context.credentials.get(str(Provider.OPENAI))
 
     def client() -> AsyncOpenAI:

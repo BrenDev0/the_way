@@ -6,11 +6,11 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import signing
-from src.api.main import app
 from src.auth.cache import AuthCacheKey, build_auth_cache_key
 from src.core.database.sqlalchemy.core import async_session_factory
 from src.core.settings import settings
+from src.fastapi import signing
+from src.fastapi.main import app
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
 from src.users.domain import Role, UserCreate
@@ -248,3 +248,33 @@ def test_organization_management_is_not_on_the_desktop_api():
     for managed in ("/api-keys", "/invitations", "/projects/management", "/documents", "/skills"):
         assert not any(path.startswith(f"{DESKTOP}{managed}") for path in desktop_paths)
     assert f"{DESKTOP}/conversations/{{conversation_id}}/tool-results" in desktop_paths
+
+
+def test_failures_are_counted_against_the_address_the_edge_reports(client, email):
+    """Behind Railway the peer is the proxy, the same for every user. The client is the
+    entry the edge put second from the right of X-Forwarded-For."""
+    visitor, proxy = "203.0.113.9", "10.0.0.1"
+    keys = {
+        name: build_auth_cache_key(AuthCacheKey.DESKTOP_LOGIN_FAILURES_IP, address)
+        for name, address in (("visitor", visitor), ("proxy", proxy), ("peer", "testclient"))
+    }
+
+    async def counts():
+        cache = app.state.cache_store
+        return {name: await cache.get_int(key) for name, key in keys.items()}
+
+    async def forget():
+        for key in keys.values():
+            await app.state.cache_store.remove(key)
+
+    client.portal.call(forget)
+    response = client.post(
+        f"{DESKTOP}/auth/login",
+        json={"email": email, "password": "wrong", "deviceName": "Test laptop"},
+        headers={"X-Forwarded-For": f"{visitor}, {proxy}"},
+    )
+    seen = client.portal.call(counts)
+    client.portal.call(forget)
+
+    assert response.status_code == 401
+    assert seen == {"visitor": 1, "proxy": None, "peer": None}

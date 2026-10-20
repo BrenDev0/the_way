@@ -1,11 +1,13 @@
 from uuid import UUID
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from src.core.tools.domain import Tool
-from src.documents.sqlalchemy import adapter as documents_adapter
-from src.projects.sqlalchemy import adapter as projects_adapter
-from src.skills.sqlalchemy import adapter as skills_adapter
+from src.documents.ports import (
+    GetDocumentFn,
+    GetDocumentTextFn,
+    ListDocumentsForOrganizationFn,
+)
+from src.projects.ports import GetLibraryFn, ListTreeFn
+from src.skills.ports import GetSkillFn, ListSkillsForOrganizationFn
 
 from . import config, context, skill_notes
 from .schemas import ReadKnowledgeDocument, ReadSkill
@@ -56,18 +58,21 @@ def section(text: str, offset: int, size: int = config.MAX_TOOL_READ_CHARS) -> s
     return f"{where}{after}\n\n{body}"
 
 
-def build(session: AsyncSession, organization_id: UUID) -> dict[str, Tool]:
+def build(
+    get_document_fn: GetDocumentFn,
+    get_document_text_fn: GetDocumentTextFn,
+    get_skill_fn: GetSkillFn,
+    organization_id: UUID,
+) -> dict[str, Tool]:
     async def read_knowledge_document(document_id: str, offset: int = 0) -> str:
         try:
             parsed = UUID(document_id)
         except ValueError:
             return UNKNOWN_DOCUMENT.format(document_id=document_id)
 
-        text = await documents_adapter.get_text(session, parsed, organization_id)
+        text = await get_document_text_fn(parsed, organization_id)
         if text is None:
-            document = await documents_adapter.get_for_organization(
-                session, parsed, organization_id
-            )
+            document = await get_document_fn(parsed, organization_id)
             if document is None:
                 return UNKNOWN_DOCUMENT.format(document_id=document_id)
             return EMPTY_DOCUMENT.format(document_id=document_id)
@@ -75,7 +80,7 @@ def build(session: AsyncSession, organization_id: UUID) -> dict[str, Tool]:
         return section(text, offset)
 
     async def read_skill(name: str, file: str | None = None, offset: int = 0) -> str:
-        skill = await skills_adapter.get_for_organization(session, name, organization_id)
+        skill = await get_skill_fn(name, organization_id)
         if skill is None:
             return UNKNOWN_SKILL.format(name=name)
 
@@ -102,12 +107,18 @@ def build(session: AsyncSession, organization_id: UUID) -> dict[str, Tool]:
     }
 
 
-async def build_context(session: AsyncSession, organization_id: UUID) -> str:
-    skills = await skills_adapter.list_for_organization(session, organization_id)
-    documents = await documents_adapter.list_for_organization(session, organization_id)
-    library = await projects_adapter.get_library(session, organization_id)
+async def build_context(
+    list_skills_fn: ListSkillsForOrganizationFn,
+    list_documents_fn: ListDocumentsForOrganizationFn,
+    get_library_fn: GetLibraryFn,
+    list_tree_fn: ListTreeFn,
+    organization_id: UUID,
+) -> str:
+    skills = await list_skills_fn(organization_id)
+    documents = await list_documents_fn(organization_id)
+    library = await get_library_fn(organization_id)
     listing = None
     if library is not None:
-        tree = await projects_adapter.list_tree(session, library.id)
+        tree = await list_tree_fn(library.id)
         listing = (library.name, context.library_paths(tree))
     return context.render(skills, documents, listing)

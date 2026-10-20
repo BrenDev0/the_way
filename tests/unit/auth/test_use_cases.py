@@ -1,13 +1,14 @@
 import pytest
 from helpers import make_organization, make_session, make_user
 
-from src.auth import use_cases as auth_use_cases
 from src.auth.cache import AuthCacheKey, build_auth_cache_key
+from src.auth.use_cases import registration as registration_use_cases
+from src.auth.use_cases import sessions as sessions_use_cases
 from src.core.communications.domain import Email
 from src.core.exceptions import AuthenticationError, ConflictError
-from src.core.sessions.domain import SessionCreate
-from src.core.sessions.tokens import SessionTokenService
 from src.organizations.domain import OrganizationCreate
+from src.sessions.domain import SessionCreate
+from src.sessions.tokens import SessionTokenService
 from src.users.domain import UserCreate
 
 EMAIL = "founder@example.com"
@@ -68,7 +69,7 @@ def register(created_orgs, created_users, cache_store, hashing_service, encrypti
         )
 
     async def run(code="123456", get_user_by_email_hash_fn=no_user):
-        return await auth_use_cases.register_user(
+        return await registration_use_cases.register_user(
             organization_name="Acme Inc",
             email=EMAIL,
             password=PASSWORD,
@@ -93,7 +94,7 @@ def login(hashing_service):
         async def create_session_fn(session_create: SessionCreate):
             return make_session(user_id=session_create.user_id)
 
-        return await auth_use_cases.login_user(
+        return await sessions_use_cases.login_user(
             email=EMAIL,
             password=password,
             get_user_by_email_hash_fn=get_user,
@@ -108,7 +109,7 @@ def login(hashing_service):
 async def test_send_verification_sends_an_email_to_the_requester(
     cache_store, hashing_service, sender
 ):
-    await auth_use_cases.send_registration_verification_code(
+    await registration_use_cases.send_registration_verification_code(
         email=EMAIL,
         cache_store=cache_store,
         hashing_service=hashing_service,
@@ -124,7 +125,7 @@ async def test_send_verification_rejects_an_existing_email_before_sending(
     cache_store, hashing_service, sender
 ):
     with pytest.raises(ConflictError) as exc:
-        await auth_use_cases.send_registration_verification_code(
+        await registration_use_cases.send_registration_verification_code(
             email=EMAIL,
             cache_store=cache_store,
             hashing_service=hashing_service,
@@ -238,7 +239,7 @@ async def test_logout_revokes_the_session():
         revoked.append(token_hash)
         return True
 
-    await auth_use_cases.logout_user(
+    await sessions_use_cases.logout_user(
         session_token="raw-token",
         revoke_session_by_token_hash_fn=revoke_fn,
         session_token_service=SessionTokenService(),
@@ -252,7 +253,7 @@ async def test_logout_rejects_an_unknown_session():
         return False
 
     with pytest.raises(AuthenticationError) as exc:
-        await auth_use_cases.logout_user(
+        await sessions_use_cases.logout_user(
             session_token="raw-token",
             revoke_session_by_token_hash_fn=revoke_fn,
             session_token_service=SessionTokenService(),

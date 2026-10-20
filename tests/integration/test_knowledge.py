@@ -1,10 +1,10 @@
 from uuid import uuid4
 
 import pytest
+from helpers import knowledge_block_on, knowledge_tools_on
 
 from src.documents.domain import DocumentCreate, DocumentStatus
 from src.documents.sqlalchemy import adapter as documents_adapter
-from src.knowledge import tools as knowledge_tools
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
 from src.skills.domain import SkillCreate
@@ -233,7 +233,7 @@ async def test_the_read_tool_returns_the_document_text(db_session, tenant):
     organization, user = tenant
     document = await trained_document(db_session, organization.id, user.id)
 
-    tools = knowledge_tools.build(db_session, organization.id)
+    tools = knowledge_tools_on(db_session, organization.id)
     result = await tools["ReadKnowledgeDocument"].handler(document_id=str(document.id))
 
     assert result == BRAND_TEXT
@@ -243,7 +243,7 @@ async def test_the_read_tool_refuses_another_organizations_document(db_session, 
     organization, user = tenant
     document = await trained_document(db_session, organization.id, user.id)
 
-    tools = knowledge_tools.build(db_session, uuid4())
+    tools = knowledge_tools_on(db_session, uuid4())
     result = await tools["ReadKnowledgeDocument"].handler(document_id=str(document.id))
 
     assert "No document with id" in result
@@ -252,7 +252,7 @@ async def test_the_read_tool_refuses_another_organizations_document(db_session, 
 async def test_the_read_tool_rejects_a_malformed_id(db_session, tenant):
     organization, _user = tenant
 
-    tools = knowledge_tools.build(db_session, organization.id)
+    tools = knowledge_tools_on(db_session, organization.id)
     result = await tools["ReadKnowledgeDocument"].handler(document_id="not-a-uuid")
 
     assert "No document with id" in result
@@ -266,7 +266,7 @@ async def test_the_read_tool_reads_a_long_document_in_sections(db_session, tenan
         db_session, organization.id, user.id, text="x" * 60_000
     )
 
-    tools = knowledge_tools.build(db_session, organization.id)
+    tools = knowledge_tools_on(db_session, organization.id)
     read = tools["ReadKnowledgeDocument"].handler
     first = await read(document_id=str(document.id))
     last = await read(document_id=str(document.id), offset=40_000)
@@ -290,7 +290,7 @@ async def test_the_skill_tool_returns_instructions(db_session, tenant):
     )
     await db_session.commit()
 
-    tools = knowledge_tools.build(db_session, organization.id)
+    tools = knowledge_tools_on(db_session, organization.id)
 
     assert await tools["ReadSkill"].handler(name="brand-voice") == "1. Be warm."
 
@@ -309,7 +309,7 @@ async def test_the_skill_tool_refuses_another_organizations_skill(db_session, te
     )
     await db_session.commit()
 
-    tools = knowledge_tools.build(db_session, uuid4())
+    tools = knowledge_tools_on(db_session, uuid4())
     result = await tools["ReadSkill"].handler(name="brand-voice")
 
     assert "No skill named" in result
@@ -330,7 +330,7 @@ async def test_the_turn_context_lists_what_the_organization_holds(db_session, te
     )
     await db_session.commit()
 
-    block = await knowledge_tools.build_context(db_session, organization.id)
+    block = await knowledge_block_on(db_session, organization.id)
 
     assert "brand-voice: How to write." in block
     assert "Brand Book: Palette and tone." in block
@@ -339,7 +339,7 @@ async def test_the_turn_context_lists_what_the_organization_holds(db_session, te
 async def test_the_turn_context_is_empty_for_a_fresh_organization(db_session, tenant):
     organization, _user = tenant
 
-    assert await knowledge_tools.build_context(db_session, organization.id) == ""
+    assert await knowledge_block_on(db_session, organization.id) == ""
 
 
 async def test_an_unextracted_document_is_kept_out_of_the_context(db_session, tenant):
@@ -349,7 +349,7 @@ async def test_an_unextracted_document_is_kept_out_of_the_context(db_session, te
     )
     await db_session.commit()
 
-    assert await knowledge_tools.build_context(db_session, organization.id) == ""
+    assert await knowledge_block_on(db_session, organization.id) == ""
 
 
 class ToolCallingLLM:
@@ -375,9 +375,9 @@ class ToolCallingLLM:
 
 
 async def start_running_conversation(db_session, organization, user):
-    from src.conversations import use_cases as conversations_use_cases
     from src.conversations.domain import ConversationCreate
     from src.conversations.sqlalchemy import adapter as conversations_adapter
+    from src.conversations.use_cases import turns as turn_use_cases
 
     conversation = await conversations_adapter.create(
         db_session,
@@ -385,7 +385,7 @@ async def start_running_conversation(db_session, organization, user):
             organization_id=organization.id, user_id=user.id, title="Knowledge turn"
         ),
     )
-    await conversations_use_cases.send_message(
+    await turn_use_cases.send_message(
         conversation_id=conversation.id,
         user_id=user.id,
         message="what is our accent colour",

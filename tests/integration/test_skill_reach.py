@@ -7,6 +7,7 @@ from uuid import uuid4
 import pytest
 from helpers import FakeBucketStore, FakeLLM
 
+from src.assistants.sql import sql_tool_context
 from src.background import jobs as background_jobs
 from src.background import tools as background_tools
 from src.background.domain import BackgroundTaskCreate
@@ -15,7 +16,6 @@ from src.conversations.domain import ConversationCreate
 from src.conversations.sqlalchemy import adapter as conversations_adapter
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import ToolCall
-from src.core.tools.context import ToolContext
 from src.html_pages import tools as html_tools
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
@@ -60,9 +60,8 @@ def context_for(db_session, user, llm=None):
             raise AssertionError("this test builds no model")
         return llm
 
-    return ToolContext(
-        session=db_session,
-        organization_id=user.organization_id,
+    return sql_tool_context(
+        db_session, organization_id=user.organization_id,
         user_id=user.id,
         user_role=str(user.role),
         bucket_store=FakeBucketStore(),
@@ -246,8 +245,8 @@ async def test_a_workers_own_calls_are_kept_and_counted(db_session, owner):
 
 async def test_a_recording_in_a_project_is_transcribed_and_kept(db_session, owner, monkeypatch):
     from src.api_keys.domain import Provider
-    from src.core.tools.context import Credential
-    from src.projects.files import ProjectFiles
+    from src.assistants.context import Credential
+    from src.projects.sqlalchemy.store import project_files
     from src.transcripts import fetch
     from src.transcripts import tools as transcript_tools
 
@@ -259,12 +258,12 @@ async def test_a_recording_in_a_project_is_transcribed_and_kept(db_session, owne
 
     monkeypatch.setattr(fetch, "transcribe", transcribe)
     bucket = FakeBucketStore()
-    files = ProjectFiles(db_session, owner.organization_id, owner.id, bucket)
+    files = project_files(db_session, owner.organization_id, owner.id, bucket)
     project = await files.create_project("Reuniones")
     await files.write(project, "lunes/nota.m4a", b"audio-bytes", content_type="audio/mp4")
     await db_session.commit()
-    context = ToolContext(
-        session=db_session, organization_id=owner.organization_id, user_id=owner.id, user_role=str(owner.role),
+    context = sql_tool_context(
+        db_session, organization_id=owner.organization_id, user_id=owner.id, user_role=str(owner.role),
         bucket_store=bucket, credentials={str(Provider.OPENAI): Credential(secret="sk-test")},
         llm_factory=None,  # type: ignore[arg-type]
     )

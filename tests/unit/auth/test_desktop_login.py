@@ -4,13 +4,13 @@ from types import SimpleNamespace
 import pytest
 from helpers import make_session, make_user
 
-from src.auth import dependencies as auth_dependencies
-from src.auth import use_cases as auth_use_cases
+from src.auth.fastapi import dependencies as auth_dependencies
+from src.auth.use_cases import sessions as sessions_use_cases
 from src.core.exceptions import AuthenticationError, RateLimitError
-from src.core.sessions import service as sessions_service
-from src.core.sessions.domain import SessionClient
-from src.core.sessions.tokens import SessionTokenService
 from src.core.settings import settings
+from src.sessions import service as sessions_service
+from src.sessions.domain import SessionClient
+from src.sessions.tokens import SessionTokenService
 
 PASSWORD = "Sup3rSecret!"
 
@@ -32,7 +32,7 @@ def login(user, hashing_service, cache_store):
             created.append(session)
             return make_session(user_id=session.user_id, token_hash=session.token_hash)
 
-        return await auth_use_cases.login_desktop(
+        return await sessions_use_cases.login_desktop(
             email=email,
             password=password,
             device_name=device,

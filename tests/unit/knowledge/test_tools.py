@@ -7,14 +7,21 @@ from src.knowledge import config, tools
 
 
 @pytest.fixture
-def read_skill(monkeypatch):
+def read_skill():
     stored = {}
 
-    async def get_for_organization(_session, name, _organization_id):
+    async def get_skill(name, _organization_id):
         return stored.get(name)
 
-    monkeypatch.setattr(tools.skills_adapter, "get_for_organization", get_for_organization)
-    handler = tools.build(session=None, organization_id=uuid4())["ReadSkill"].handler
+    async def unused(*_args):
+        raise AssertionError("reading a skill touches no document")
+
+    handler = tools.build(
+        get_document_fn=unused,
+        get_document_text_fn=unused,
+        get_skill_fn=get_skill,
+        organization_id=uuid4(),
+    )["ReadSkill"].handler
     handler.stored = stored
     return handler
 

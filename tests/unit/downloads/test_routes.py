@@ -2,7 +2,8 @@ import pytest
 from helpers import FakeBucketStore
 
 from src.core.exceptions import NotFoundError
-from src.downloads import config, routes
+from src.downloads import config
+from src.downloads.fastapi import routes
 
 
 def published(*platforms: str) -> FakeBucketStore:

@@ -7,7 +7,9 @@ from taskiq import TaskiqDepends
 
 from src.api_keys import credentials as api_keys_credentials
 from src.api_keys.sqlalchemy import adapter as api_keys_adapter
-from src.assistants.catalog import server_tools
+from src.assistants.catalog import knowledge_context, server_tools
+from src.assistants.context import LLMFactory, ToolContext
+from src.assistants.sql import sql_tool_context
 from src.conversations import relay as conversation_relay
 from src.conversations.events import ConversationEvents
 from src.core.agents.domain import LoopState
@@ -20,13 +22,11 @@ from src.core.events.ports import EventStream
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import ToolCall
 from src.core.tasks.broker import broker
-from src.core.tools.context import LLMFactory, ToolContext
 from src.core.tools.domain import ToolResult
 from src.core.tools.executor import Executor
 from src.core.tools.gates import Allowance, AllowanceGate
 from src.core.tools.ports import ToolEvents
 from src.images import config as images_config
-from src.knowledge import tools as knowledge_tools
 from src.projects.files import ProjectFiles
 from src.users.sqlalchemy import adapter as users_adapter
 from src.worker import dependencies as worker_dependencies
@@ -132,7 +132,7 @@ async def run_task(
 
             recorder = CallRecorder(events)
             context = await _context(session, task, bucket_store, encryption_service, llm_factory, events)
-            files = ProjectFiles(session, task.organization_id, task.user_id, bucket_store)
+            files = context.files
             await files.make_folder(await files.workspace(), background_use_cases.task_path(task))
 
             outcome = await _work(context, files, task, resumed, recorder)
@@ -204,8 +204,8 @@ async def _context(
             task.user_id, list_api_keys_for_user_fn, encryption_service
         )
 
-    return ToolContext(
-        session=session,
+    return sql_tool_context(
+        session,
         organization_id=task.organization_id,
         user_id=task.user_id,
         user_role=str(user.role),
@@ -238,7 +238,7 @@ async def _work(
     # The same knowledge listing the conversation sees. Without it the worker held ReadSkill
     # but no names to read, so a skill reached it only if the instructions spelled one out.
     knowledge = (
-        "" if resumed else await knowledge_tools.build_context(context.session, context.organization_id)
+        "" if resumed else await knowledge_context(context)
     )
     state = resumed.state if resumed else LoopState(
         messages=[

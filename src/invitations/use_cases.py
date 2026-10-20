@@ -2,7 +2,6 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
-from src.core.communications import service as communications_service
 from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
 from src.core.exceptions import (
@@ -19,6 +18,7 @@ from src.users.ports import (
     GetUserByEmailHashFn,
 )
 
+from . import emails as invitation_emails
 from . import tokens
 from .domain import INVITABLE_BY, Invitation, InvitationCreate
 from .ports import (
@@ -114,7 +114,7 @@ async def invite_user(
     )
 
     await email_sender.send(
-        communications_service.create_invitation_email(
+        invitation_emails.create_invitation_email(
             link=f"{accept_url.rstrip('/')}?token={raw_token}",
             recipient_email=email,
             organization_name=organization.name,

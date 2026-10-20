@@ -35,8 +35,12 @@ from src.core.llm.domain import Message, ToolCall
 from src.core.tools.domain import ClientRequest, ToolResult
 from src.core.tools.executor import current_call
 
-from . import mapper
 from .domain import Conversation
+
+# The stream's payloads are deliberately the REST contract -- a client parses one model
+# whether it comes from a request or from this stream. If they ever need to differ, give the
+# stream its own payload type here instead of reusing these.
+from .fastapi.schemas import ConversationResponse, PendingToolCallResponse
 
 # A tool result can be a whole file or dataset; the stream carries enough to show progress.
 PREVIEW_CHARS = 2000
@@ -109,7 +113,7 @@ class ConversationEvents:
             return
 
     async def status(self, conversation: Conversation) -> None:
-        body = mapper.domain_to_conversation_response(conversation).model_dump(mode="json", by_alias=True)
+        body = ConversationResponse.from_domain(conversation).model_dump(mode="json", by_alias=True)
         await self._publish("status", body)
 
     # --- LoopObserver ---------------------------------------------------------------
@@ -167,7 +171,7 @@ class ConversationEvents:
                 "taskId": str(task_id),
                 "description": description,
                 "pendingApproval": [
-                    mapper.request_to_response(request).model_dump(mode="json", by_alias=True)
+                    PendingToolCallResponse.from_domain(request).model_dump(mode="json", by_alias=True)
                     for request in requests
                 ],
             },

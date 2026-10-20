@@ -22,11 +22,17 @@ from pathlib import Path
 from typing import Any
 from uuid import UUID
 
+from src.core.exceptions import ValidationError
 from src.core.llm.domain import Message
+from src.projects.domain import Project, ProjectFile
 
 from . import config
 
 ATTACHMENT = "attachment"
+
+# A file of the user's own, by id, once it has finished uploading: the file, the project it
+# is in, and its path there -- or None when it is not theirs or not ready.
+OwnedFileFn = Callable[[UUID], Awaitable[tuple[ProjectFile, Project, str] | None]]
 
 # What the model is shown as a picture. Anything else is described by its text, or only
 # by where it is.
@@ -57,6 +63,31 @@ def user_message(text: str, attachments: Sequence[dict[str, Any]]) -> Message:
         return {"role": "user", "content": text}
     blocks: list[dict[str, Any]] = [{"type": "text", "text": text}] if text.strip() else []
     return {"role": "user", "content": [*blocks, *attachments]}
+
+
+async def attachment_blocks(file_ids: Sequence[UUID], owned_file_fn: OwnedFileFn) -> list[dict]:
+    """A reference for each attached file, once it is known to be the user's own and
+    finished uploading. One that is not refuses the message rather than dropping it: the
+    user is talking about that file."""
+    blocks: list[dict] = []
+    for file_id in dict.fromkeys(file_ids):
+        found = await owned_file_fn(file_id)
+        if found is None:
+            raise ValidationError(
+                message="An attached file was not found, or has not finished uploading",
+                code="attachment_not_found",
+            )
+        project_file, project, path = found
+        blocks.append({
+            "type": ATTACHMENT,
+            "file_id": str(project_file.id),
+            "project": project.name,
+            "path": path,
+            "name": project_file.name,
+            "content_type": project_file.content_type,
+            "size_bytes": project_file.size_bytes,
+        })
+    return blocks
 
 
 async def expand(history: Sequence[Message], load: LoadFn) -> list[Message]:

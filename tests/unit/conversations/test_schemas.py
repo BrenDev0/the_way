@@ -1,6 +1,6 @@
 import pytest
 
-from src.conversations.schemas import (
+from src.conversations.fastapi.schemas import (
     ResolveToolCallsRequest,
     ResumeTurnRequest,
     SendMessageRequest,

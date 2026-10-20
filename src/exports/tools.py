@@ -4,10 +4,9 @@ from pathlib import PurePosixPath
 
 from pypdfium2 import PdfDocument
 
+from src.assistants.context import ToolContext
 from src.core.exceptions import ApplicationError
-from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool
-from src.projects.files import ProjectFiles
 from src.render.print_css import KIT_CORE_MARKER, SCROLL_WIDTH
 from src.render_client import client as render_client
 from src.render_client.ports import Renderer, RenderUnavailable
@@ -54,9 +53,7 @@ def _scroll_output(path: str) -> str:
 
 
 def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, Tool]:
-    files = ProjectFiles(
-        context.session, context.organization_id, context.user_id, context.bucket_store
-    )
+    files = context.files
     browser = renderer or render_client.from_settings()
 
     def weasyprint(make: Callable[[str], render.Rendered]) -> Callable[[str], Awaitable[render.Rendered]]:

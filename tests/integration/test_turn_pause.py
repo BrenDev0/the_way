@@ -5,9 +5,9 @@ import pytest
 from helpers import FakeLLM, make_completion
 
 from src.conversations import tasks as conversation_tasks
-from src.conversations import use_cases as conversations_use_cases
 from src.conversations.domain import ConversationCreate, ConversationStatus, PauseReason
 from src.conversations.sqlalchemy import adapter as conversations_adapter
+from src.conversations.use_cases import turns as turn_use_cases
 from src.core.llm.domain import LLMUnavailable, ToolCall, UnavailableReason
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
@@ -44,7 +44,7 @@ def store_fns(db_session):
 
 
 async def send(db_session, conversation, message):
-    await conversations_use_cases.send_message(
+    await turn_use_cases.send_message(
         conversation_id=conversation.id,
         user_id=conversation.user_id,
         message=message,
@@ -88,7 +88,7 @@ async def test_a_resumed_turn_carries_on_and_finishes(db_session, conversation):
     current = await reload(db_session, conversation)
     current.user_id = conversation.user_id
 
-    await conversations_use_cases.resume_turn(conversation.id, conversation.user_id, **store_fns(db_session))
+    await turn_use_cases.resume_turn(conversation.id, conversation.user_id, **store_fns(db_session))
     await db_session.commit()
     llm = FakeLLM("here it is")
     status = await conversation_tasks.run_turn(conversation.id, llm=llm, run="m2")

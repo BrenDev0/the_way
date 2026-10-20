@@ -5,7 +5,7 @@ side. An assistant takes the subset its job needs -- the conversation assistant 
 desktop and background tools on top, the background worker keeps an allowlist.
 """
 
-from src.core.tools.context import ToolContext
+from src.assistants.context import ToolContext
 from src.core.tools.domain import Tool
 from src.crm import tools as crm_tools
 from src.exports import tools as export_tools
@@ -20,7 +20,12 @@ from src.web import tools as web_tools
 
 def server_tools(context: ToolContext) -> dict[str, Tool]:
     return {
-        **knowledge_tools.build(context.session, context.organization_id),
+        **knowledge_tools.build(
+            get_document_fn=context.ports.get_document_fn,
+            get_document_text_fn=context.ports.get_document_text_fn,
+            get_skill_fn=context.ports.get_skill_fn,
+            organization_id=context.organization_id,
+        ),
         **project_tools.build(context),
         **crm_tools.build(context),
         **web_tools.build(context),
@@ -43,3 +48,14 @@ def unavailable(context: ToolContext) -> list[str]:
     if not image_tools.available(context):
         missing.append("image generation -- no OpenAI key has been issued to this user")
     return missing
+
+
+async def knowledge_context(context: ToolContext) -> str:
+    """The listing of the organization's skills, documents and library, for a run's prompt."""
+    return await knowledge_tools.build_context(
+        list_skills_fn=context.ports.list_skills_fn,
+        list_documents_fn=context.ports.list_documents_fn,
+        get_library_fn=context.ports.get_library_fn,
+        list_tree_fn=context.ports.list_tree_fn,
+        organization_id=context.organization_id,
+    )

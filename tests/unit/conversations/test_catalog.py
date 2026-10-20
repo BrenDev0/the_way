@@ -1,12 +1,12 @@
 from uuid import uuid4
 
 import pytest
-from helpers import FakeBucketStore
+from helpers import FakeBucketStore, make_tool_ports
 
 from src.assistants import catalog
+from src.assistants.context import Credential, ToolContext
 from src.background import config as background_config
 from src.conversations import tools as conversation_tools
-from src.core.tools.context import Credential, ToolContext
 from src.core.tools.domain import ToolLocation
 from src.desktop import tools as desktop_tools
 from src.users.domain import Role
@@ -18,7 +18,8 @@ async def no_llm(preferred=(), temperature=0.0):
 
 def context(role=Role.MEMBER, **credentials) -> ToolContext:
     return ToolContext(
-        session=None,  # type: ignore[arg-type] -- building tools never touches it
+        files=None,  # type: ignore[arg-type] -- building tools never touches it
+        ports=make_tool_ports(),
         organization_id=uuid4(),
         user_id=uuid4(),
         user_role=str(role),
@@ -134,7 +135,7 @@ def test_deletions_ask_even_in_auto_mode_and_messages_do_not():
 
 
 async def test_an_image_call_reaches_the_client_marked_to_ask_even_in_auto_mode():
-    from src.conversations import mapper
+    from src.conversations.fastapi.schemas import PendingToolCallResponse
     from src.core.llm.domain import ToolCall
     from src.core.tools.executor import Executor
     from src.core.tools.gates import SuspendGate
@@ -147,5 +148,5 @@ async def test_an_image_call_reaches_the_client_marked_to_ask_even_in_auto_mode(
     with pytest.raises(Exception) as stopped:
         await executor.execute([image, edit])
 
-    asked = {r.call.id: mapper.request_to_response(r).always_ask for r in stopped.value.requests}  # type: ignore[attr-defined]
+    asked = {r.call.id: PendingToolCallResponse.from_domain(r).always_ask for r in stopped.value.requests}  # type: ignore[attr-defined]
     assert asked == {"call-image": True, "call-edit": False}

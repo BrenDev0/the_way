@@ -4,8 +4,9 @@ from uuid import uuid4
 
 from helpers import FakeLLM
 
-from src.conversations import prompt, use_cases
+from src.conversations import prompt
 from src.conversations.domain import Conversation, TurnState
+from src.conversations.use_cases import naming as naming_use_cases
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import ToolCall
 
@@ -40,7 +41,7 @@ async def test_a_placeholder_title_is_replaced_after_the_first_exchange():
     renames = Renames(current)
     llm = FakeLLM("Banner campaña de otoño")
 
-    named = await use_cases.name_conversation(current, FIRST_EXCHANGE, llm, renames)
+    named = await naming_use_cases.name_conversation(current, FIRST_EXCHANGE, llm, renames)
 
     assert named is not None and named.title == "Banner campaña de otoño"
     sent = llm.received[0]
@@ -54,7 +55,7 @@ async def test_a_title_someone_chose_is_kept():
     llm = FakeLLM("should not be asked")
     renames = Renames(conversation("Skill · coworking"))
 
-    assert await use_cases.name_conversation(renames.current, FIRST_EXCHANGE, llm, renames) is None
+    assert await naming_use_cases.name_conversation(renames.current, FIRST_EXCHANGE, llm, renames) is None
     assert llm.received == [] and renames.titles == []
 
 
@@ -63,24 +64,24 @@ async def test_the_cut_off_first_message_the_app_used_as_a_title_is_replaced():
     current = conversation("necesito un banner para la campaña de oto")
     renames = Renames(current)
 
-    named = await use_cases.name_conversation(current, FIRST_EXCHANGE, FakeLLM("Banner de otoño"), renames)
+    named = await naming_use_cases.name_conversation(current, FIRST_EXCHANGE, FakeLLM("Banner de otoño"), renames)
 
     assert named is not None and named.title == "Banner de otoño"
 
 
 def test_a_title_is_unnamed_only_when_nobody_chose_it():
-    assert use_cases.unnamed("Nueva conversación", FIRST_EXCHANGE)
-    assert use_cases.unnamed("necesito un banner", FIRST_EXCHANGE)
-    assert not use_cases.unnamed("Banner de otoño", FIRST_EXCHANGE)
-    assert not use_cases.unnamed("Skill · coworking", FIRST_EXCHANGE)
-    assert not use_cases.unnamed("  ", FIRST_EXCHANGE)
+    assert naming_use_cases.unnamed("Nueva conversación", FIRST_EXCHANGE)
+    assert naming_use_cases.unnamed("necesito un banner", FIRST_EXCHANGE)
+    assert not naming_use_cases.unnamed("Banner de otoño", FIRST_EXCHANGE)
+    assert not naming_use_cases.unnamed("Skill · coworking", FIRST_EXCHANGE)
+    assert not naming_use_cases.unnamed("  ", FIRST_EXCHANGE)
 
 
 async def test_nothing_is_named_before_there_is_a_reply():
     llm = FakeLLM("should not be asked")
     renames = Renames(conversation())
 
-    await use_cases.name_conversation(renames.current, [llm_domain.user("hola")], llm, renames)
+    await naming_use_cases.name_conversation(renames.current, [llm_domain.user("hola")], llm, renames)
 
     assert llm.received == []
 
@@ -88,7 +89,7 @@ async def test_nothing_is_named_before_there_is_a_reply():
 async def test_the_model_answer_is_tidied_into_a_title():
     renames = Renames(conversation())
 
-    await use_cases.name_conversation(
+    await naming_use_cases.name_conversation(
         renames.current, FIRST_EXCHANGE, FakeLLM('Title: "Banner de otoño".'), renames
     )
 
@@ -98,7 +99,7 @@ async def test_the_model_answer_is_tidied_into_a_title():
 async def test_a_long_answer_is_clipped():
     renames = Renames(conversation())
 
-    await use_cases.name_conversation(renames.current, FIRST_EXCHANGE, FakeLLM("palabra " * 40), renames)
+    await naming_use_cases.name_conversation(renames.current, FIRST_EXCHANGE, FakeLLM("palabra " * 40), renames)
 
     assert len(renames.titles[0]) <= 60 and renames.titles[0].endswith("…")
 
@@ -106,5 +107,5 @@ async def test_a_long_answer_is_clipped():
 async def test_an_empty_answer_leaves_the_placeholder():
     renames = Renames(conversation())
 
-    assert await use_cases.name_conversation(renames.current, FIRST_EXCHANGE, FakeLLM("  "), renames) is None
+    assert await naming_use_cases.name_conversation(renames.current, FIRST_EXCHANGE, FakeLLM("  "), renames) is None
     assert renames.titles == []

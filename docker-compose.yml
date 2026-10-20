@@ -127,7 +127,7 @@ services:
   api:
     image: ${APP_IMAGE}
     restart: unless-stopped
-    command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+    command: uvicorn src.fastapi.main:app --host 0.0.0.0 --port 8000
     environment: *app-environment
     networks: [default, render]
     ports:

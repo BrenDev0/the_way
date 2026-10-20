@@ -1,16 +1,12 @@
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
-from src.core.database.sqlalchemy.core import async_session_factory
-from src.core.tools.context import ToolContext
+from src.assistants.context import ToolContext
 from src.core.tools.domain import Tool
 from src.projects import config as projects_config
-from src.projects.files import ProjectFiles
-from src.skills.sqlalchemy import adapter as skills_adapter
 
 from . import use_cases as background_use_cases
 from .domain import BackgroundTaskCreate, TaskStatus
-from .sqlalchemy import adapter
 from .tool_schemas import CheckBackgroundTask, DeliverTask, StartBackgroundTask
 
 Enqueue = Callable[[UUID], Awaitable[object]]
@@ -37,11 +33,8 @@ def _parse(task_id: str) -> UUID | None:
 def build(
     context: ToolContext,
     enqueue: Enqueue = _enqueue,
-    session_factory=async_session_factory,
 ) -> dict[str, Tool]:
-    files = ProjectFiles(
-        context.session, context.organization_id, context.user_id, context.bucket_store
-    )
+    files = context.files
 
     async def start_background_task(
         description: str,
@@ -63,7 +56,7 @@ def build(
         if named:
             held = {
                 skill.name
-                for skill in await skills_adapter.list_for_organization(context.session, context.organization_id)
+                for skill in await context.ports.list_skills_fn(context.organization_id)
             }
             unknown = [name for name in named if name not in held]
             if unknown:
@@ -72,22 +65,19 @@ def build(
                 )
             instructions = background_use_cases.with_skills(instructions, named)
 
-        # Committed in its own session, not the turn's: the worker picks the task up in
+        # Committed on its own, apart from the turn: the worker picks the task up in
         # seconds, and the turn may not commit for minutes.
-        async with session_factory() as session:
-            task = await adapter.create(
-                session,
-                BackgroundTaskCreate(
-                    organization_id=context.organization_id,
-                    user_id=context.user_id,
-                    conversation_id=context.conversation_id,
-                    description=description,
-                    instructions=instructions,
-                    deliver_project=deliver_to_project,
-                    deliver_path=deliver_to_path,
-                ),
+        task = await context.ports.create_task_fn(
+            BackgroundTaskCreate(
+                organization_id=context.organization_id,
+                user_id=context.user_id,
+                conversation_id=context.conversation_id,
+                description=description,
+                instructions=instructions,
+                deliver_project=deliver_to_project,
+                deliver_path=deliver_to_path,
             )
-            await session.commit()
+        )
 
         await enqueue(task.id)
 
@@ -100,7 +90,7 @@ def build(
 
     async def check_background_task(task_id: str) -> str:
         parsed = _parse(task_id)
-        task = await adapter.get_for_user(context.session, parsed, context.user_id) if parsed else None
+        task = await context.ports.get_task_for_user_fn(parsed, context.user_id) if parsed else None
         if task is None:
             return f"Task with id {task_id} not found"
 
@@ -110,12 +100,12 @@ def build(
         )
         if task.result:
             response += f"\nThe result of the task is: {task.result}"
-            await adapter.mark_reported(context.session, [task.id])
+            await context.ports.mark_reported_fn([task.id])
         return response
 
     async def deliver_task(task_id: str, project: str, path: str = ".") -> str:
         parsed = _parse(task_id)
-        task = await adapter.get_for_user(context.session, parsed, context.user_id) if parsed else None
+        task = await context.ports.get_task_for_user_fn(parsed, context.user_id) if parsed else None
         if task is None:
             return (
                 f"Task with id {task_id} not found. Do not guess a folder name -- ask the "
@@ -151,6 +141,6 @@ async def drain_notices(context: ToolContext) -> str:
     if context.conversation_id is None:
         return ""
 
-    finished = await adapter.list_unreported(context.session, context.conversation_id)
-    await adapter.mark_reported(context.session, [task.id for task in finished])
+    finished = await context.ports.list_unreported_fn(context.conversation_id)
+    await context.ports.mark_reported_fn([task.id for task in finished])
     return background_use_cases.news(finished)

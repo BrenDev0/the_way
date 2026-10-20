@@ -102,7 +102,7 @@ async def test_dependency_injection_reaches_a_task(cache_store):
 
 def test_fastapi_bridge_registers_worker_lifecycle_handlers():
     probe = InMemoryBroker()
-    taskiq_fastapi.init(probe, "src.api.main:app")
+    taskiq_fastapi.init(probe, "src.fastapi.main:app")
 
     from taskiq import TaskiqEvents
 

@@ -126,7 +126,7 @@ def test_a_conversation_says_whether_it_can_be_answered():
 
 
 def test_text_from_cx_never_names_the_platform_behind_it():
-    from src.cx_dashboard.routes import as_cx
+    from src.cx_dashboard.fastapi.routes import as_cx
 
     assert as_cx("HighLevel: the LeadConnector number is blocked") == "CX: the CX number is blocked"
     assert as_cx("GoHighLevel and Go High Level and GHL said no") == "CX and CX and CX said no"

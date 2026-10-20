@@ -8,9 +8,9 @@ from pydantic import BaseModel
 from src.api_keys.domain import ApiKey, Provider
 from src.core.bucket.domain import RemoteObject
 from src.core.llm.domain import Completion, Message, TokenUsage, ToolCall, assistant
-from src.core.sessions.domain import Session
 from src.documents.domain import Document, DocumentStatus
 from src.organizations.domain import Organization
+from src.sessions.domain import Session
 from src.skills.domain import Skill
 from src.users.domain import Role, User
 
@@ -324,3 +324,50 @@ class FakeBucketStore:
 
     async def aclose(self) -> None:
         return None
+
+
+def make_tool_ports(**overrides):
+    """A ToolPorts whose every port fails the test if it is called, except those given.
+
+    A test that builds tools without touching the database names only the ports it uses."""
+    import dataclasses
+
+    from src.assistants.context import ToolPorts
+
+    def unexpected(name: str):
+        async def call(*args, **kwargs):
+            raise AssertionError(f"the test did not expect {name} to be called")
+
+        return call
+
+    ports = {field.name: unexpected(field.name) for field in dataclasses.fields(ToolPorts)}
+    return ToolPorts(**{**ports, **overrides})
+
+
+def knowledge_tools_on(session, organization_id):
+    """The knowledge tools (ReadKnowledgeDocument, ReadSkill) over the database."""
+    from src.assistants.sql import sql_tool_ports
+    from src.knowledge import tools as knowledge_tools
+
+    ports = sql_tool_ports(session)
+    return knowledge_tools.build(
+        get_document_fn=ports.get_document_fn,
+        get_document_text_fn=ports.get_document_text_fn,
+        get_skill_fn=ports.get_skill_fn,
+        organization_id=organization_id,
+    )
+
+
+async def knowledge_block_on(session, organization_id):
+    """The knowledge listing a run's prompt carries, over the database."""
+    from src.assistants.sql import sql_tool_ports
+    from src.knowledge import tools as knowledge_tools
+
+    ports = sql_tool_ports(session)
+    return await knowledge_tools.build_context(
+        list_skills_fn=ports.list_skills_fn,
+        list_documents_fn=ports.list_documents_fn,
+        get_library_fn=ports.get_library_fn,
+        list_tree_fn=ports.list_tree_fn,
+        organization_id=organization_id,
+    )

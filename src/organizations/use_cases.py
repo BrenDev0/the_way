@@ -1,18 +1,35 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from src.core.cache.ports import CacheStore
 from src.core.exceptions import NotFoundError, ValidationError
+from src.invitations.ports import CountPendingForOrganizationFn
 from src.users import use_cases as users_use_cases
 from src.users.domain import Role
-from src.users.ports import GetUserByIdFn, UpdateUserRoleFn
+from src.users.ports import (
+    CountUsersForOrganizationFn,
+    GetUserByIdFn,
+    ListUsersFn,
+    UpdateUserRoleFn,
+)
 
-from . import cache, mapper
-from .domain import Organization
+from . import cache
+from .domain import (
+    Organization,
+    OrganizationOverview,
+    PersonStorage,
+    UsageReport,
+)
 from .ports import (
     DeleteOrganizationByIdFn,
     GetOrganizationByIdFn,
+    ListMonthlyUsageFn,
+    ListProjectStorageFn,
     UpdateOrganizationByIdFn,
 )
+
+# How many of the members' own projects the overview lists, biggest first.
+LARGEST_PROJECTS = 8
 
 
 def _not_found() -> NotFoundError:
@@ -35,13 +52,13 @@ async def get_organization(
 
     cached = await cache_store.get_json(key)
     if cached is not None:
-        return mapper.cache_to_domain(cached)
+        return cache.cache_to_domain(cached)
 
     organization = await get_organization_by_id_fn(organization_id)
     if organization is None:
         raise _not_found()
 
-    await cache_store.store_json(key, mapper.domain_to_cache(organization), cache.CACHE_TTL_SECONDS)
+    await cache_store.store_json(key, cache.domain_to_cache(organization), cache.CACHE_TTL_SECONDS)
     return organization
 
 
@@ -57,7 +74,7 @@ async def rename_organization(
 
     await cache_store.store_json(
         _cache_key(organization_id),
-        mapper.domain_to_cache(organization),
+        cache.domain_to_cache(organization),
         cache.CACHE_TTL_SECONDS,
     )
     return organization
@@ -98,3 +115,72 @@ async def delete_organization(
         raise _not_found()
 
     await cache_store.remove(_cache_key(organization_id))
+
+
+async def get_overview(
+    organization_id: UUID,
+    get_organization_by_id_fn: GetOrganizationByIdFn,
+    count_users_for_organization_fn: CountUsersForOrganizationFn,
+    count_pending_for_organization_fn: CountPendingForOrganizationFn,
+    list_users_fn: ListUsersFn,
+    list_project_storage_fn: ListProjectStorageFn,
+) -> OrganizationOverview:
+    """Seats in use, who owns the organization, where the storage goes, and the projects
+    left without an owner when someone was removed -- to reassign or delete."""
+    organization = await get_organization_by_id_fn(organization_id)
+    if organization is None:
+        raise _not_found()
+
+    members = await count_users_for_organization_fn(organization.id)
+    pending = await count_pending_for_organization_fn(organization.id)
+    owners = [user for user in await list_users_fn(organization.id) if user.role == Role.OWNER]
+    projects = list(await list_project_storage_fn(organization.id))
+
+    # [projects, files, bytes] per owner; projects with no owner belong to no one
+    totals: dict[UUID, list[int]] = {}
+    for project in projects:
+        if project.owner_id is not None:
+            entry = totals.setdefault(project.owner_id, [0, 0, 0])
+            entry[0] += 1
+            entry[1] += project.files
+            entry[2] += project.bytes
+    by_person = sorted(
+        (PersonStorage(user_id, *entry) for user_id, entry in totals.items()),
+        key=lambda person: -person.bytes,
+    )
+
+    return OrganizationOverview(
+        seat_limit=organization.seat_limit,
+        members=members,
+        pending_invitations=pending,
+        owner_id=owners[0].id if owners else None,
+        total_files=sum(project.files for project in projects),
+        total_bytes=sum(project.bytes for project in projects),
+        library=next((project for project in projects if project.shared), None),
+        by_person=by_person,
+        largest=[project for project in projects if not project.shared][:LARGEST_PROJECTS],
+        orphans=[project for project in projects if project.owner_id is None and not project.shared],
+    )
+
+
+def month_starts(now: datetime, months: int) -> list[datetime]:
+    """The first instant (UTC) of each of the last `months` calendar months, oldest first."""
+    year, month = now.year, now.month
+    starts = []
+    for _ in range(months):
+        starts.append(datetime(year, month, 1, tzinfo=UTC))
+        year, month = (year - 1, 12) if month == 1 else (year, month - 1)
+    return list(reversed(starts))
+
+
+async def get_usage(
+    organization_id: UUID,
+    months: int,
+    now: datetime,
+    list_monthly_usage_fn: ListMonthlyUsageFn,
+) -> UsageReport:
+    """AI use per person and month: conversations and tokens -- read, written, and read
+    from the prompt cache. A conversation counts in the month it started."""
+    starts = month_starts(now, months)
+    rows = await list_monthly_usage_fn(organization_id, starts[0])
+    return UsageReport(months=[start.date() for start in starts], rows=rows)

@@ -5,13 +5,14 @@ import pytest
 from helpers import FakeLLM, make_completion
 from pydantic import BaseModel
 
-from src.conversations import use_cases
 from src.conversations.domain import (
     Conversation,
     ConversationStatus,
     ToolResolution,
     TurnState,
 )
+from src.conversations.use_cases import advance as advance_use_cases
+from src.conversations.use_cases import turns as turn_use_cases
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import ToolCall
@@ -98,7 +99,7 @@ class Store:
 
 
 async def resolve(store: Store, *resolutions: ToolResolution, user_id=None):
-    return await use_cases.resolve_tool_calls(
+    return await turn_use_cases.resolve_tool_calls(
         store.conversation.id,
         user_id or store.conversation.user_id,
         list(resolutions),
@@ -200,7 +201,7 @@ async def test_the_resumed_turn_hands_the_desktop_output_to_the_model():
     await resolve(store, ToolResolution("read", approved=True, output="hello from disk"))
     llm = FakeLLM("The file says hello.")
 
-    status = await use_cases.advance_turn(
+    status = await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         Executor(TOOLS, SuspendGate()),
@@ -221,7 +222,7 @@ async def test_an_approved_server_call_runs_on_resume():
     store = Store(paused(DELETE), history=[llm_domain.user("delete x")])
     await resolve(store, ToolResolution("delete", approved=True))
 
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.conversation.id,
         FakeLLM("Deleted."),
         Executor(TOOLS, SuspendGate()),
@@ -243,7 +244,7 @@ async def test_a_background_notice_is_relayed_once_and_kept_as_relayed():
     async def drain(conversation):
         return "[t1] audit -- done: Files in .the_way/tasks/audit/: report.md."
 
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         Executor(TOOLS, SuspendGate()),
@@ -271,7 +272,7 @@ async def test_a_turn_the_server_opened_to_report_a_task_starts_from_the_notice(
     async def drain(conversation):
         return "[t1] informe -- done: Files in .the_way/tasks/informe/: index.html."
 
-    await use_cases.advance_turn(
+    await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         Executor(TOOLS, SuspendGate()),
@@ -291,7 +292,7 @@ async def test_a_turn_the_server_opened_to_report_a_task_starts_from_the_notice(
 async def test_a_turn_pausing_on_a_desktop_call_waits_for_the_client():
     store = Store(TurnState(status=ConversationStatus.RUNNING), history=[llm_domain.user("hi")])
 
-    status = await use_cases.advance_turn(
+    status = await advance_use_cases.advance_turn(
         store.conversation.id,
         FakeLLM(make_completion("", (READ,))),
         Executor(TOOLS, SuspendGate()),

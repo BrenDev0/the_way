@@ -1,0 +1,103 @@
+from contextlib import asynccontextmanager
+from datetime import timedelta
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.auth import config as auth_config
+from src.core.bucket.boto3 import adapter as bucket_adapter
+from src.core.cache.redis import adapter as redis_adapter
+from src.core.communications.smtp import adapter as smtp_adapter
+from src.core.cryptography.bcrypt import adapter as bcrypt_adapter
+from src.core.cryptography.fernet import adapter as fernet_adapter
+from src.core.database import migrations
+from src.core.events.redis import adapter as events_adapter
+from src.core.settings import settings
+from src.core.tasks.broker import broker
+from src.fastapi.exception_handlers import register_exception_handlers
+from src.projects.fastapi.routes.public import router as project_images_router
+from src.sessions.config import SessionCookieConfig
+from src.sessions.tokens import SessionTokenService
+
+from .desktop.routes import router as desktop_router
+from .rate_limit import RateLimitMiddleware
+from .v1.routes import router as v1_router
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # First, before anything can touch the database: new code must not run on an old schema.
+    if settings.DATABASE_MIGRATE_ON_STARTUP:
+        await migrations.upgrade_to_head(settings.DATABASE_URL)
+
+    app.state.encryption_service = fernet_adapter.FernetEncryptionService(
+        settings.CRYPTOGRAPHY_FERNET_KEY
+    )
+    app.state.hashing_service = bcrypt_adapter.BcryptHashingService()
+    app.state.cache_store = redis_adapter.RedisCacheStore(settings.REDIS_URL)
+    app.state.event_stream = events_adapter.RedisEventStream(settings.REDIS_URL)
+    app.state.email_sender = smtp_adapter.SmtpEmailSender()
+    if settings.BUCKET_NAME:
+        app.state.bucket_store = bucket_adapter.Boto3BucketStore(
+            bucket=settings.BUCKET_NAME,
+            region=settings.BUCKET_REGION,
+            access_key=settings.BUCKET_ACCESS_KEY_ID,
+            secret_key=settings.BUCKET_SECRET_ACCESS_KEY,
+            endpoint_url=settings.BUCKET_ENDPOINT,
+            public_endpoint_url=settings.BUCKET_PUBLIC_ENDPOINT,
+        )
+    app.state.session_token_service = SessionTokenService(
+        session_ttl=timedelta(seconds=settings.SESSION_TTL_SECONDS),
+    )
+    app.state.session_cookie_config = SessionCookieConfig(
+        name=settings.SESSION_COOKIE_NAME,
+        secure=settings.SESSION_COOKIE_SECURE,
+        samesite=settings.SESSION_COOKIE_SAMESITE,
+        max_age_seconds=settings.SESSION_TTL_SECONDS,
+    )
+
+    if not broker.is_worker_process:
+        await broker.startup()
+
+    yield
+
+    if not broker.is_worker_process:
+        await broker.shutdown()
+    await app.state.cache_store.close_connection()
+    await app.state.event_stream.aclose()
+    if getattr(app.state, "bucket_store", None) is not None:
+        await app.state.bucket_store.aclose()
+
+
+app = FastAPI(lifespan=lifespan)
+
+# Added before CORS so CORS wraps it and a 429 still carries the CORS headers.
+app.add_middleware(
+    RateLimitMiddleware,
+    paths={
+        f"{auth_config.WEB_API_PREFIX}/auth/login": settings.WEB_PROXY_HOPS,
+        f"{auth_config.WEB_API_PREFIX}/auth/register/request-verification": settings.WEB_PROXY_HOPS,
+        f"{auth_config.DESKTOP_API_PREFIX}/auth/login": settings.PUBLIC_PROXY_HOPS,
+    },
+    max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
+    window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
+    block_seconds=settings.RATE_LIMIT_BLOCK_SECONDS,
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.CORS_ALLOWED_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+register_exception_handlers(app)
+app.include_router(v1_router, prefix=auth_config.WEB_API_PREFIX)
+app.include_router(desktop_router, prefix=auth_config.DESKTOP_API_PREFIX)
+# beside the web API, not in it: an <img> sends no request signature (projects/links.py)
+app.include_router(project_images_router, prefix=auth_config.WEB_API_PREFIX)
+
+
+@app.get("/health", tags=["health"])
+async def health_check() -> dict[str, str]:
+    return {"status": "ok"}

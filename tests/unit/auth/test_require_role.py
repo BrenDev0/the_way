@@ -1,7 +1,7 @@
 import pytest
 from helpers import make_user
 
-from src.auth.dependencies import require_role
+from src.auth.fastapi.dependencies import require_role
 from src.core.exceptions import AuthorizationError
 from src.users.domain import Role
 

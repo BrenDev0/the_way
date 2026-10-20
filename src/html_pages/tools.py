@@ -9,20 +9,17 @@ implicitly, and implicit choices collapse to the median of its training data, wh
 what "plain" is.
 """
 
+from src.assistants.context import ToolContext
 from src.core.agents.runner import run_assistant
 from src.core.exceptions import ApplicationError
 from src.core.llm import domain as llm_domain
-from src.core.tools.context import ToolContext
 from src.core.tools.domain import Tool, ToolOutput
 from src.core.tools.executor import Executor
 from src.core.tools.gates import AutoApproveGate
 from src.projects import tools as project_tools
 from src.projects.domain import Project, ProjectFile
-from src.projects.files import ProjectFiles
-from src.projects.sqlalchemy import adapter as projects_adapter
 from src.render_client import client as render_client
 from src.render_client.ports import Renderer
-from src.skills.sqlalchemy import adapter as skills_adapter
 from src.web import tools as web_tools
 
 from . import brand as brand_packs
@@ -67,9 +64,7 @@ class BrandPackMissing(Exception):
 
 def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, Tool]:
     available = {**project_tools.build(context), **web_tools.build(context)}
-    files = ProjectFiles(
-        context.session, context.organization_id, context.user_id, context.bucket_store
-    )
+    files = context.files
     renderer = renderer or render_client.from_settings()
 
     async def check(project: str, path: str) -> str | ToolOutput:
@@ -106,7 +101,7 @@ def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, T
         a page built without the pack it was asked for would look finished and be off-brand.
         Fills in what CheckPage needs to hold the page to the pack: the brand's forbidden
         words and colours, and the other brands whose traces must not appear."""
-        library = await projects_adapter.get_library(context.session, context.organization_id)
+        library = await context.ports.get_library_fn(context.organization_id)
         if library is None:
             raise BrandPackMissing(NO_LIBRARY.format(brand=name))
 
@@ -160,11 +155,9 @@ def build(context: ToolContext, renderer: Renderer | None = None) -> dict[str, T
             request += f"\n\nStyle direction from the user (treat as binding):\n{style_direction}"
         if skill and skill.strip():
             # checked before the brand: neither pass has run, so a wrong name costs nothing
-            found = await skills_adapter.get_for_organization(
-                context.session, skill.strip(), context.organization_id
-            )
+            found = await context.ports.get_skill_fn(skill.strip(), context.organization_id)
             if found is None:
-                held = await skills_adapter.list_for_organization(context.session, context.organization_id)
+                held = await context.ports.list_skills_fn(context.organization_id)
                 return NO_SKILL.format(
                     skill=skill, held=", ".join(held_skill.name for held_skill in held) or "none"
                 )

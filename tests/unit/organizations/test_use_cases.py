@@ -4,7 +4,7 @@ import pytest
 from helpers import make_organization
 
 from src.core.exceptions import NotFoundError
-from src.organizations import cache, mapper
+from src.organizations import cache
 from src.organizations import use_cases as organizations_use_cases
 
 
@@ -46,7 +46,7 @@ async def test_get_organization_first_read_populates_the_cache(cache_store):
 
 async def test_get_organization_cached_read_never_touches_the_database(cache_store):
     organization = make_organization(name="Acme Inc")
-    cache_store.data[cache_key(organization.id)] = mapper.domain_to_cache(organization)
+    cache_store.data[cache_key(organization.id)] = cache.domain_to_cache(organization)
 
     async def get_fn(organization_id):
         raise AssertionError("database must not be queried on a cache hit")
@@ -129,7 +129,7 @@ async def test_rename_organization_sends_only_the_name_as_a_change(cache_store):
 
 async def test_rename_organization_update_refreshes_the_cache(cache_store):
     organization = make_organization(name="Old Name")
-    cache_store.data[cache_key(organization.id)] = mapper.domain_to_cache(organization)
+    cache_store.data[cache_key(organization.id)] = cache.domain_to_cache(organization)
 
     async def update_fn(organization_id, change_set):
         return make_organization(name=change_set["name"])
@@ -141,13 +141,13 @@ async def test_rename_organization_update_refreshes_the_cache(cache_store):
         cache_store=cache_store,
     )
 
-    cached = mapper.cache_to_domain(cache_store.data[cache_key(organization.id)])
+    cached = cache.cache_to_domain(cache_store.data[cache_key(organization.id)])
     assert cached.name == "New Name"
 
 
 async def test_rename_organization_a_read_after_update_sees_the_new_name(cache_store):
     organization = make_organization(name="Old Name")
-    cache_store.data[cache_key(organization.id)] = mapper.domain_to_cache(organization)
+    cache_store.data[cache_key(organization.id)] = cache.domain_to_cache(organization)
 
     async def update_fn(organization_id, change_set):
         return make_organization(name=change_set["name"])
@@ -202,7 +202,7 @@ async def test_delete_organization_deletes_the_given_organization(cache_store):
 
 async def test_delete_organization_delete_evicts_the_cache(cache_store):
     organization = make_organization()
-    cache_store.data[cache_key(organization.id)] = mapper.domain_to_cache(organization)
+    cache_store.data[cache_key(organization.id)] = cache.domain_to_cache(organization)
 
     async def delete_fn(oid):
         return True
@@ -231,18 +231,18 @@ async def test_delete_organization_missing_organization_raises_and_keeps_cache_u
 
 def test_cache_serialisation_round_trips_every_field():
     organization = make_organization(name="Acme Inc", seat_limit=25)
-    assert mapper.cache_to_domain(mapper.domain_to_cache(organization)) == organization
+    assert cache.cache_to_domain(cache.domain_to_cache(organization)) == organization
 
 
 def test_cache_serialisation_round_trips_a_null_seat_limit():
     organization = make_organization(seat_limit=None)
-    assert mapper.cache_to_domain(mapper.domain_to_cache(organization)).seat_limit is None
+    assert cache.cache_to_domain(cache.domain_to_cache(organization)).seat_limit is None
 
 
 def test_cache_serialisation_serialised_form_is_json_safe():
     import json
 
-    payload = mapper.domain_to_cache(make_organization())
+    payload = cache.domain_to_cache(make_organization())
     assert json.loads(json.dumps(payload)) == payload
 
 

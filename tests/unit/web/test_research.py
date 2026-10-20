@@ -5,16 +5,17 @@ from uuid import uuid4
 
 import httpx
 import pytest
-from helpers import FakeBucketStore
+from helpers import FakeBucketStore, make_tool_ports
 
-from src.core.tools.context import Credential, ToolContext
+from src.assistants.context import Credential, ToolContext
 from src.web import config as web_config
 from src.web import tools as web_tools
 
 
 def context() -> ToolContext:
     return ToolContext(
-        session=None,  # type: ignore[arg-type]
+        files=None,  # type: ignore[arg-type]
+        ports=make_tool_ports(),
         organization_id=uuid4(),
         user_id=uuid4(),
         user_role="member",

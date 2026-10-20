@@ -7,9 +7,9 @@ from pydantic import BaseModel
 
 from src.conversations import prompt
 from src.conversations import tasks as conversation_tasks
-from src.conversations import use_cases as conversations_use_cases
 from src.conversations.domain import ConversationCreate, ConversationStatus
 from src.conversations.sqlalchemy import adapter as conversations_adapter
+from src.conversations.use_cases import turns as turn_use_cases
 from src.core.exceptions import ConflictError
 from src.core.llm.domain import Completion, Message
 from src.organizations.domain import OrganizationCreate
@@ -57,7 +57,7 @@ def scripted_llm():
 
 
 async def send_and_run(db_session, conversation, message: str, llm):
-    await conversations_use_cases.send_message(
+    await turn_use_cases.send_message(
         conversation_id=conversation.id,
         user_id=conversation.user_id,
         message=message,
@@ -139,7 +139,7 @@ async def test_iterations_reset_between_turns(db_session, conversation, scripted
 
 
 async def test_a_turn_fails_when_the_user_has_no_ai_key(db_session, conversation):
-    await conversations_use_cases.send_message(
+    await turn_use_cases.send_message(
         conversation_id=conversation.id,
         user_id=conversation.user_id,
         message="hello there",

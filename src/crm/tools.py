@@ -1,7 +1,6 @@
 from src.api_keys.domain import Provider
-from src.core.tools.context import ToolContext
+from src.assistants.context import ToolContext
 from src.core.tools.domain import Tool
-from src.projects.files import ProjectFiles
 
 from . import config, datasets, query
 from .connection import CXConnection
@@ -28,9 +27,7 @@ def build(context: ToolContext) -> dict[str, Tool]:
         return {}
 
     connection = CXConnection(token=credential.secret, location_id=credential.account_id)
-    files = ProjectFiles(
-        context.session, context.organization_id, context.user_id, context.bucket_store
-    )
+    files = context.files
 
     async def search_cx_operations(query: str, domains=None, kind=None, limit=None) -> str:
         return await connection.search(query, domains, kind, limit)

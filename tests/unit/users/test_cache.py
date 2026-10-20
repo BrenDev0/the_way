@@ -3,7 +3,7 @@ from uuid import uuid4
 
 from helpers import make_user
 
-from src.users import cache, mapper
+from src.users import cache
 from src.users import use_cases as users_use_cases
 from src.users.domain import Role
 
@@ -26,7 +26,7 @@ async def test_get_user_read_through_first_read_populates_the_cache(cache_store)
 
 async def test_get_user_read_through_cached_read_never_touches_the_database(cache_store):
     user = make_user(role=Role.ADMIN)
-    cache_store.data[cache_key(user.id)] = mapper.domain_to_cache(user)
+    cache_store.data[cache_key(user.id)] = cache.domain_to_cache(user)
 
     async def get_fn(user_id):
         raise AssertionError("database must not be queried on a cache hit")
@@ -77,7 +77,7 @@ async def test_get_user_read_through_each_user_has_its_own_entry(cache_store):
 
 async def test_eviction_evict_removes_the_entry(cache_store):
     user = make_user()
-    cache_store.data[cache_key(user.id)] = mapper.domain_to_cache(user)
+    cache_store.data[cache_key(user.id)] = cache.domain_to_cache(user)
 
     await users_use_cases.evict_user(user.id, cache_store)
 
@@ -90,7 +90,7 @@ async def test_eviction_evicting_an_uncached_user_is_harmless(cache_store):
 
 async def test_eviction_a_read_after_eviction_sees_the_new_role(cache_store):
     user = make_user(role=Role.OWNER)
-    cache_store.data[cache_key(user.id)] = mapper.domain_to_cache(user)
+    cache_store.data[cache_key(user.id)] = cache.domain_to_cache(user)
     demoted = make_user(user_id=user.id, organization_id=user.organization_id, role=Role.ADMIN)
 
     async def get_fn(user_id):
@@ -104,17 +104,17 @@ async def test_eviction_a_read_after_eviction_sees_the_new_role(cache_store):
 
 def test_cache_serialisation_round_trips_every_field():
     user = make_user(role=Role.ADMIN)
-    assert mapper.cache_to_domain(mapper.domain_to_cache(user)) == user
+    assert cache.cache_to_domain(cache.domain_to_cache(user)) == user
 
 
 def test_cache_serialisation_role_survives_as_an_enum_not_a_string():
     user = make_user(role=Role.OWNER)
-    restored = mapper.cache_to_domain(mapper.domain_to_cache(user))
+    restored = cache.cache_to_domain(cache.domain_to_cache(user))
 
     assert restored.role is Role.OWNER
     assert isinstance(restored.role, Role)
 
 
 def test_cache_serialisation_serialised_form_is_json_safe():
-    payload = mapper.domain_to_cache(make_user())
+    payload = cache.domain_to_cache(make_user())
     assert json.loads(json.dumps(payload)) == payload

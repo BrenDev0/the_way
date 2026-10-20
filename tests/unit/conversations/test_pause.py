@@ -5,7 +5,6 @@ import pytest
 from helpers import FakeLLM, make_completion
 from pydantic import BaseModel
 
-from src.conversations import use_cases
 from src.conversations.domain import (
     Conversation,
     ConversationStatus,
@@ -13,6 +12,8 @@ from src.conversations.domain import (
     TurnPause,
     TurnState,
 )
+from src.conversations.use_cases import advance as advance_use_cases
+from src.conversations.use_cases import turns as turn_use_cases
 from src.core.exceptions import ConflictError
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import LLMUnavailable, TokenUsage, ToolCall, UnavailableReason
@@ -78,7 +79,7 @@ def searching(call_id):
 
 
 async def advance(store, llm):
-    return await use_cases.advance_turn(
+    return await advance_use_cases.advance_turn(
         store.conversation.id,
         llm,
         Executor({"Search": Tool(schema=Search, handler=search)}, DenyGate()),
@@ -141,7 +142,7 @@ async def test_resuming_carries_on_after_the_last_tool_result():
     store = Store(running(), history=[llm_domain.user("research this")])
     await advance(store, FakeLLM(searching("a"), rate_limited()))
 
-    await use_cases.resume_turn(
+    await turn_use_cases.resume_turn(
         store.conversation.id, store.conversation.user_id, store.get_for_user, store.save
     )
     llm = FakeLLM("here is what I found")
@@ -162,7 +163,7 @@ async def test_resuming_clears_the_pause_and_keeps_the_count():
     )
     store = Store(make_conversation(turn))
 
-    await use_cases.resume_turn(
+    await turn_use_cases.resume_turn(
         store.conversation.id, store.conversation.user_id, store.get_for_user, store.save
     )
 
@@ -180,7 +181,7 @@ async def test_only_a_paused_turn_can_be_resumed(status):
     store = Store(make_conversation(TurnState(status=status)))
 
     with pytest.raises(ConflictError) as exc:
-        await use_cases.resume_turn(
+        await turn_use_cases.resume_turn(
             store.conversation.id, store.conversation.user_id, store.get_for_user, store.save
         )
 
@@ -190,7 +191,7 @@ async def test_only_a_paused_turn_can_be_resumed(status):
 async def test_a_new_message_may_follow_a_paused_turn():
     store = Store(make_conversation(TurnState(status=ConversationStatus.PAUSED, pause=TurnPause(PauseReason.TIMEOUT))))
 
-    await use_cases.send_message(
+    await turn_use_cases.send_message(
         store.conversation.id, store.conversation.user_id, "never mind, try this",
         store.get_for_user, store.append, store.save,
     )
@@ -200,13 +201,13 @@ async def test_a_new_message_may_follow_a_paused_turn():
 
 
 def test_a_pause_with_nothing_said_is_shown_through_the_api():
-    from src.conversations import mapper
+    from src.conversations.fastapi.schemas import ConversationResponse
 
     conversation = make_conversation(
         TurnState(status=ConversationStatus.PAUSED, pause=TurnPause(PauseReason.INTERRUPTED))
     )
 
-    response = mapper.domain_to_conversation_response(conversation)
+    response = ConversationResponse.from_domain(conversation)
 
     assert response.pause.reason is PauseReason.INTERRUPTED
     assert response.pause.detail == ""

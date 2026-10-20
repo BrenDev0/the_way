@@ -245,9 +245,9 @@ def test_two_organizations_never_share_a_key():
 
 
 def test_a_document_with_no_description_still_serialises():
-    from src.documents import mapper
+    from src.documents.fastapi.schemas import DocumentResponse
 
-    response = mapper.domain_to_document_response(make_document(description=""))
+    response = DocumentResponse.from_domain(make_document(description=""))
 
     assert response.description == ""
 
@@ -255,9 +255,9 @@ def test_a_document_with_no_description_still_serialises():
 def test_a_skill_with_no_description_still_serialises():
     from helpers import make_skill
 
-    from src.skills import mapper as skills_mapper
+    from src.skills.fastapi.schemas import SkillResponse
 
-    response = skills_mapper.domain_to_skill_response(make_skill(description=""))
+    response = SkillResponse.from_domain(make_skill(description=""))
 
     assert response.description == ""
 

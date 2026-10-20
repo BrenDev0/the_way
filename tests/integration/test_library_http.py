@@ -5,9 +5,9 @@ from uuid import uuid4
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.main import app
 from src.auth.cache import AuthCacheKey, build_auth_cache_key
 from src.core.database.sqlalchemy.core import async_session_factory
+from src.fastapi.main import app
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
 from src.users.domain import Role, UserCreate
