@@ -1,4 +1,5 @@
 import ipaddress
+from collections.abc import Mapping
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
@@ -42,24 +43,25 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: ASGIApp,
-        paths: frozenset[str],
+        paths: Mapping[str, int],
         max_requests: int,
         window_seconds: int,
         block_seconds: int,
-        trusted_proxy_hops: int,
     ) -> None:
+        """`paths` maps each limited path to its trusted proxy hops: the paths differ in how
+        many proxies stand in front of them."""
         super().__init__(app)
         self.paths = paths
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self.block_seconds = block_seconds
-        self.trusted_proxy_hops = trusted_proxy_hops
 
     async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
-        if request.method != "POST" or request.url.path.rstrip("/") not in self.paths:
+        hops = self.paths.get(request.url.path.rstrip("/"))
+        if request.method != "POST" or hops is None:
             return await call_next(request)
 
-        client_ip = resolve_client_ip(request, self.trusted_proxy_hops)
+        client_ip = resolve_client_ip(request, hops)
         if client_ip is None:
             return self._error(403, "client_ip_unavailable", "Unable to identify the client")
 

@@ -14,11 +14,10 @@ def build_app(cache: FakeCacheStore, hops: int = 1) -> TestClient:
     app.state.cache_store = cache
     app.add_middleware(
         RateLimitMiddleware,
-        paths=frozenset({LOGIN}),
+        paths={LOGIN: hops},
         max_requests=MAX_REQUESTS,
         window_seconds=60,
         block_seconds=900,
-        trusted_proxy_hops=hops,
     )
 
     @app.post(LOGIN)
@@ -58,6 +57,14 @@ def test_two_hops_reads_the_second_entry_from_the_right(cache):
     client = build_app(cache, hops=2)
     client.post(LOGIN, headers=forwarded("203.0.113.7, 10.0.0.9"))
     assert "rate_limit:count:203.0.113.7" in cache.data
+
+
+def test_railways_edge_shape_gives_the_visitor_not_its_proxy(cache):
+    # What Railway sent in production: "<visitor>, <its proxy address>".
+    client = build_app(cache, hops=2)
+    client.post(LOGIN, headers=forwarded("187.190.46.204, 84.17.44.226"))
+    client.post(LOGIN, headers=forwarded("200.68.172.74, 84.17.44.225"))
+    assert set(cache.data) == {"rate_limit:count:187.190.46.204", "rate_limit:count:200.68.172.74"}
 
 
 def test_a_different_address_has_its_own_count(cache):

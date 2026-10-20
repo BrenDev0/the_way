@@ -42,12 +42,13 @@ class Settings(BaseSettings):
     RATE_LIMIT_MAX_REQUESTS: int = 20
     RATE_LIMIT_WINDOW_SECONDS: int = 60
     RATE_LIMIT_BLOCK_SECONDS: int = 60 * 15
-    # How many proxies in front of this API append to X-Forwarded-For; the client is that
-    # many entries from the right. 1 for Railway's edge in front of the API, and for the web
-    # service calling it over the private network (api.railway.internal). If the web service
-    # calls the API's public URL, the edge adds the web service's address after the visitor's
-    # and this must be 2 -- which then misreads the desktop app's requests. Use the private URL.
-    TRUSTED_PROXY_HOPS: int = 1
+    # How many entries from the right of X-Forwarded-For the client is. Railway's edge sends
+    # "<client>, <its proxy address>", so a request that reaches the API through it (the
+    # desktop app) is 2. The web service calls over the private network and sends the
+    # visitor's address alone, so its requests are 1 -- if it called the public URL they
+    # would be 2 as well.
+    PUBLIC_PROXY_HOPS: int = 2
+    WEB_PROXY_HOPS: int = 1
 
     REQUEST_SIGNING_SECRET: str
     REQUEST_SIGNATURE_WINDOW_SECONDS: int = 30

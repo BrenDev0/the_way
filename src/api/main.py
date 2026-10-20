@@ -74,17 +74,14 @@ app = FastAPI(lifespan=lifespan)
 # Added before CORS so CORS wraps it and a 429 still carries the CORS headers.
 app.add_middleware(
     RateLimitMiddleware,
-    paths=frozenset(
-        {
-            f"{auth_config.WEB_API_PREFIX}/auth/login",
-            f"{auth_config.WEB_API_PREFIX}/auth/register/request-verification",
-            f"{auth_config.DESKTOP_API_PREFIX}/auth/login",
-        }
-    ),
+    paths={
+        f"{auth_config.WEB_API_PREFIX}/auth/login": settings.WEB_PROXY_HOPS,
+        f"{auth_config.WEB_API_PREFIX}/auth/register/request-verification": settings.WEB_PROXY_HOPS,
+        f"{auth_config.DESKTOP_API_PREFIX}/auth/login": settings.PUBLIC_PROXY_HOPS,
+    },
     max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
     window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
     block_seconds=settings.RATE_LIMIT_BLOCK_SECONDS,
-    trusted_proxy_hops=settings.TRUSTED_PROXY_HOPS,
 )
 app.add_middleware(
     CORSMiddleware,
