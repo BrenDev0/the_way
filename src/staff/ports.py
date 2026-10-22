@@ -2,7 +2,13 @@ from collections.abc import Awaitable, Callable, Sequence
 from typing import Protocol
 from uuid import UUID
 
+from src.organizations.domain import FilesPurged
+
 from .domain import (
+    DeletedOrganization,
+    DeletedOrganizationCreate,
+    OrganizationMember,
+    OrganizationSummary,
     OwnerInvitation,
     OwnerInvitationCreate,
     StaffMember,
@@ -32,3 +38,12 @@ class ClaimOwnerInvitationFn(Protocol):
     lapsed -- so two people racing on one link cannot both get an organization."""
 
     async def __call__(self, invitation_id: UUID, organization_id: UUID) -> bool: ...
+
+# Every organization, read across all of them (the staff panel), and the record kept when one is deleted.
+ListOrganizationSummariesFn = Callable[[], Awaitable[Sequence[OrganizationSummary]]]
+GetOrganizationSummaryFn = Callable[[UUID], Awaitable[OrganizationSummary | None]]
+ListOrganizationMembersFn = Callable[[UUID], Awaitable[Sequence[OrganizationMember]]]
+RecordDeletedOrganizationFn = Callable[[DeletedOrganizationCreate], Awaitable[DeletedOrganization]]
+ListDeletedOrganizationsFn = Callable[[], Awaitable[Sequence[DeletedOrganization]]]
+# Everything the organization has in the bucket, removed (organizations.files.purge_files).
+PurgeOrganizationFilesFn = Callable[[UUID], Awaitable[FilesPurged]]

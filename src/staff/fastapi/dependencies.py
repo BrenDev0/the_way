@@ -7,12 +7,16 @@ from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.requests import Request
 
+from src.core.bucket.ports import BucketStore
 from src.core.exceptions import AuthenticationError
 from src.fastapi import dependencies as api_dependencies
+from src.organizations import files as organization_files
+from src.organizations.domain import FilesPurged
 from src.sessions.config import SessionCookieConfig
 from src.sessions.tokens import SessionTokenService
 from src.staff import config
 from src.staff.domain import (
+    DeletedOrganizationCreate,
     OwnerInvitationCreate,
     StaffMember,
     StaffMemberCreate,
@@ -24,11 +28,17 @@ from src.staff.ports import (
     CreateOwnerInvitationFn,
     CreateStaffMemberFn,
     CreateStaffSessionFn,
+    GetOrganizationSummaryFn,
     GetOwnerInvitationByTokenHashFn,
     GetStaffMemberByEmailHashFn,
     GetStaffMemberByIdFn,
     GetStaffSessionByTokenHashFn,
+    ListDeletedOrganizationsFn,
+    ListOrganizationMembersFn,
+    ListOrganizationSummariesFn,
     ListOwnerInvitationsFn,
+    PurgeOrganizationFilesFn,
+    RecordDeletedOrganizationFn,
     RevokeOwnerInvitationFn,
     RevokePendingOwnerInvitationsForEmailFn,
     RevokeStaffSessionByTokenHashFn,
@@ -36,7 +46,7 @@ from src.staff.ports import (
 )
 from src.staff.use_cases import auth as auth_use_cases
 
-from ..sqlalchemy import adapter
+from ..sqlalchemy import adapter, reports
 
 Session = Annotated[AsyncSession, Depends(api_dependencies.get_db_session)]
 
@@ -149,6 +159,57 @@ def provide_revoke_pending_owner_invitations_for_email_fn(
         return await adapter.revoke_pending_invitations_for_email(session, email_hash)
 
     return revoke_pending_for_email_fn
+
+
+def provide_list_organization_summaries_fn(session: Session) -> ListOrganizationSummariesFn:
+    async def list_organization_summaries_fn():
+        return await reports.list_summaries(session)
+
+    return list_organization_summaries_fn
+
+
+def provide_get_organization_summary_fn(session: Session) -> GetOrganizationSummaryFn:
+    async def get_organization_summary_fn(organization_id: UUID):
+        return await reports.get_summary(session, organization_id)
+
+    return get_organization_summary_fn
+
+
+def provide_list_organization_members_fn(session: Session) -> ListOrganizationMembersFn:
+    async def list_organization_members_fn(organization_id: UUID):
+        return await reports.list_members(session, organization_id)
+
+    return list_organization_members_fn
+
+
+def provide_record_deleted_organization_fn(session: Session) -> RecordDeletedOrganizationFn:
+    async def record_deleted_organization_fn(record: DeletedOrganizationCreate):
+        return await adapter.record_deleted_organization(session, record)
+
+    return record_deleted_organization_fn
+
+
+def provide_list_deleted_organizations_fn(session: Session) -> ListDeletedOrganizationsFn:
+    async def list_deleted_organizations_fn():
+        return await adapter.list_deleted_organizations(session)
+
+    return list_deleted_organizations_fn
+
+
+def get_optional_bucket_store(request: Request) -> BucketStore | None:
+    """The file store, or None where none is configured (nothing was ever stored then)."""
+    return getattr(request.app.state, "bucket_store", None)
+
+
+def provide_purge_organization_files_fn(
+    bucket: Annotated[BucketStore | None, Depends(get_optional_bucket_store)],
+) -> PurgeOrganizationFilesFn:
+    async def purge_organization_files_fn(organization_id: UUID) -> FilesPurged:
+        if bucket is None:
+            return FilesPurged(removed=0, failed=0)
+        return await organization_files.purge_files(bucket, organization_id)
+
+    return purge_organization_files_fn
 
 
 async def get_current_staff_session(

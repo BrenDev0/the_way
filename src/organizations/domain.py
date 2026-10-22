@@ -79,3 +79,11 @@ class MonthlyUsage:
 class UsageReport:
     months: Sequence[date]  # the first day of each month asked for, oldest first
     rows: Sequence[MonthlyUsage]
+
+
+@dataclass(frozen=True)
+class FilesPurged:
+    """What deleting an organization's stored files did: how many went, and how many could not."""
+
+    removed: int
+    failed: int

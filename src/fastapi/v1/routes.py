@@ -27,6 +27,7 @@ from src.projects.fastapi.routes.projects import router as projects_router
 from src.skills.fastapi.routes import router as skills_router
 from src.staff.fastapi.routes.accept import router as owner_invitation_accept_router
 from src.staff.fastapi.routes.auth import router as staff_auth_router
+from src.staff.fastapi.routes.organizations import router as staff_organizations_router
 from src.staff.fastapi.routes.owner_invitations import (
     router as staff_owner_invitations_router,
 )
@@ -57,6 +58,7 @@ router.include_router(project_files_router, prefix="/projects")
 router.include_router(owner_invitation_accept_router, prefix="/owner-invitations")
 router.include_router(skills_router, prefix="/skills")
 router.include_router(staff_auth_router, prefix="/staff/auth")
+router.include_router(staff_organizations_router, prefix="/staff/organizations")
 router.include_router(staff_owner_invitations_router, prefix="/staff/owner-invitations")
 router.include_router(users_router, prefix="/users")
 router.include_router(voice_router, prefix="/voice")

@@ -23,6 +23,10 @@ def test_staff_can_sign_in_and_invite_owners_and_nothing_else():
         ("POST", f"{WEB}/staff/owner-invitations"),
         ("GET", f"{WEB}/staff/owner-invitations"),
         ("DELETE", f"{WEB}/staff/owner-invitations/{{invitation_id}}"),
+        ("GET", f"{WEB}/staff/organizations"),
+        ("GET", f"{WEB}/staff/organizations/deleted"),
+        ("GET", f"{WEB}/staff/organizations/{{organization_id}}"),
+        ("DELETE", f"{WEB}/staff/organizations/{{organization_id}}"),
         ("POST", f"{WEB}/owner-invitations/accept"),
     }
 

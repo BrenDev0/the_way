@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String
+from sqlalchemy import BigInteger, DateTime, ForeignKey, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database.sqlalchemy.models import Base, IDMixin, TimestampMixin
@@ -51,3 +51,24 @@ class OwnerInvitationRow(Base, IDMixin, TimestampMixin):
         nullable=True,
         index=True,
     )
+
+
+class DeletedOrganizationRow(Base, IDMixin, TimestampMixin):
+    """The record kept when staff delete an organization. No foreign key to it: the
+    organization is gone, and this is what remains to say it was there."""
+
+    __tablename__ = "deleted_organizations"
+
+    organization_id: Mapped[uuid.UUID] = mapped_column(nullable=False, index=True)
+    organization_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    deleted_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("staff_members.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    # kept as text, encrypted like every email, so it still says who after that person is removed
+    deleted_by_email: Mapped[str] = mapped_column(String, nullable=False)
+    members: Mapped[int] = mapped_column(nullable=False)
+    files: Mapped[int] = mapped_column(nullable=False)
+    bytes: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    files_removed: Mapped[int] = mapped_column(nullable=False)
+    files_left: Mapped[int | None] = mapped_column(nullable=True)
