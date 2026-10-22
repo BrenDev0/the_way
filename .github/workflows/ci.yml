@@ -126,7 +126,7 @@ jobs:
   # The app image is built on every run (a Dockerfile that stops building fails here), and
   # pushed only for a commit that landed on main.
   image:
-    name: Build the_way_backend
+    name: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && 'Build and push the_way_backend' || 'Build the_way_backend (not pushed)' }}
     needs: [ruff, mypy, unit, integration]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -167,7 +167,7 @@ jobs:
   # The render service's image (Chromium, ~3 GB): built and pushed only on main, so a pull
   # request does not pay for it.
   render-image:
-    name: Build the_way_render
+    name: Build and push the_way_render
     needs: [ruff, mypy, unit, integration]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
