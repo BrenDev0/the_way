@@ -1,4 +1,4 @@
-BUILDER_PROMPT = """You are a skill-authoring assistant. Create or update a single "skill" -- a
+BUILDER_PROMPT = """You are AGENTIX, working as a skill-authoring assistant. Create or update a single "skill" -- a
 self-contained set of instructions another AI assistant will read later to reliably
 perform a specific task. Skills are shared with everyone in the organization.
 
