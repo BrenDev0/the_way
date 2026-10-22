@@ -1,8 +1,9 @@
 name: CI
 
-# Every push and pull request: build the image, then ruff, mypy, the unit tests and the
-# integration tests, each as its own job, so the run shows which one failed. When all of them
-# pass on main, build and push the images to Docker Hub. A pull request never pushes anything.
+# Every push and pull request runs the checks first -- ruff, mypy, the unit tests and the
+# integration tests, each as its own job, so the run shows which one failed. Only when all of
+# them pass is the Docker image built, and only on main is it pushed to Docker Hub. A pull
+# request never pushes anything.
 #
 # Needs, in Settings > Secrets and variables > Actions:
 #   variable  DOCKERHUB_USERNAME
@@ -24,89 +25,118 @@ permissions:
   contents: read
 
 jobs:
-  # Builds the app image from the Dockerfile and keeps its layers in the cache. The checks run
-  # in that image, so they see the same Python and system libraries the app does, and a
-  # Dockerfile that stops building fails here, before anything else starts.
-  build:
-    name: Build image
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: docker/setup-buildx-action@v3
-
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          target: app
-          push: false
-          cache-from: type=gha,scope=app
-          cache-to: type=gha,scope=app,mode=max
+  # --- the checks: nothing is built here, and they run side by side --------------------
 
   ruff:
     name: Ruff
-    needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/app-image
-      - run: docker run --rm the-way:ci ruff check .
+      - uses: ./.github/actions/python-env
+        with:
+          only-dev: "true"
+      - run: uv run --no-sync ruff check .
 
   mypy:
     name: Mypy
-    needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/app-image
-      - run: docker run --rm the-way:ci mypy src
+      - uses: ./.github/actions/python-env
+      - run: uv run --no-sync mypy src
 
   unit:
     name: Unit tests
-    needs: build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/app-image
-      # No services: the unit tests use fakes, and --network none proves it.
-      - run: docker run --rm --network none the-way:ci python -m pytest tests/unit -q -p no:cacheprovider
+      - uses: ./.github/actions/python-env
+        with:
+          system-libs: "true"
+      - run: uv run --no-sync python -m pytest tests/unit -q -p no:cacheprovider
 
   integration:
     name: Integration tests
-    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    # Throwaway services for the suite. It drops the schema of the database it runs against
+    # (and refuses one not named *_test), so it only ever talks to these.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: test
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: the_way_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U test -d the_way_test"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgresql+asyncpg://test:test@localhost:5432/the_way_test
+      REDIS_URL: redis://localhost:6379/0
+      TASKIQ_BROKER_URL: redis://localhost:6379/1
+      TASKIQ_RESULT_BACKEND_URL: redis://localhost:6379/2
+      CRYPTOGRAPHY_FERNET_KEY: YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
+      REQUEST_SIGNING_SECRET: test-signing-secret
+      CORS_ALLOWED_ORIGINS: '["https://app.example.com","https://admin.example.com"]'
+      SESSION_COOKIE_SECURE: "false"
+      INVITATION_ACCEPT_URL: http://localhost:3000/accept-invite
+      BUCKET_NAME: test-bucket
+      BUCKET_PREFIX: it
+      BUCKET_REGION: us-east-1
+      BUCKET_ENDPOINT: http://localhost:9090
+      BUCKET_PUBLIC_ENDPOINT: http://localhost:9090
+      BUCKET_ACCESS_KEY_ID: testkey
+      BUCKET_SECRET_ACCESS_KEY: testsecret123
+      PUBLIC_API_URL: http://localhost:8000
+      DATABASE_MIGRATE_ON_STARTUP: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/python-env
+        with:
+          system-libs: "true"
+
+      # MinIO has no service-container form (it needs arguments), so it is started here.
+      - name: Start MinIO and create the bucket
+        run: |
+          docker run -d --name minio --network host --user 0 \
+            -e MINIO_ROOT_USER=testkey -e MINIO_ROOT_PASSWORD=testsecret123 -e MINIO_REGION=us-east-1 \
+            cgr.dev/chainguard/minio:latest server /data --address :9090
+          mc() {
+            docker run --rm --network host -e MC_HOST_local=http://testkey:testsecret123@127.0.0.1:9090 \
+              cgr.dev/chainguard/minio-client:latest "$@"
+          }
+          for _ in $(seq 1 60); do mc ready local >/dev/null 2>&1 && break; sleep 1; done
+          mc mb --ignore-existing local/test-bucket
+
+      - run: uv run --no-sync python -m pytest tests/integration -q -p no:cacheprovider
+
+  # --- the images: only after every check above passed ---------------------------------
+
+  # The app image is built on every run (a Dockerfile that stops building fails here), and
+  # pushed only for a commit that landed on main.
+  image:
+    name: Build the_way_backend
+    needs: [ruff, mypy, unit, integration]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: ./.github/actions/app-image
-      # Postgres, Redis and MinIO as throwaway containers; see the script.
-      - run: bash .github/scripts/integration.sh the-way:ci
-
-  # Only after every check passed, and only for a commit that landed on main.
-  push:
-    name: Push ${{ matrix.image }}
-    needs: [ruff, mypy, unit, integration]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - image: the_way_backend
-            target: app
-          - image: the_way_render
-            target: render
-    steps:
-      - uses: actions/checkout@v4
-
       - uses: docker/setup-buildx-action@v3
 
-      - uses: docker/login-action@v3
+      - name: Log in to Docker Hub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
         with:
           username: ${{ vars.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
@@ -114,22 +144,61 @@ jobs:
       # latest is what Railway runs; sha-<short> pins this exact build, to roll back to.
       - name: Image tags
         id: meta
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: docker/metadata-action@v5
         with:
-          images: ${{ vars.DOCKERHUB_USERNAME }}/${{ matrix.image }}
+          images: ${{ vars.DOCKERHUB_USERNAME }}/the_way_backend
           tags: |
             type=raw,value=latest
             type=sha,format=short
 
-      - name: Build and push
+      - name: Build the image (pushed only on main)
         uses: docker/build-push-action@v6
         with:
           context: .
-          target: ${{ matrix.target }}
+          target: app
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,scope=app,mode=max
+          provenance: false
+
+  # The render service's image (Chromium, ~3 GB): built and pushed only on main, so a pull
+  # request does not pay for it.
+  render-image:
+    name: Build the_way_render
+    needs: [ruff, mypy, unit, integration]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Image tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ vars.DOCKERHUB_USERNAME }}/the_way_render
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: render
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # the app layers the build job cached come from the cache, so this mostly pushes
-          cache-from: type=gha,scope=${{ matrix.target }}
-          cache-to: type=gha,scope=${{ matrix.target }},mode=max
+          cache-from: type=gha,scope=render
+          cache-to: type=gha,scope=render,mode=max
           provenance: false

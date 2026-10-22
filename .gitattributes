@@ -1,2 +1,0 @@
-# A shell script with CRLF line endings does not run on Linux.
-*.sh text eol=lf

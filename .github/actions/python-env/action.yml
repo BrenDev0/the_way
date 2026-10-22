@@ -1,0 +1,35 @@
+name: Python environment
+description: >
+  uv, the project's locked dependencies (never re-resolved: uv.lock is the truth), and
+  optionally the system libraries WeasyPrint loads, installed as the Dockerfile installs them.
+
+inputs:
+  only-dev:
+    description: Install only the dev group (ruff, mypy, pytest), which is all ruff needs
+    default: "false"
+  system-libs:
+    description: Install Pango and fonts, which WeasyPrint loads when it is imported
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - uses: astral-sh/setup-uv@v6
+      with:
+        enable-cache: true
+
+    - if: inputs.system-libs == 'true'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends \
+          libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 fontconfig \
+          fonts-dejavu-core fonts-liberation
+
+    - if: inputs.only-dev == 'true'
+      shell: bash
+      run: uv sync --frozen --only-group dev
+
+    - if: inputs.only-dev != 'true'
+      shell: bash
+      run: uv sync --frozen
