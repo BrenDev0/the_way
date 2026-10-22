@@ -82,7 +82,7 @@ async def _names(client: CXClient) -> dict[str, str]:
         users = await client.users()
     except MissingScope:
         return {}
-    return {u["id"]: service.user_name(u) for u in users if u.get("id") and service.user_name(u)}
+    return {u["id"]: name for u in users if u.get("id") and (name := service.user_name(u))}
 
 
 async def _period(client: CXClient, days: int, timezone: str | None):
@@ -174,8 +174,9 @@ async def reply_route(
         recent, _ = await client.message_page(conversation_id, config.CONVERSATION_PAGE)
         kind = details.reply_type(recent)
         window = details.reply_window(recent, kind, datetime.now(UTC), conversation)
-        if not window["open"]:
+        if kind is None or not window["open"]:
             # refused here, before CX: a closed window would only come back as an error
+            # (no channel to answer on is a closed window: reply_window says so for None)
             return {"sent": False, "reason": window["reason"], "lastInbound": window["lastInbound"]}
         try:
             result = await client.send_message(kind, conversation["contactId"], text)

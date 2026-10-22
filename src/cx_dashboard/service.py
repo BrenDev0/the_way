@@ -260,7 +260,7 @@ async def build(client: CXClient, days: int, tz: Any, now: datetime | None = Non
     names: dict[str, str] = {}
     task = shared.peek("users")
     if task is not None and task.done() and not task.cancelled() and task.exception() is None:
-        names = {u["id"]: user_name(u) for u in task.result() if u.get("id") and user_name(u)}
+        names = {u["id"]: name for u in task.result() if u.get("id") and (name := user_name(u))}
 
     return {
         "connected": True,

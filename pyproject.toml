@@ -63,6 +63,20 @@ plugins = ["pydantic.mypy"]
 module = ["aioboto3.*", "botocore.*", "weasyprint.*", "pypdfium2.*"]
 ignore_missing_imports = true
 
+# Playwright is in the `render` dependency group, which only the render image installs; the
+# app image mypy runs in does not have it.
+[[tool.mypy.overrides]]
+module = ["playwright.*"]
+ignore_missing_imports = true
+
+# Known debt (BACKLOG.md, B3): these three read optional values (a datetime that may be None,
+# a dict of mixed types) without checking them, and fixing that means reworking their data
+# shapes, which wants its own change and its own tests. Everything else is checked, so a new
+# error anywhere else fails CI. Remove an entry when its module is fixed.
+[[tool.mypy.overrides]]
+module = ["src.cx_dashboard.insights", "src.cx_dashboard.metrics", "src.cx_dashboard.details"]
+ignore_errors = true
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = [".", "tests"]

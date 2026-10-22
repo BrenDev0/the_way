@@ -264,7 +264,8 @@ class ProjectFiles:
             if not held:
                 return None, project
             owner = held[0]
-        elif (target := html_images.project_path(page_path, address)) is not None:
+        elif (own_path := html_images.project_path(page_path, address)) is not None:
+            target = own_path
             owner = project
         else:
             return None

@@ -3,7 +3,7 @@
 # MinIO containers on a private network. Used by CI (.github/workflows/ci.yml) and works the
 # same on a laptop:
 #
-#     docker build -t the-way:ci . && .github/scripts/integration.sh the-way:ci
+#     docker build -t the-way:ci . && bash .github/scripts/integration.sh the-way:ci
 #
 # The suite drops the schema of whatever database it is pointed at (and refuses one not named
 # *_test), so this only ever talks to the containers it starts and removes afterwards. Never

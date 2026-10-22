@@ -1,7 +1,8 @@
 name: CI
 
-# Lint and test every push and pull request. When everything passes on main, build the images
-# and push them to Docker Hub. A pull request never pushes anything.
+# Every push and pull request: build the image, then ruff, mypy, the unit tests and the
+# integration tests, each as its own job, so the run shows which one failed. When all of them
+# pass on main, build and push the images to Docker Hub. A pull request never pushes anything.
 #
 # Needs, in Settings > Secrets and variables > Actions:
 #   variable  DOCKERHUB_USERNAME
@@ -22,14 +23,12 @@ concurrency:
 permissions:
   contents: read
 
-env:
-  # The image the tests run in: built from the Dockerfile, so they run on the same Python and
-  # system libraries the app does, and a Dockerfile that no longer builds fails here.
-  TEST_IMAGE: the-way:ci
-
 jobs:
-  test:
-    name: Ruff and tests
+  # Builds the app image from the Dockerfile and keeps its layers in the cache. The checks run
+  # in that image, so they see the same Python and system libraries the app does, and a
+  # Dockerfile that stops building fails here, before anything else starts.
+  build:
+    name: Build image
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -37,31 +36,60 @@ jobs:
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build the app image
-        uses: docker/build-push-action@v6
+      - uses: docker/build-push-action@v6
         with:
           context: .
           target: app
-          load: true
-          tags: ${{ env.TEST_IMAGE }}
+          push: false
           cache-from: type=gha,scope=app
           cache-to: type=gha,scope=app,mode=max
 
-      - name: Ruff
-        run: docker run --rm "$TEST_IMAGE" ruff check .
+  ruff:
+    name: Ruff
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/app-image
+      - run: docker run --rm the-way:ci ruff check .
 
+  mypy:
+    name: Mypy
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/app-image
+      - run: docker run --rm the-way:ci mypy src
+
+  unit:
+    name: Unit tests
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/app-image
       # No services: the unit tests use fakes, and --network none proves it.
-      - name: Unit tests
-        run: docker run --rm --network none "$TEST_IMAGE" python -m pytest tests/unit -q -p no:cacheprovider
+      - run: docker run --rm --network none the-way:ci python -m pytest tests/unit -q -p no:cacheprovider
 
+  integration:
+    name: Integration tests
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/app-image
       # Postgres, Redis and MinIO as throwaway containers; see the script.
-      - name: Integration tests
-        run: .github/scripts/integration.sh "$TEST_IMAGE"
+      - run: bash .github/scripts/integration.sh the-way:ci
 
-  # Only after every check above passed, and only for a commit that landed on main.
+  # Only after every check passed, and only for a commit that landed on main.
   push:
     name: Push ${{ matrix.image }}
-    needs: test
+    needs: [ruff, mypy, unit, integration]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 45
@@ -101,7 +129,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          # the layers the test job just built come from the cache, so this mostly pushes
+          # the app layers the build job cached come from the cache, so this mostly pushes
           cache-from: type=gha,scope=${{ matrix.target }}
           cache-to: type=gha,scope=${{ matrix.target }},mode=max
           provenance: false
