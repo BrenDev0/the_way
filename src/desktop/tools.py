@@ -12,6 +12,14 @@ from .schemas import (
     DeleteFile,
     DownloadFromProject,
     FindWhatsappChat,
+    GitAdd,
+    GitCommit,
+    GitDiff,
+    GitFetch,
+    GitLog,
+    GitPush,
+    GitShow,
+    GitStatus,
     ListBrowserTabs,
     ListDir,
     MovePath,
@@ -59,6 +67,17 @@ BROWSER: tuple[type[BaseModel], ...] = (
     SendWhatsappMessage,
 )
 
+GIT: tuple[type[BaseModel], ...] = (
+    GitStatus,
+    GitLog,
+    GitDiff,
+    GitShow,
+    GitFetch,
+    GitAdd,
+    GitCommit,
+    GitPush,
+)
+
 # Creating something new is cheap to undo and asks nobody. Changing or removing what
 # already exists asks first; so does anything that reaches outside the machine -- a click,
 # a keystroke or a sent message lands somewhere the user cannot take it back from -- and
@@ -76,14 +95,17 @@ REQUIRES_APPROVAL: frozenset[type[BaseModel]] = frozenset(
         ClickBrowserElement,
         TypeInBrowser,
         SendWhatsappMessage,
+        GitAdd,
+        GitCommit,
+        GitPush,
     }
 )
 
-SCHEMAS: tuple[type[BaseModel], ...] = FILES + TRANSFER + BROWSER
+SCHEMAS: tuple[type[BaseModel], ...] = FILES + TRANSFER + BROWSER + GIT
 
 # Asked even when the user has the app approve everything else on its own (auto mode):
-# a deletion cannot be undone.
-ALWAYS_ASK: frozenset[type[BaseModel]] = frozenset({DeleteFile, DeleteDir})
+# a deletion cannot be undone, and a push leaves the machine for good.
+ALWAYS_ASK: frozenset[type[BaseModel]] = frozenset({DeleteFile, DeleteDir, GitPush})
 
 
 def build() -> dict[str, Tool]:

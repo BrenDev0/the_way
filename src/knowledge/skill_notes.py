@@ -17,8 +17,19 @@ HEADER = (
 FOOTER = "=== THE SKILL, AS ITS AUTHORS WROTE IT ==="
 
 NO_SHELL = (
-    "You cannot run commands: there is no shell, no git, no node, no python, no curl. "
-    "Never claim to have run one."
+    "You cannot run commands: there is no shell, no node, no python, no curl, and no git "
+    "command line. Never claim to have run one."
+)
+
+# The desktop app's git tools stand in for the git commands, in the folder the user has open.
+GIT_TOOLS = (
+    "Git works only through the Git tools, and only in the desktop app, on the folder the "
+    "user has open: GitStatus, GitLog, GitDiff, GitShow, GitFetch, GitAdd, GitCommit and "
+    "GitPush. If you are not on the desktop app, say the skill cannot run here. If a Git "
+    "tool says git is not installed or not set up on the user's computer (no name and email, "
+    "no remote, not signed in), tell the user what it says they must do, in their language: "
+    "that setup is theirs, and you never ask for a password or token. Never claim a commit "
+    "or push happened unless the tool said so."
 )
 
 NOTES: dict[str, str] = {
@@ -104,8 +115,29 @@ NOTES: dict[str, str] = {
         "- A voice memo is transcribed with TranscribeMedia once it is in a project "
         "(project:<project>/<path>); ask the user to upload it if it is only on their phone."
     ),
-    "drift-check": f"- {NO_SHELL} This skill depends on git; tell the user it cannot run here.",
-    "session-handoff": f"- {NO_SHELL} This skill depends on git; tell the user it cannot run here.",
+    "drift-check": (
+        f"- {NO_SHELL} {GIT_TOOLS}\n"
+        "- The three checks, with the Git tools instead of the commands: GitFetch first "
+        "(`git fetch`). 1 uncommitted work: GitStatus. 2 ahead and behind: the first line of "
+        "GitStatus after the fetch (`[ahead 2, behind 1]`; no brackets means in step with "
+        "the remote; no remote named on that line means the branch tracks nothing, which is "
+        "itself a finding). 3 phantom documents: GitStatus with ignored=true, then pick the "
+        "lines marked `!!` that are .md, .yaml, .yml or .json files.\n"
+        "- There is no exit code or hook here: report the findings, or say there are none."
+    ),
+    "session-handoff": (
+        f"- {NO_SHELL} {GIT_TOOLS}\n"
+        "- Step 4 with the Git tools: GitFetch, GitStatus and GitLog (limit 5) are the "
+        "`git fetch && git status --short && git log --oneline -5` line. Stage with GitAdd "
+        "and the exact paths, never a whole-folder path to sweep everything up; GitShow "
+        "(HEAD) is the `git show --stat HEAD` proof that the files match what you touched. "
+        "GitCommit with a message, then GitPush: each asks the user to approve, and GitPush "
+        "asks every time. If the branch has never been pushed, call it with "
+        "set_upstream=true.\n"
+        "- If the push is refused because the remote has newer commits, stop and tell the "
+        "user: you cannot pull or merge, and nothing was overwritten.\n"
+        "- The handoff note is a file: write it with CreateFile and commit it like the rest."
+    ),
     "using-this-kit": (
         "- The kit is already mounted for you: its skills are the ones in your skill listing, "
         "and ReadSkill reads them and their reference files. There is no repository or "

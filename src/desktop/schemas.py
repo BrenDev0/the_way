@@ -257,3 +257,95 @@ class SendWhatsappMessage(BaseModel):
         "exact chat name from FindWhatsappChat"
     )
     message: str = Field(description="The message text, exactly as it should be sent")
+
+
+# --- git, in the folder the user has open -------------------------------------------
+#
+# One tool per thing git is asked to do: there is no "run this git command", so there is no
+# reset, clean, checkout or force-push to reach. They run the user's own git, with the
+# user's own sign-in -- the app never holds a password or token. When git is not installed
+# or not set up (no name and email, no remote, no credentials) the tool's error says what
+# the user has to do; pass that on in their language rather than trying to work around it.
+
+
+class GitStatus(BaseModel):
+    """Show the state of the git repository in the open folder: the branch, how many
+    commits it is ahead of or behind its remote (`[ahead 1, behind 2]`, as of the last
+    GitFetch), and every changed, staged or untracked file."""
+
+    ignored: bool = Field(
+        default=False,
+        description="If true, also list files git ignores (marked '!!') -- how to spot "
+        "source-looking files that no commit will ever contain",
+    )
+
+
+class GitLog(BaseModel):
+    """List recent commits of the repository in the open folder, newest first, one line
+    each: short hash, date, author, subject."""
+
+    limit: int = Field(default=20, description="How many commits to show (at most 100)")
+    path: str | None = Field(
+        default=None, description=f"Only commits that touched this file or folder. {LOCAL}"
+    )
+
+
+class GitDiff(BaseModel):
+    """Show what changed in the working tree of the repository in the open folder --
+    unstaged by default. Look at this before staging or committing anything."""
+
+    staged: bool = Field(
+        default=False, description="If true, show what is staged for the next commit instead"
+    )
+    stat: bool = Field(default=False, description="If true, only the per-file summary, not the lines")
+    path: str | None = Field(default=None, description=f"Limit to this file or folder. {LOCAL}")
+
+
+class GitShow(BaseModel):
+    """Show one commit -- its message, the files it touched and the changes."""
+
+    revision: str = Field(
+        default="HEAD",
+        description="A commit hash, branch, tag or HEAD~1 style reference; HEAD is the latest",
+    )
+
+
+class GitFetch(BaseModel):
+    """Ask the remote what is new, without changing any file here. Do this before judging
+    whether the repository is ahead of or behind it; GitStatus then shows the result."""
+
+    remote: str | None = Field(default=None, description="The remote's name; the default one if omitted")
+
+
+class GitAdd(BaseModel):
+    """Stage files for the next commit. Needs the user's approval. Name the exact paths --
+    never '.' to take everything, which commits what nobody looked at. Check with GitStatus
+    or GitDiff first, and check again afterwards."""
+
+    paths: list[str] = Field(description=f"The files or folders to stage. {LOCAL}")
+
+
+class GitCommit(BaseModel):
+    """Commit what is staged, with the message you give. Needs the user's approval, which
+    shows them the message and the staged files. Stage with GitAdd first; nothing staged
+    is an error. Commits are local -- they leave the computer only with GitPush."""
+
+    message: str = Field(description="The commit message: a short subject, in the project's own style")
+
+
+class GitPush(BaseModel):
+    """Send the local commits to the remote. ALWAYS asks the user, even when they have
+    approved everything else, and shows which commits will go. Never forced: if the remote
+    has commits this computer lacks, the push is refused and nothing is overwritten.
+
+    If it fails because git is not signed in on this computer, the error says so. Tell the
+    user they have to set up their own git access once (Git Credential Manager or an SSH
+    key); you cannot do it for them and must not ask for their password or token."""
+
+    remote: str | None = Field(default=None, description="The remote's name; the default one if omitted")
+    branch: str | None = Field(default=None, description="The branch to push; the current one if omitted")
+    set_upstream: bool = Field(
+        default=False,
+        description="If true, remember this remote branch as the one this branch follows -- "
+        "needed the first time a branch is pushed",
+    )

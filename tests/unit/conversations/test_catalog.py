@@ -49,13 +49,28 @@ def test_desktop_tools_have_no_server_handler():
 
 @pytest.mark.parametrize(
     "name",
-    ["UpdateFile", "MovePath", "RenamePath", "DeleteFile", "DeleteDir", "SendWhatsappMessage", "UploadToProject"],
+    [
+        "UpdateFile",
+        "MovePath",
+        "RenamePath",
+        "DeleteFile",
+        "DeleteDir",
+        "SendWhatsappMessage",
+        "UploadToProject",
+        "GitAdd",
+        "GitCommit",
+        "GitPush",
+    ],
 )
 def test_desktop_calls_that_change_or_send_need_approval(name):
     assert desktop_tools.build()[name].requires_approval is True
 
 
-@pytest.mark.parametrize("name", ["ReadFile", "ListDir", "SearchCode", "CreateFile", "OpenBrowserPage"])
+@pytest.mark.parametrize(
+    "name",
+    ["ReadFile", "ListDir", "SearchCode", "CreateFile", "OpenBrowserPage"]
+    + ["GitStatus", "GitLog", "GitDiff", "GitShow", "GitFetch"],
+)
 def test_desktop_calls_that_only_look_or_create_do_not(name):
     assert desktop_tools.build()[name].requires_approval is False
 
@@ -130,6 +145,8 @@ def test_deletions_ask_even_in_auto_mode_and_messages_do_not():
 
     assert server["DeleteProjectPath"].always_ask
     assert server["DeleteFile"].always_ask and server["DeleteDir"].always_ask
+    assert server["GitPush"].always_ask  # a push leaves the machine
+    assert not server["GitCommit"].always_ask and not server["GitAdd"].always_ask
     assert not server["SendWhatsappMessage"].always_ask
     assert not server["MoveProjectPath"].always_ask
 
