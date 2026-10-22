@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from pydantic import BaseModel
 
 from src.api_keys.domain import ApiKey, Provider
-from src.core.bucket.domain import RemoteObject
+from src.core.bucket.domain import BucketError, RemoteObject
 from src.core.llm.domain import Completion, Message, TokenUsage, ToolCall, assistant
 from src.documents.domain import Document, DocumentStatus
 from src.organizations.domain import Organization
@@ -371,3 +371,32 @@ async def knowledge_block_on(session, organization_id):
         list_tree_fn=ports.list_tree_fn,
         organization_id=organization_id,
     )
+
+
+class BrokenBucketStore(FakeBucketStore):
+    """A bucket that refuses every call, the way one does when its credentials or region are
+    wrong: the storage service answers SignatureDoesNotMatch and the adapter raises
+    BucketError with that reason."""
+
+    REASON = (
+        "Failed listing downloads/: The request signature we calculated does not match the "
+        "signature you provided. Check your key and signing method."
+    )
+
+    async def put(self, key: str, source):
+        raise BucketError(self.REASON)
+
+    async def get(self, key: str, destination):
+        raise BucketError(self.REASON)
+
+    async def list(self, prefix: str = "") -> list[RemoteObject]:
+        raise BucketError(self.REASON)
+
+    async def delete(self, key: str) -> None:
+        raise BucketError(self.REASON)
+
+    async def exists(self, key: str) -> bool:
+        raise BucketError(self.REASON)
+
+    async def presign_get(self, key: str, expires_in: int, download_name: str | None = None) -> str:
+        raise BucketError(self.REASON)

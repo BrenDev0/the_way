@@ -1,7 +1,8 @@
 import pytest
-from helpers import FakeBucketStore
+from helpers import BrokenBucketStore, FakeBucketStore
 
-from src.core.exceptions import NotFoundError
+from src.core.bucket.domain import BucketError
+from src.core.exceptions import NotFoundError, ServiceUnavailableError
 from src.downloads import config
 from src.downloads.fastapi import routes
 
@@ -48,3 +49,50 @@ def test_installers_live_in_their_own_folder_under_the_prefix():
     for installer in config.INSTALLERS.values():
         assert config.key(installer).startswith(config.folder())
         assert "organizations" not in config.key(installer)
+
+
+# --- a bucket that cannot be read: the page is told to try again, not given a 500 -----------
+
+
+async def test_the_page_gets_a_503_not_a_500_when_the_bucket_cannot_be_read(caplog):
+    with caplog.at_level("WARNING"), pytest.raises(ServiceUnavailableError) as raised:
+        await routes.list_installers(BrokenBucketStore())
+
+    assert raised.value.status_code == 503
+    assert raised.value.code == "downloads_unavailable"
+    assert "Las descargas no están disponibles" in raised.value.message
+    # the reason is logged, so a misconfigured bucket is still seen
+    assert "signature we calculated" in caplog.text
+
+
+async def test_the_503_does_not_carry_the_buckets_reason_to_the_browser():
+    with pytest.raises(ServiceUnavailableError) as raised:
+        await routes.list_installers(BrokenBucketStore())
+
+    assert "signature" not in raised.value.message.lower()
+
+
+async def test_a_link_cannot_be_made_when_the_bucket_cannot_be_read():
+    with pytest.raises(ServiceUnavailableError) as raised:
+        await routes.installer_link("windows", BrokenBucketStore())
+
+    assert raised.value.code == "downloads_unavailable"
+
+
+async def test_a_link_cannot_be_made_when_only_signing_it_fails():
+    class SigningFails(FakeBucketStore):
+        async def presign_get(self, key, expires_in, download_name=None):
+            raise BucketError("Failed preparing a download")
+
+    bucket = SigningFails()
+    bucket.objects[config.key(config.INSTALLERS["windows"])] = 1
+
+    with pytest.raises(ServiceUnavailableError):
+        await routes.installer_link("windows", bucket)
+
+
+async def test_an_unknown_platform_is_still_a_404_even_with_a_broken_bucket():
+    with pytest.raises(NotFoundError) as raised:
+        await routes.installer_link("linux", BrokenBucketStore())
+
+    assert raised.value.code == "installer_not_published"

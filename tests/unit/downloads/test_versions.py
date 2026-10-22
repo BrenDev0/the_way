@@ -1,7 +1,7 @@
 import json
 
 import pytest
-from helpers import FakeBucketStore
+from helpers import BrokenBucketStore, FakeBucketStore
 
 from src.core.settings.api import settings as api_settings
 from src.downloads import config, publish, versions
@@ -73,3 +73,40 @@ def test_publishing_needs_a_real_version_number(tmp_path, capsys):
         publish.main(["windows", str(installer)])  # no --version
     assert publish.main(["windows", str(installer), "--version", "latest"]) == 1
     assert "Not a version" in capsys.readouterr().err
+
+
+# --- the app's start-up check must survive a bucket that cannot be read -------------------
+
+
+async def test_the_app_is_told_nothing_is_known_when_the_bucket_cannot_be_read(caplog):
+    """This is the call the desktop app makes as it starts. A bucket that refuses the request
+    (wrong credentials, wrong region) used to turn it into a 500; the app only wants to know
+    whether a newer version is out, and 'nothing known' is a valid answer."""
+    with caplog.at_level("WARNING"):
+        answer = await desktop_routes.app_version(BrokenBucketStore())
+
+    assert answer.latest == {"windows": None, "mac": None}
+    assert answer.download_page_url == config.download_page_url()
+    assert "Could not read the published app versions" in caplog.text
+    assert "signature we calculated" in caplog.text  # the reason is logged, not swallowed
+
+
+async def test_every_platform_is_named_in_the_unknown_answer():
+    answer = await desktop_routes.app_version(BrokenBucketStore())
+
+    assert set(answer.latest) == set(config.INSTALLERS)
+
+
+async def test_a_failed_read_is_not_remembered_so_the_next_ask_tries_again():
+    await desktop_routes.app_version(BrokenBucketStore())
+
+    # the bucket is fixed: the very next ask sees it, with no wait for a cache to expire
+    answer = await desktop_routes.app_version(bucket_with(windows="0.1.1"))
+
+    assert answer.latest["windows"] == "0.1.1"
+
+
+async def test_a_healthy_bucket_still_answers_as_before():
+    answer = await desktop_routes.app_version(bucket_with(windows="0.1.1", mac="0.1.0"))
+
+    assert answer.latest == {"windows": "0.1.1", "mac": "0.1.0"}
