@@ -234,16 +234,47 @@ async def test_the_create_command_refuses_a_password_typed_differently_twice(db_
     assert "differ" in capsys.readouterr().err
 
 
-async def test_the_create_command_refuses_a_short_password_and_a_repeat(db_session, monkeypatch, capsys):
+async def test_the_create_command_takes_whatever_password_is_chosen(db_session, monkeypatch, capsys):
+    """A one-word, six-character password: no minimum, no strength rule. The account is made
+    and the password signs in -- checked with the real bcrypt, as the sign-in does."""
+    from src.core.cryptography.bcrypt.adapter import BcryptHashingService
     from src.staff import create
 
     address = f"new-{uuid4().hex[:8]}@xplorers.example"
-    monkeypatch.setattr("getpass.getpass", lambda prompt="": "short")
-    assert await create.main(["--email", address]) == 1
-    assert "at least" in capsys.readouterr().err
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": "hunter")
 
-    monkeypatch.setattr("getpass.getpass", lambda prompt="": "a-long-enough-password")
+    assert await create.main(["--email", address]) == 0
+
+    hashing = BcryptHashingService()
+    member = await adapter.get_member_by_email_hash(db_session, hashing.deterministic_hash(address))
+    assert member is not None
+    assert hashing.compare_password("hunter", member.password_hash)
+    assert not hashing.compare_password("Hunter", member.password_hash)
+    assert "created" in capsys.readouterr().out
+
+
+async def test_the_create_command_refuses_an_empty_password_and_one_bcrypt_cannot_hash(db_session, monkeypatch, capsys):
+    from src.core.cryptography.bcrypt.adapter import BcryptHashingService
+    from src.staff import create
+
+    address = f"new-{uuid4().hex[:8]}@xplorers.example"
+    for password, said in (("", "cannot be empty"), ("x" * 80, "bcrypt can use")):
+        monkeypatch.setattr("getpass.getpass", lambda prompt="", chosen=password: chosen)
+
+        assert await create.main(["--email", address]) == 1
+        assert said in capsys.readouterr().err
+
+    member = await adapter.get_member_by_email_hash(db_session, BcryptHashingService().deterministic_hash(address))
+    assert member is None  # neither attempt left an account behind
+
+
+async def test_the_create_command_refuses_a_repeat(db_session, monkeypatch, capsys):
+    from src.staff import create
+
+    address = f"new-{uuid4().hex[:8]}@xplorers.example"
+    monkeypatch.setattr("getpass.getpass", lambda prompt="": "whatever")
     assert await create.main(["--email", address]) == 0
     capsys.readouterr()
+
     assert await create.main(["--email", address]) == 1
     assert "already" in capsys.readouterr().err

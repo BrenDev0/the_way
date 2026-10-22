@@ -234,7 +234,10 @@ async def test_a_staff_member_is_stored_with_an_encrypted_email_and_a_hashed_pas
     ("overrides", "code"),
     [
         ({"email": "nope"}, "staff_email_invalid"),
-        ({"password": "short"}, "staff_password_too_short"),
+        ({"password": ""}, "staff_password_empty"),
+        ({"password": "a" * 73}, "staff_password_too_long"),
+        # 25 characters, but 100 bytes: what bcrypt counts is bytes
+        ({"password": "😀" * 25}, "staff_password_too_long"),
     ],
 )
 async def test_bad_staff_input_is_refused(create_staff, overrides, code):
@@ -243,6 +246,35 @@ async def test_bad_staff_input_is_refused(create_staff, overrides, code):
 
     assert exc.value.code == code
     assert create_staff.created == []
+
+
+@pytest.mark.parametrize(
+    "password",
+    [
+        "a",
+        "1234",
+        "password",
+        "short",
+        "correct horse battery staple",
+        "   leading and trailing spaces   ",
+        "contraseña-ñandú-ü",
+        "a" * 72,
+        "😀" * 18,  # 72 bytes exactly
+        "!@#$%^&*()_+{}|:<>?",
+    ],
+    ids=["one character", "digits", "a common word", "short", "a passphrase", "spaces kept",
+         "accents", "72 bytes", "72 bytes of emoji", "symbols"],
+)
+async def test_a_staff_member_can_choose_any_password_bcrypt_can_hash(create_staff, password):
+    await create_staff(password=password)
+
+    assert create_staff.created[0].password_hash == f"pwhash::{password}"  # kept exactly as typed
+
+
+async def test_the_password_is_not_trimmed_or_changed(create_staff):
+    await create_staff(password="  spaced  ")
+
+    assert create_staff.created[0].password_hash == "pwhash::  spaced  "
 
 
 async def test_the_same_person_cannot_be_added_twice(create_staff, hashing_service):

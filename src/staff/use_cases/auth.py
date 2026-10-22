@@ -103,10 +103,18 @@ async def create_staff_member(
     email = email.strip()
     if "@" not in email:
         raise ValidationError(message="That is not an email address", code="staff_email_invalid")
-    if len(password) < config.MIN_STAFF_PASSWORD_LENGTH:
+    # Any password the person chooses is accepted, with two exceptions that are not policy: an
+    # empty one (the sign-in form cannot send it, so the account could not be used) and one
+    # bcrypt cannot hash (longer than 72 bytes), which would fail with a stack trace instead.
+    if not password:
+        raise ValidationError(message="The password cannot be empty", code="staff_password_empty")
+    if len(password.encode("utf-8")) > config.MAX_STAFF_PASSWORD_BYTES:
         raise ValidationError(
-            message=f"The password must be at least {config.MIN_STAFF_PASSWORD_LENGTH} characters",
-            code="staff_password_too_short",
+            message=(
+                f"That password is longer than {config.MAX_STAFF_PASSWORD_BYTES} bytes, the most "
+                "bcrypt can use (a character outside plain ASCII counts for more than one)"
+            ),
+            code="staff_password_too_long",
         )
 
     email_hash = hashing_service.deterministic_hash(email)
