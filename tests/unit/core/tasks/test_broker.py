@@ -3,7 +3,8 @@ import taskiq_fastapi
 from taskiq import InMemoryBroker
 from taskiq_redis import RedisStreamBroker
 
-from src.core.settings import settings
+from src.core.settings.shared import settings
+from src.core.settings.worker import settings as worker_settings
 from src.core.tasks.broker import HeartbeatStreamBroker, broker, build_broker
 from src.worker import health
 
@@ -37,8 +38,8 @@ def test_the_stream_broker_renews_what_it_runs_and_reads_one_at_a_time(monkeypat
     # behaviour proved against a real Redis in tests/integration/test_broker.py
     assert isinstance(built, HeartbeatStreamBroker)
     assert built.count == 1
-    assert built.idle_timeout == settings.TASKIQ_IDLE_TIMEOUT_SECONDS * 1000
-    assert built.heartbeat < settings.TASKIQ_IDLE_TIMEOUT_SECONDS  # renewed well inside the timeout
+    assert built.idle_timeout == worker_settings.TASKIQ_IDLE_TIMEOUT_SECONDS * 1000
+    assert built.heartbeat < worker_settings.TASKIQ_IDLE_TIMEOUT_SECONDS  # renewed well inside the timeout
 
 
 def test_a_new_consumer_group_drains_the_backlog(monkeypatch):

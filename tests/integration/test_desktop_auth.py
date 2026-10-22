@@ -8,7 +8,7 @@ from fastapi.testclient import TestClient
 
 from src.auth.cache import AuthCacheKey, build_auth_cache_key
 from src.core.database.sqlalchemy.core import async_session_factory
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
 from src.fastapi import signing
 from src.fastapi.main import app
 from src.organizations.domain import OrganizationCreate
@@ -127,7 +127,7 @@ def test_a_wrong_password_is_refused_without_saying_which_part(client, email):
 
 
 def test_repeated_failures_are_rate_limited(client, email):
-    for _ in range(settings.DESKTOP_LOGIN_MAX_FAILURES_PER_EMAIL):
+    for _ in range(api_settings.DESKTOP_LOGIN_MAX_FAILURES_PER_EMAIL):
         desktop_login(client, email, password="wrong")
 
     response = desktop_login(client, email)
@@ -151,9 +151,9 @@ def test_a_web_cookie_does_not_work_on_the_desktop_api(client, email):
             headers={**signed("POST", f"{WEB}/auth/login", body), "Content-Type": "application/json"},
         )
     assert web_login.status_code == 200, web_login.text
-    cookie = web_login.cookies[settings.SESSION_COOKIE_NAME]
+    cookie = web_login.cookies[api_settings.SESSION_COOKIE_NAME]
 
-    as_cookie = client.get(f"{DESKTOP}/users/me", cookies={settings.SESSION_COOKIE_NAME: cookie})
+    as_cookie = client.get(f"{DESKTOP}/users/me", cookies={api_settings.SESSION_COOKIE_NAME: cookie})
     as_bearer = client.get(f"{DESKTOP}/users/me", headers=bearer(cookie))
     client.cookies.clear()
 
@@ -172,7 +172,7 @@ def test_a_desktop_token_does_not_work_on_the_web_api(client, email):
     planted_cookie = client.get(
         f"{WEB}/users/me",
         headers=signed("GET", f"{WEB}/users/me"),
-        cookies={settings.SESSION_COOKIE_NAME: token},
+        cookies={api_settings.SESSION_COOKIE_NAME: token},
     )
     client.cookies.clear()
 

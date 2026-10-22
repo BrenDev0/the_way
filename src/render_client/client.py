@@ -101,7 +101,7 @@ class UnavailableRenderer:
 
 
 def from_settings() -> Renderer:
-    from src.core.settings import settings
+    from src.core.settings.shared import settings
 
     if not settings.RENDER_URL or not settings.RENDER_SHARED_SECRET:
         return UnavailableRenderer()

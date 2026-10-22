@@ -26,7 +26,7 @@ VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 
 async def publish(platform: str, source: Path, version: str) -> str:
     from src.core.bucket.boto3.adapter import Boto3BucketStore
-    from src.core.settings import settings
+    from src.core.settings.shared import settings
 
     if not settings.BUCKET_NAME:
         raise SystemExit("No bucket configured (BUCKET_NAME).")

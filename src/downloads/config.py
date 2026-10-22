@@ -8,7 +8,8 @@ a new version replaces it, and the page always offers the latest.
 from dataclasses import dataclass
 from urllib.parse import urlparse
 
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
+from src.core.settings.shared import settings
 
 
 @dataclass(frozen=True)
@@ -50,10 +51,10 @@ def _key(platform: str, name: str) -> str:
 def download_page_url() -> str | None:
     """The public download page the desktop app sends people to: set outright, or the
     panel's own address, which the invitation link already names."""
-    if settings.DESKTOP_DOWNLOAD_PAGE_URL:
-        return settings.DESKTOP_DOWNLOAD_PAGE_URL
-    if settings.INVITATION_ACCEPT_URL:
-        parsed = urlparse(settings.INVITATION_ACCEPT_URL)
+    if api_settings.DESKTOP_DOWNLOAD_PAGE_URL:
+        return api_settings.DESKTOP_DOWNLOAD_PAGE_URL
+    if api_settings.INVITATION_ACCEPT_URL:
+        parsed = urlparse(api_settings.INVITATION_ACCEPT_URL)
         if parsed.scheme and parsed.netloc:
             return f"{parsed.scheme}://{parsed.netloc}/download"
     return None

@@ -16,7 +16,7 @@ from src.auth.fastapi.schemas import (
 from src.auth.use_cases import sessions as sessions_use_cases
 from src.core.cache.ports import CacheStore
 from src.core.cryptography.ports import EncryptionService, HashingService
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
 from src.fastapi import dependencies as api_dependencies
 from src.fastapi.rate_limit import resolve_client_ip
 from src.sessions.domain import Session
@@ -66,7 +66,7 @@ async def desktop_login_route(
         # The peer is Railway's proxy, the same for every user; the client's address is the
         # entry the edge appended to X-Forwarded-For, found the same way the rate limiter
         # finds it.
-        client_ip=resolve_client_ip(request, settings.PUBLIC_PROXY_HOPS) or UNKNOWN_ADDRESS,
+        client_ip=resolve_client_ip(request, api_settings.PUBLIC_PROXY_HOPS) or UNKNOWN_ADDRESS,
         get_user_by_email_hash_fn=get_user_by_email_hash_fn,
         hashing_service=hashing_service,
         create_session_fn=create_session_fn,

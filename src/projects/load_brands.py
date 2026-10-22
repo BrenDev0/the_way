@@ -137,7 +137,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     from src.core.bucket.boto3.adapter import Boto3BucketStore
     from src.core.database.sqlalchemy.core import async_session_factory
-    from src.core.settings import settings
+    from src.core.settings.shared import settings
 
     if not settings.BUCKET_NAME:
         print("No bucket configured (BUCKET_NAME)", file=sys.stderr)

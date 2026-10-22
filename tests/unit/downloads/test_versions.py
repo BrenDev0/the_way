@@ -3,7 +3,7 @@ import json
 import pytest
 from helpers import FakeBucketStore
 
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
 from src.downloads import config, publish, versions
 from src.downloads.fastapi import desktop_routes, routes
 
@@ -57,11 +57,11 @@ async def test_the_bucket_is_not_read_on_every_ask():
 
 
 def test_the_download_page_is_found_beside_the_invitation_link(monkeypatch):
-    monkeypatch.setattr(settings, "DESKTOP_DOWNLOAD_PAGE_URL", None)
-    monkeypatch.setattr(settings, "INVITATION_ACCEPT_URL", "https://panel.example.com/accept-invite")
+    monkeypatch.setattr(api_settings, "DESKTOP_DOWNLOAD_PAGE_URL", None)
+    monkeypatch.setattr(api_settings, "INVITATION_ACCEPT_URL", "https://panel.example.com/accept-invite")
     assert config.download_page_url() == "https://panel.example.com/download"
 
-    monkeypatch.setattr(settings, "DESKTOP_DOWNLOAD_PAGE_URL", "https://theway.example/descargas")
+    monkeypatch.setattr(api_settings, "DESKTOP_DOWNLOAD_PAGE_URL", "https://theway.example/descargas")
     assert config.download_page_url() == "https://theway.example/descargas"
 
 

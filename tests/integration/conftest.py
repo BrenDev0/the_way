@@ -20,9 +20,10 @@ import src.preferences.sqlalchemy
 import src.projects.sqlalchemy
 import src.sessions.sqlalchemy
 import src.skills.sqlalchemy
+import src.staff.sqlalchemy
 import src.users.sqlalchemy  # noqa: F401
 from src.core.database.sqlalchemy.models import Base
-from src.core.settings import settings
+from src.core.settings.shared import settings
 
 NEEDS_SERVICES = (
     "Integration tests need the local stack. Run `docker compose up -d`, then "

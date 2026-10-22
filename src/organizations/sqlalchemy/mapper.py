@@ -14,4 +14,4 @@ def row_to_domain(row: OrganizationRow) -> Organization:
 
 
 def domain_create_to_row(organization: OrganizationCreate) -> OrganizationRow:
-    return OrganizationRow(name=organization.name)
+    return OrganizationRow(name=organization.name, seat_limit=organization.seat_limit)

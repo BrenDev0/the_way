@@ -6,7 +6,7 @@ from src.auth import service as auth_service
 from src.core.cache.ports import CacheStore
 from src.core.cryptography.ports import HashingService
 from src.core.exceptions import AuthenticationError, NotFoundError
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
 from src.sessions import service as sessions_service
 from src.sessions.domain import Session, SessionClient
 from src.sessions.ports import (
@@ -70,7 +70,7 @@ async def login_desktop(
         token_service=session_token_service,
         client=SessionClient.DESKTOP,
         device_name=(device_name or "").strip()[:100] or None,
-        ttl=timedelta(seconds=settings.DESKTOP_SESSION_TTL_SECONDS),
+        ttl=timedelta(seconds=api_settings.DESKTOP_SESSION_TTL_SECONDS),
     )
     return user, session, raw_token
 

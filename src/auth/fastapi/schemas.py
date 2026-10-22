@@ -8,22 +8,6 @@ from src.sessions.domain import SessionClient
 from src.users.fastapi.schemas import UserResponse
 
 
-class UserRegistrationRequest(ApiBaseModel):
-    organization_name: str
-    email: str
-    password: str
-    verification_code: str
-
-
-class RequestRegistrationVerificationRequest(ApiBaseModel):
-    email: str
-
-
-class RequestRegistrationVerificationResponse(ApiBaseModel):
-    detail: str
-    expires_at: datetime
-
-
 class LoginRequest(ApiBaseModel):
     email: str
     password: str

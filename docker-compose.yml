@@ -1,15 +1,21 @@
 name: the-way
 
-x-app-environment: &app-environment
-  DATABASE_URL: postgresql+asyncpg://the_way:${POSTGRES_PASSWORD}@postgres:5432/the_way
+# What each service is given, by service: see src/core/settings/ (one module per service).
+#
+#   migrate   DATABASE_URL, and nothing else
+#   api       the shared environment below + the api's own (under `api`)
+#   worker    the shared environment below + its pool sizes and queue tuning (under `worker`)
+#   render    RENDER_SHARED_SECRET only: none of the app's secrets
+#
+# The api and the worker run the same app, so they share the first block; each service's own
+# block holds what only it reads, and a deployment sets the same names on each Railway service.
+x-shared-environment: &shared-environment
+  DATABASE_URL: &database-url postgresql+asyncpg://the_way:${POSTGRES_PASSWORD}@postgres:5432/the_way
   REDIS_URL: redis://redis:6379/0
   TASKIQ_BROKER_URL: redis://redis-queue:6379/0
   TASKIQ_RESULT_BACKEND_URL: redis://redis-queue:6379/1
   CRYPTOGRAPHY_FERNET_KEY: ${CRYPTOGRAPHY_FERNET_KEY}
   REQUEST_SIGNING_SECRET: ${REQUEST_SIGNING_SECRET}
-  CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-  SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE}
-  INVITATION_ACCEPT_URL: ${INVITATION_ACCEPT_URL}
   SMTP_HOST: ${SMTP_HOST}
   SMTP_PORT: ${SMTP_PORT}
   SMTP_USER: ${SMTP_USER}
@@ -119,7 +125,9 @@ services:
     image: ${APP_IMAGE}
     restart: "no"
     command: alembic upgrade head
-    environment: *app-environment
+    # the database and nothing else: it is given no secret and needs none
+    environment:
+      DATABASE_URL: *database-url
     depends_on:
       postgres:
         condition: service_healthy
@@ -128,7 +136,14 @@ services:
     image: ${APP_IMAGE}
     restart: unless-stopped
     command: uvicorn src.fastapi.main:app --host 0.0.0.0 --port 8000
-    environment: *app-environment
+    environment:
+      <<: *shared-environment
+      # the api's own (src/core/settings/api.py); the rest of that file has defaults
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE}
+      INVITATION_ACCEPT_URL: ${INVITATION_ACCEPT_URL}
+      OWNER_INVITATION_ACCEPT_URL: ${OWNER_INVITATION_ACCEPT_URL}
+      DESKTOP_DOWNLOAD_PAGE_URL: ${DESKTOP_DOWNLOAD_PAGE_URL:-}
     networks: [default, render]
     ports:
       - "8000:8000"
@@ -162,7 +177,7 @@ services:
       --max-async-tasks ${TASKIQ_MAX_ASYNC_TASKS:-50}
       --max-threadpool-threads ${TASKIQ_MAX_THREADPOOL_THREADS:-8}
     environment:
-      <<: *app-environment
+      <<: *shared-environment
       # about one connection per running task: 25 + 30 here, 10 + 20 for the api,
       # 85 together under Postgres's 100
       DATABASE_POOL_SIZE: ${WORKER_DATABASE_POOL_SIZE:-25}

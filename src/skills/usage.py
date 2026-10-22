@@ -214,7 +214,7 @@ async def main(argv: list[str] | None = None) -> int:
 
     from src.core.cryptography.bcrypt.adapter import BcryptHashingService
     from src.core.database.sqlalchemy.core import async_session_factory
-    from src.core.settings import settings
+    from src.core.settings.shared import settings
     from src.users.sqlalchemy import adapter as users_adapter
 
     print(f"Reading (read only) from database host: {make_url(settings.DATABASE_URL).host}", file=sys.stderr)

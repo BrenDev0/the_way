@@ -45,6 +45,12 @@ render = [
     "playwright>=1.50",
 ]
 
+# What CI enforces: undefined names and unused imports (F), and import order (I). Pinned
+# here because ruff's own default set changes between versions, and a wider one would fail
+# the build on an upgrade, not on a change.
+[tool.ruff.lint]
+select = ["F", "I"]
+
 # src/fastapi/ would otherwise make ruff file `import fastapi` under first-party code.
 [tool.ruff.lint.isort]
 known-first-party = ["src", "tests"]

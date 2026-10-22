@@ -1,7 +1,7 @@
 import pytest
 from starlette.testclient import TestClient
 
-from src.core.settings import Settings, settings
+from src.core.settings.api import ApiSettings, settings
 from src.fastapi.main import app
 
 CONFIGURED = settings.CORS_ALLOWED_ORIGINS
@@ -12,14 +12,14 @@ ALLOWED = CONFIGURED[0] if CONFIGURED else ""
 
 def origins(raw: str, monkeypatch) -> list[str]:
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", raw)
-    return Settings().CORS_ALLOWED_ORIGINS  # type: ignore[call-arg]
+    return ApiSettings().CORS_ALLOWED_ORIGINS  # type: ignore[call-arg]
 
 
 def test_no_origins_are_allowed_by_default(monkeypatch):
     monkeypatch.delenv("CORS_ALLOWED_ORIGINS", raising=False)
 
     # not from a developer's .env either, which usually lists the local panel
-    assert Settings(_env_file=None).CORS_ALLOWED_ORIGINS == []  # type: ignore[call-arg]
+    assert ApiSettings(_env_file=None).CORS_ALLOWED_ORIGINS == []  # type: ignore[call-arg]
 
 
 def test_a_json_list_parses(monkeypatch):
@@ -41,7 +41,7 @@ def test_a_bare_comma_list_fails_loudly_rather_than_silently(monkeypatch):
     monkeypatch.setenv("CORS_ALLOWED_ORIGINS", "https://a.example.com,https://b.example.com")
 
     with pytest.raises(ValueError):
-        Settings()  # type: ignore[call-arg]
+        ApiSettings()  # type: ignore[call-arg]
 
 
 @pytest.fixture

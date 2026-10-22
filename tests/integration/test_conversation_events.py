@@ -12,7 +12,7 @@ from src.core.events.domain import EventStreamUnavailable
 from src.core.events.memory import InMemoryEventStream
 from src.core.events.redis.adapter import RedisEventStream
 from src.core.llm.domain import ToolCall
-from src.core.settings import settings
+from src.core.settings.shared import settings
 from src.organizations.domain import OrganizationCreate
 from src.organizations.sqlalchemy import adapter as organizations_adapter
 from src.users.domain import Role, UserCreate

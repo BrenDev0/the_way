@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 from redis.asyncio import Redis
 
-from src.core.settings import settings
+from src.core.settings.shared import settings
 from src.core.tasks.broker import HeartbeatStreamBroker
 
 IDLE_MS = 1000

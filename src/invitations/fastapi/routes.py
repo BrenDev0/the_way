@@ -7,7 +7,7 @@ from src.auth.fastapi import dependencies as auth_dependencies
 from src.core.cache.ports import CacheStore
 from src.core.communications.ports import EmailSender
 from src.core.cryptography.ports import EncryptionService, HashingService
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
 from src.fastapi import dependencies as api_dependencies
 from src.organizations import use_cases as organizations_use_cases
 from src.organizations.fastapi import dependencies as organizations_dependencies
@@ -106,7 +106,7 @@ async def create_invitation_route(
         email_sender=email_sender,
         hashing_service=hashing_service,
         encryption_service=encryption_service,
-        accept_url=settings.require_invitation_accept_url(),
+        accept_url=api_settings.require_invitation_accept_url(),
     )
     return InvitationResponse.from_domain(
         invitation, email=encryption_service.decrypt(invitation.encrypted_email)

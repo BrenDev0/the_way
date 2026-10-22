@@ -5,7 +5,7 @@ import pytest
 from helpers import FakeBucketStore
 from starlette.testclient import TestClient
 
-from src.core.settings import settings
+from src.core.settings.shared import settings
 from src.exports import tools as export_tools
 from src.fastapi import dependencies as api_dependencies
 from src.fastapi.main import app

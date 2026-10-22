@@ -2,7 +2,7 @@ from uuid import uuid4
 
 import pytest
 
-from src.core.settings import settings
+from src.core.settings.shared import settings
 from src.projects import html_images, links
 
 PAGE = "soullens-studios-report/report.html"

@@ -9,7 +9,7 @@ from sqlalchemy import make_url, pool, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from src.core.database import migrations
-from src.core.settings import settings
+from src.core.settings.shared import settings
 
 
 @pytest.fixture(autouse=True)

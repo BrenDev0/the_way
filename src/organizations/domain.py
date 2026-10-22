@@ -16,6 +16,7 @@ class Organization:
 @dataclass
 class OrganizationCreate:
     name: str
+    seat_limit: int | None = None
 
 
 # --- the organization at a glance: read models, built from other slices' data ---------

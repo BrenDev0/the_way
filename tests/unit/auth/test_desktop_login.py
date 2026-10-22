@@ -7,7 +7,7 @@ from helpers import make_session, make_user
 from src.auth.fastapi import dependencies as auth_dependencies
 from src.auth.use_cases import sessions as sessions_use_cases
 from src.core.exceptions import AuthenticationError, RateLimitError
-from src.core.settings import settings
+from src.core.settings.api import settings
 from src.sessions import service as sessions_service
 from src.sessions.domain import SessionClient
 from src.sessions.tokens import SessionTokenService

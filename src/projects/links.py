@@ -13,7 +13,7 @@ import re
 from uuid import UUID
 
 from src.auth import config as auth_config
-from src.core.settings import settings
+from src.core.settings.shared import settings
 
 VIEW_PATH = "/files/{file_id}/view"
 

@@ -5,7 +5,8 @@ from hashlib import sha256
 from starlette.requests import ClientDisconnect, Request
 
 from src.core.exceptions import AuthenticationError
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
+from src.core.settings.shared import settings
 
 SIGNATURE_HEADER = "X-Signature"
 TIMESTAMP_HEADER = "X-Timestamp"
@@ -51,7 +52,7 @@ async def verify_request_signature(request: Request) -> None:
             code="request_signature_invalid",
         ) from None
 
-    if abs(time.time() - sent_at) > settings.REQUEST_SIGNATURE_WINDOW_SECONDS:
+    if abs(time.time() - sent_at) > api_settings.REQUEST_SIGNATURE_WINDOW_SECONDS:
         raise AuthenticationError(
             message="Request signature expired",
             code="request_signature_expired",

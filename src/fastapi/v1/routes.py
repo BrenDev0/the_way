@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends
 
 from src.api_keys.fastapi.routes import router as api_keys_router
-from src.auth.fastapi.routes.registration import router as auth_registration_router
 from src.auth.fastapi.routes.sessions import router as sessions_router
 from src.auth.fastapi.routes.web import router as auth_web_router
 from src.background.fastapi.routes import router as background_router
@@ -26,12 +25,16 @@ from src.projects.fastapi.routes.folders import router as project_folders_router
 from src.projects.fastapi.routes.management import router as projects_management_router
 from src.projects.fastapi.routes.projects import router as projects_router
 from src.skills.fastapi.routes import router as skills_router
+from src.staff.fastapi.routes.accept import router as owner_invitation_accept_router
+from src.staff.fastapi.routes.auth import router as staff_auth_router
+from src.staff.fastapi.routes.owner_invitations import (
+    router as staff_owner_invitations_router,
+)
 from src.users.fastapi.routes import router as users_router
 from src.voice.fastapi.routes import router as voice_router
 
 router = APIRouter(dependencies=[Depends(signing.verify_request_signature)])
 router.include_router(api_keys_router, prefix="/api-keys")
-router.include_router(auth_registration_router, prefix="/auth")
 router.include_router(auth_web_router, prefix="/auth")
 router.include_router(sessions_router, prefix="/auth")
 router.include_router(background_router, prefix="/background-tasks")
@@ -51,6 +54,9 @@ router.include_router(projects_management_router, prefix="/projects/management")
 router.include_router(projects_router, prefix="/projects")
 router.include_router(project_folders_router, prefix="/projects")
 router.include_router(project_files_router, prefix="/projects")
+router.include_router(owner_invitation_accept_router, prefix="/owner-invitations")
 router.include_router(skills_router, prefix="/skills")
+router.include_router(staff_auth_router, prefix="/staff/auth")
+router.include_router(staff_owner_invitations_router, prefix="/staff/owner-invitations")
 router.include_router(users_router, prefix="/users")
 router.include_router(voice_router, prefix="/voice")

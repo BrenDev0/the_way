@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from src.core.settings import SameSitePolicy
+from src.core.settings.api import SameSitePolicy
 
 
 @dataclass(frozen=True)

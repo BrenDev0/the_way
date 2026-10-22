@@ -2,10 +2,9 @@
 # builds the app from this working tree and reads settings from .env.
 
 services:
+  # No env_file: migrate is given its DATABASE_URL by docker-compose.yml and nothing else.
   migrate:
     build: .
-    env_file:
-      - .env
 
   api:
     build: .

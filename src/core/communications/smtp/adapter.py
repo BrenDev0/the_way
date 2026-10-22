@@ -3,7 +3,7 @@ import smtplib
 from email.message import EmailMessage
 
 from src.core.communications.domain import Email
-from src.core.settings import settings
+from src.core.settings.shared import settings
 
 
 class SmtpEmailSender:

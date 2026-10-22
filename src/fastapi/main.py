@@ -12,7 +12,8 @@ from src.core.cryptography.bcrypt import adapter as bcrypt_adapter
 from src.core.cryptography.fernet import adapter as fernet_adapter
 from src.core.database import migrations
 from src.core.events.redis import adapter as events_adapter
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
+from src.core.settings.shared import settings
 from src.core.tasks.broker import broker
 from src.fastapi.exception_handlers import register_exception_handlers
 from src.projects.fastapi.routes.public import router as project_images_router
@@ -47,13 +48,13 @@ async def lifespan(app: FastAPI):
             public_endpoint_url=settings.BUCKET_PUBLIC_ENDPOINT,
         )
     app.state.session_token_service = SessionTokenService(
-        session_ttl=timedelta(seconds=settings.SESSION_TTL_SECONDS),
+        session_ttl=timedelta(seconds=api_settings.SESSION_TTL_SECONDS),
     )
     app.state.session_cookie_config = SessionCookieConfig(
-        name=settings.SESSION_COOKIE_NAME,
-        secure=settings.SESSION_COOKIE_SECURE,
-        samesite=settings.SESSION_COOKIE_SAMESITE,
-        max_age_seconds=settings.SESSION_TTL_SECONDS,
+        name=api_settings.SESSION_COOKIE_NAME,
+        secure=api_settings.SESSION_COOKIE_SECURE,
+        samesite=api_settings.SESSION_COOKIE_SAMESITE,
+        max_age_seconds=api_settings.SESSION_TTL_SECONDS,
     )
 
     if not broker.is_worker_process:
@@ -75,17 +76,17 @@ app = FastAPI(lifespan=lifespan)
 app.add_middleware(
     RateLimitMiddleware,
     paths={
-        f"{auth_config.WEB_API_PREFIX}/auth/login": settings.WEB_PROXY_HOPS,
-        f"{auth_config.WEB_API_PREFIX}/auth/register/request-verification": settings.WEB_PROXY_HOPS,
-        f"{auth_config.DESKTOP_API_PREFIX}/auth/login": settings.PUBLIC_PROXY_HOPS,
+        f"{auth_config.WEB_API_PREFIX}/auth/login": api_settings.WEB_PROXY_HOPS,
+        f"{auth_config.WEB_API_PREFIX}/staff/auth/login": api_settings.WEB_PROXY_HOPS,
+        f"{auth_config.DESKTOP_API_PREFIX}/auth/login": api_settings.PUBLIC_PROXY_HOPS,
     },
-    max_requests=settings.RATE_LIMIT_MAX_REQUESTS,
-    window_seconds=settings.RATE_LIMIT_WINDOW_SECONDS,
-    block_seconds=settings.RATE_LIMIT_BLOCK_SECONDS,
+    max_requests=api_settings.RATE_LIMIT_MAX_REQUESTS,
+    window_seconds=api_settings.RATE_LIMIT_WINDOW_SECONDS,
+    block_seconds=api_settings.RATE_LIMIT_BLOCK_SECONDS,
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ALLOWED_ORIGINS,
+    allow_origins=api_settings.CORS_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

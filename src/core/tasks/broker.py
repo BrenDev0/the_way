@@ -6,7 +6,8 @@ from redis.asyncio import Redis
 from taskiq import AsyncBroker, InMemoryBroker
 from taskiq_redis import RedisAsyncResultBackend, RedisStreamBroker
 
-from src.core.settings import settings
+from src.core.settings.shared import settings
+from src.core.settings.worker import settings as worker_settings
 
 logger = logging.getLogger(__name__)
 
@@ -85,15 +86,15 @@ def build_broker() -> AsyncBroker:
         # where a new consumer group starts reading: the beginning, so nothing queued
         # before the group existed is skipped (each worker's own name is a random uuid)
         consumer_id="0",
-        xread_block=settings.TASKIQ_XREAD_BLOCK_MS,
+        xread_block=worker_settings.TASKIQ_XREAD_BLOCK_MS,
         # One message per read. A batch is handed out as slots free up, and the ones still
         # waiting in it are neither running nor renewed: they went idle and were taken back
         # and run twice, and with several workers one of them hoarded the queue.
         xread_count=1,
-        idle_timeout=settings.TASKIQ_IDLE_TIMEOUT_SECONDS * 1000,
-        heartbeat=settings.TASKIQ_HEARTBEAT_SECONDS,
-        heartbeat_max=settings.TASKIQ_HEARTBEAT_MAX_SECONDS,
-        socket_timeout=settings.TASKIQ_SOCKET_TIMEOUT_SECONDS,
+        idle_timeout=worker_settings.TASKIQ_IDLE_TIMEOUT_SECONDS * 1000,
+        heartbeat=worker_settings.TASKIQ_HEARTBEAT_SECONDS,
+        heartbeat_max=worker_settings.TASKIQ_HEARTBEAT_MAX_SECONDS,
+        socket_timeout=worker_settings.TASKIQ_SOCKET_TIMEOUT_SECONDS,
     ).with_result_backend(result_backend)
 
 

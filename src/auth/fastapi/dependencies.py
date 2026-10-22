@@ -8,7 +8,7 @@ from starlette.requests import Request
 from src.auth import config
 from src.core.cache.ports import CacheStore
 from src.core.exceptions import AuthenticationError, AuthorizationError
-from src.core.settings import settings
+from src.core.settings.api import settings as api_settings
 from src.fastapi import dependencies as api_dependencies
 from src.sessions import service as sessions_service
 from src.sessions.config import SessionCookieConfig
@@ -84,7 +84,7 @@ async def get_current_session(
         token_service=session_token_service,
         client=client,
         renew_session_fn=renew_session_fn if desktop else None,
-        renew_ttl=timedelta(seconds=settings.DESKTOP_SESSION_TTL_SECONDS) if desktop else None,
+        renew_ttl=timedelta(seconds=api_settings.DESKTOP_SESSION_TTL_SECONDS) if desktop else None,
     )
     if session is None:
         raise AuthenticationError(message="Invalid session", code="invalid_session")

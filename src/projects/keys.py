@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from src.core.settings import settings
+from src.core.settings.shared import settings
 
 
 def file_key(organization_id: UUID, file_id: UUID) -> str:
