@@ -28,6 +28,7 @@ from .schemas import (
     ReadFile,
     ReadWhatsappChat,
     RenamePath,
+    RunCommand,
     SearchCode,
     SearchFile,
     SendWhatsappMessage,
@@ -67,6 +68,8 @@ BROWSER: tuple[type[BaseModel], ...] = (
     SendWhatsappMessage,
 )
 
+SHELL: tuple[type[BaseModel], ...] = (RunCommand,)
+
 GIT: tuple[type[BaseModel], ...] = (
     GitStatus,
     GitLog,
@@ -98,14 +101,16 @@ REQUIRES_APPROVAL: frozenset[type[BaseModel]] = frozenset(
         GitAdd,
         GitCommit,
         GitPush,
+        RunCommand,
     }
 )
 
-SCHEMAS: tuple[type[BaseModel], ...] = FILES + TRANSFER + BROWSER + GIT
+SCHEMAS: tuple[type[BaseModel], ...] = FILES + TRANSFER + BROWSER + GIT + SHELL
 
 # Asked even when the user has the app approve everything else on its own (auto mode):
-# a deletion cannot be undone, and a push leaves the machine for good.
-ALWAYS_ASK: frozenset[type[BaseModel]] = frozenset({DeleteFile, DeleteDir, GitPush})
+# a deletion cannot be undone, a push leaves the machine for good, and a command can do
+# anything the user's account can.
+ALWAYS_ASK: frozenset[type[BaseModel]] = frozenset({DeleteFile, DeleteDir, GitPush, RunCommand})
 
 
 def build() -> dict[str, Tool]:

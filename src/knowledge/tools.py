@@ -94,7 +94,7 @@ def build(
 
         # A skill is a method to follow, so it is paged like a document rather than cut:
         # whatever lay past a cut was an instruction the agent never saw.
-        text = skill_notes.note_for(skill.name) + skill.instructions
+        text = skill_notes.note_for(skill.name, skill.instructions) + skill.instructions
         if files:
             text += SKILL_FILES.format(name=name, files="\n".join(f"- {path}" for path in sorted(files)))
         return section(text, offset)

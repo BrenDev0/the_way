@@ -6,9 +6,39 @@ sends the agent after a tool it does not have -- and a skill that contradicts th
 gets dropped, so the agent learns that skills are noise. The note goes ahead of the
 skill's own text, so it is read first and on the first page of a long skill.
 
-Keyed by skill name: the note is about our tools, not the skill's method, so it lives
-here rather than in the skill text, which stays as its authors wrote it.
+The note is about our tools, not the skill's method, so it lives here rather than in the skill
+text, which stays as its authors wrote it. Two kinds: what any skill that shows commands needs
+(COMMAND_NOTE) is found in the skill's text, so it follows the skill whatever it is called; what
+is specific to one skill -- which tools replace its steps -- is looked up by its name (NOTES).
 """
+
+import re
+
+# What every skill that shows commands is told, whatever its name. Found in the skill's own text,
+# not looked up by name: a renamed skill, or one a customer wrote, gets it all the same.
+COMMAND_NOTE = (
+    "- This skill is written for an agent with a shell. Where it shows a command: if you have "
+    "the RunCommand tool (only in the desktop app), run it with that -- one command per call, "
+    "written for the shell RunCommand names (PowerShell on Windows, bash on a Mac), and the user "
+    "approves each one. Prefer the file tools and the Git tools where they do the same thing. If "
+    "you do not have RunCommand (a background task, or any other client), say the skill's "
+    "commands cannot run here and what the user could run themselves; never claim to have run "
+    "one. If a command fails because a program is not installed on their computer, say which and "
+    "stop -- do not try to install it."
+)
+
+# A fenced block in a shell language, or a line that opens with a command the kit's skills use.
+_COMMAND_BLOCK = re.compile(r"```[ \t]*(?:bash|sh|shell|zsh|console|powershell|ps1|cmd|bat)\b", re.IGNORECASE)
+_COMMAND_LINE = re.compile(
+    r"^[ \t]*(?:\$ )?(?:git|node|npm|npx|pnpm|yarn|curl|wget|python3?|pip3?|jq|make|docker|gh)\s+\S",
+    re.MULTILINE,
+)
+
+
+def uses_commands(instructions: str) -> bool:
+    """Whether a skill's text shows commands to run."""
+    return bool(_COMMAND_BLOCK.search(instructions) or _COMMAND_LINE.search(instructions))
+
 
 HEADER = (
     "=== RUNNING THIS SKILL HERE (read first; where the skill below names a command or a "
@@ -17,8 +47,9 @@ HEADER = (
 FOOTER = "=== THE SKILL, AS ITS AUTHORS WROTE IT ==="
 
 NO_SHELL = (
-    "You cannot run commands: there is no shell, no node, no python, no curl, and no git "
-    "command line. Never claim to have run one."
+    "You cannot run commands on the server: there is no shell, no node, no python, no curl, and "
+    "no git command line. Only the desktop app's RunCommand tool can, on the user's own computer. "
+    "Never claim to have run one."
 )
 
 # The desktop app's git tools stand in for the git commands, in the folder the user has open.
@@ -146,7 +177,11 @@ NOTES: dict[str, str] = {
 }
 
 
-def note_for(name: str) -> str:
-    """The note for a skill, ready to go ahead of its text -- or nothing."""
-    note = NOTES.get(name.strip().lower())
-    return f"{HEADER}\n{note}\n{FOOTER}\n\n" if note else ""
+def note_for(name: str, instructions: str = "") -> str:
+    """The note for a skill, ready to go ahead of its text -- or nothing.
+
+    What is specific to a skill is looked up by its name; what any skill with commands needs is
+    found in its text, so it does not depend on the name at all."""
+    notes = [NOTES.get(name.strip().lower()), COMMAND_NOTE if uses_commands(instructions) else None]
+    kept = [note for note in notes if note]
+    return f"{HEADER}\n{chr(10).join(kept)}\n{FOOTER}\n\n" if kept else ""

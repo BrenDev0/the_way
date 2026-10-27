@@ -60,6 +60,7 @@ def test_desktop_tools_have_no_server_handler():
         "GitAdd",
         "GitCommit",
         "GitPush",
+        "RunCommand",
     ],
 )
 def test_desktop_calls_that_change_or_send_need_approval(name):
@@ -146,6 +147,7 @@ def test_deletions_ask_even_in_auto_mode_and_messages_do_not():
     assert server["DeleteProjectPath"].always_ask
     assert server["DeleteFile"].always_ask and server["DeleteDir"].always_ask
     assert server["GitPush"].always_ask  # a push leaves the machine
+    assert server["RunCommand"].always_ask  # a command can do anything the user can
     assert not server["GitCommit"].always_ask and not server["GitAdd"].always_ask
     assert not server["SendWhatsappMessage"].always_ask
     assert not server["MoveProjectPath"].always_ask

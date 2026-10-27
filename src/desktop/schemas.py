@@ -349,3 +349,28 @@ class GitPush(BaseModel):
         description="If true, remember this remote branch as the one this branch follows -- "
         "needed the first time a branch is pushed",
     )
+
+
+# --- a command on the user's computer ----------------------------------------------------
+
+
+class RunCommand(BaseModel):
+    """Run ONE command in the user's own shell, on their computer, in the folder they have open.
+    For skills and requests that need a command no other tool does (`node`, `curl`, `npm`...).
+
+    The user is asked EVERY time, even when they have approved everything else, and sees the
+    exact command: so run one small command per call, say before it what it is for, and never
+    chain steps the user has not seen. Prefer the file tools for files and the Git tools for
+    git; they are safer and need no shell.
+
+    The result begins with the shell it ran in -- PowerShell on Windows, bash on Mac -- so write
+    commands for that one. It runs with the user's own permissions and is NOT fenced to the
+    folder: never delete or change anything outside it, install software, or send data anywhere,
+    unless the user asked for that in plain words. Never put a password or token in a command.
+    A command that needs input will not get any; one that runs too long is ended."""
+
+    command: str = Field(description="The command, exactly as the user's shell should run it")
+    timeout_seconds: int = Field(
+        default=60,
+        description="How long it may run before it is ended, up to 600 (ten minutes)",
+    )

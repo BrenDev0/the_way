@@ -31,7 +31,7 @@ def render(skill: Skill) -> str:
         HEADER.format(name=skill.name),
         GUIDANCE,
         "",
-        skill_notes.note_for(skill.name) + skill.instructions.strip(),
+        skill_notes.note_for(skill.name, skill.instructions) + skill.instructions.strip(),
     ]
     budget = config.MAX_SKILL_CHARS - len(sections[-1])
     left_out: list[str] = []
