@@ -28,6 +28,8 @@ class PauseReason(StrEnum):
     CREDENTIALS = "credentials"
     # the worker stopped mid-turn: restarted, redeployed, crashed
     INTERRUPTED = "interrupted"
+    # the user pressed Stop; nothing is wrong, and they can carry on or move on
+    STOPPED = "stopped"
 
 
 class ConversationClient(StrEnum):

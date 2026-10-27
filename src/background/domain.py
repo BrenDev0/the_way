@@ -11,6 +11,9 @@ class TaskStatus(StrEnum):
     NEEDS_APPROVAL = "needs_approval"
     DONE = "done"
     FAILED = "failed"
+    # The user stopped it. Its run is kept (paused.py) so it can carry on from where it stopped,
+    # and what it made so far stays in its folder; it is not finished and nothing was delivered.
+    STOPPED = "stopped"
 
 
 @dataclass

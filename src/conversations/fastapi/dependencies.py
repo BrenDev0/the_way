@@ -18,6 +18,7 @@ from src.conversations.ports import (
     SaveTurnStateFn,
 )
 from src.core.bucket.ports import BucketStore
+from src.core.cache.ports import CacheStore
 from src.core.events.ports import EventStream
 from src.core.llm.domain import Message
 from src.fastapi import dependencies as api_dependencies
@@ -33,6 +34,7 @@ CurrentUser = Annotated[
     Depends(auth_dependencies.require_role(Role.OWNER, Role.ADMIN, Role.MEMBER)),
 ]
 Events = Annotated[EventStream, Depends(api_dependencies.get_event_stream)]
+Cache = Annotated[CacheStore, Depends(api_dependencies.get_cache_store)]
 
 
 def provide_create_conversation_fn(

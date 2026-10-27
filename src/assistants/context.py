@@ -8,6 +8,8 @@ from src.background.ports import (
     GetTaskForUserFn,
     ListUnreportedFn,
     MarkReportedFn,
+    ResumeTaskFn,
+    StopTaskFn,
 )
 from src.conversations.ports import SearchMessagesFn
 from src.core.bucket.ports import BucketStore
@@ -73,6 +75,10 @@ class ToolPorts:
     mark_reported_fn: MarkReportedFn
     # the user's own past messages
     search_messages_fn: SearchMessagesFn
+    # stopping and resuming the user's background tasks; unset where there is no cache to ask
+    # a worker through, and the tools for it are then not offered
+    stop_task_fn: StopTaskFn | None = None
+    resume_task_fn: ResumeTaskFn | None = None
 
 
 @dataclass(frozen=True)

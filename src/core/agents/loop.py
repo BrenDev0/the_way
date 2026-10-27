@@ -1,3 +1,4 @@
+import time
 from collections.abc import Awaitable, Callable
 from typing import Protocol
 
@@ -40,6 +41,21 @@ class LoopObserver(Protocol):
 # already run.
 Checkpoint = Callable[[LoopState], Awaitable[None]]
 
+# Whether the user has asked for the work to stop. Looked at between steps, and while a reply is
+# being written (at most every STOP_POLL_SECONDS), so a stop lands within a moment of being asked
+# -- never in the middle of a tool.
+StopCheck = Callable[[], Awaitable[bool]]
+STOP_POLL_SECONDS = 0.4
+
+# What the model is told of a call that was never run because the work was stopped first.
+NOT_RUN = "Not run: the user stopped the work before this call could run."
+# Ends a reply that was cut off while it was being written.
+CUT_OFF = " [...]"
+
+
+class StopRequested(Exception):  # noqa: N818 -- a signal, not an error
+    """Raised inside the text callback to end a reply the user no longer wants."""
+
 
 def conversation_size(state: LoopState) -> int:
     # A picture's base64 is not text the model reads: counted as text, one screenshot would
@@ -64,6 +80,7 @@ async def advance(
     max_conversation_chars: int = DEFAULT_MAX_CONVERSATION_CHARS,
     observer: LoopObserver | None = None,
     checkpoint: Checkpoint | None = None,
+    should_stop: StopCheck | None = None,
 ) -> LoopResult:
     messages = list(state.messages)
     saved = len(messages)
@@ -91,6 +108,11 @@ async def advance(
                 await observer.on_message(message)
 
     while iterations < max_iterations:
+        # Calls waiting here have been answered by the user and, for the desktop's, already
+        # run on their machine: they are settled first, and the stop lands right after.
+        if not pending and should_stop is not None and await should_stop():
+            return LoopResult(status=LoopStatus.STOPPED, state=snapshot())
+
         if pending:
             try:
                 results = await executor.execute(pending, decisions)
@@ -112,11 +134,30 @@ async def advance(
             await checkpoint(snapshot())
             saved = len(messages)
 
-        try:
+        written: list[str] = []
+        checked = time.monotonic()
+
+        async def listen(text: str) -> None:
+            nonlocal checked
+            written.append(text)
             if observer is not None:
-                completion = await llm.respond(messages, executor.schemas, on_text=observer.on_text)
+                await observer.on_text(text)
+            if should_stop is not None and time.monotonic() - checked >= STOP_POLL_SECONDS:
+                checked = time.monotonic()
+                if await should_stop():
+                    raise StopRequested
+
+        try:
+            if observer is not None or should_stop is not None:
+                completion = await llm.respond(messages, executor.schemas, on_text=listen)
             else:
                 completion = await llm.respond(messages, executor.schemas)
+        except StopRequested:
+            # what was already written is part of what happened; kept, marked as cut short
+            partial = "".join(written).strip()
+            if partial:
+                await append(llm_domain.assistant(partial + CUT_OFF))
+            return LoopResult(status=LoopStatus.STOPPED, state=snapshot())
         except LLMUnavailable as exc:
             return LoopResult(status=LoopStatus.PAUSED, state=snapshot(), unavailable=exc)
         iterations += 1
@@ -151,6 +192,11 @@ async def advance(
         await append(*_result_messages(ungated_results + results))
 
     return LoopResult(status=LoopStatus.ITERATION_LIMIT, state=snapshot())
+
+
+def result_messages(results: tuple[ToolResult, ...]) -> list[Message]:
+    """The messages that answer a set of tool calls, in the order the model made them."""
+    return _result_messages(results)
 
 
 def _result_messages(results: tuple[ToolResult, ...]) -> list[Message]:

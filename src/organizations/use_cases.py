@@ -1,6 +1,8 @@
+import logging
 from datetime import UTC, datetime
 from uuid import UUID
 
+from src.core.bucket.domain import BucketError
 from src.core.cache.ports import CacheStore
 from src.core.exceptions import NotFoundError, ValidationError
 from src.invitations.ports import CountPendingForOrganizationFn
@@ -15,6 +17,7 @@ from src.users.ports import (
 
 from . import cache
 from .domain import (
+    FilesPurged,
     Organization,
     OrganizationOverview,
     PersonStorage,
@@ -25,8 +28,11 @@ from .ports import (
     GetOrganizationByIdFn,
     ListMonthlyUsageFn,
     ListProjectStorageFn,
+    PurgeOrganizationFilesFn,
     UpdateOrganizationByIdFn,
 )
+
+logger = logging.getLogger(__name__)
 
 # How many of the members' own projects the overview lists, biggest first.
 LARGEST_PROJECTS = 8
@@ -115,6 +121,27 @@ async def delete_organization(
         raise _not_found()
 
     await cache_store.remove(_cache_key(organization_id))
+
+
+async def purge_files_of_deleted_organization(
+    organization_id: UUID,
+    purge_organization_files_fn: PurgeOrganizationFilesFn,
+) -> FilesPurged | None:
+    """Clears what a deleted organization stored in the bucket, after its rows are gone.
+
+    Never undoes the deletion and never raises: the organization no longer exists, so a bucket
+    that cannot be reached is logged (None: nobody can say what is left) and the files that
+    could not be deleted are logged by count. Running it again finishes the job.
+    """
+    try:
+        purged = await purge_organization_files_fn(organization_id)
+    except BucketError as exc:
+        logger.warning("Could not clear the files of deleted organization %s: %s", organization_id, exc)
+        return None
+
+    if purged.failed:
+        logger.warning("%s files of deleted organization %s were left in the bucket", purged.failed, organization_id)
+    return purged
 
 
 async def get_overview(

@@ -13,8 +13,10 @@ from src.assistants import catalog
 from src.assistants.context import LLMFactory, ToolContext
 from src.assistants.sql import sql_tool_context
 from src.background import tools as background_tools
+from src.core import stop as stop_signal
 from src.core.bucket.ports import BucketStore
 from src.core.bucket.unavailable import UnavailableBucketStore
+from src.core.cache.ports import CacheStore
 from src.core.cryptography.ports import EncryptionService
 from src.core.database.sqlalchemy.core import async_session_factory
 from src.core.events.ports import EventStream
@@ -84,6 +86,10 @@ async def advance_conversation(
         EventStream,
         TaskiqDepends(worker_dependencies.get_event_stream),
     ],
+    cache: Annotated[
+        CacheStore,
+        TaskiqDepends(worker_dependencies.get_cache_store),
+    ],
     context: Annotated[Context, TaskiqDepends()],
     voice: bool = False,
     local_folder: str | None = None,
@@ -94,6 +100,7 @@ async def advance_conversation(
         encryption_service=encryption_service,
         bucket_store=bucket_store,
         event_stream=event_stream,
+        cache=cache,
         voice=voice,
         local_folder=local_folder,
         remote_folder=remote_folder,
@@ -122,12 +129,18 @@ async def run_turn(
     bucket_store: BucketStore | None = None,
     llm_factory: LLMFactory | None = None,
     event_stream: EventStream | None = None,
+    cache: CacheStore | None = None,
     voice: bool = False,
     local_folder: str | None = None,
     remote_folder: str | None = None,
     run: str | None = None,
 ) -> str | None:
     events = ConversationEvents(event_stream, conversation_id) if event_stream else None
+    stop_key = stop_signal.conversation_key(conversation_id)
+
+    async def should_stop() -> bool:
+        return cache is not None and await stop_signal.requested(cache, stop_key)
+
     async with async_session_factory() as session:
         try:
             if not await wait_until_running(session, conversation_id, run):
@@ -156,6 +169,7 @@ async def run_turn(
                 llm_factory=factory,
                 conversation_id=conversation.id,
                 events=events,
+                cache=cache,
             )
             desktop = conversation.client is ConversationClient.DESKTOP
 
@@ -200,8 +214,11 @@ async def run_turn(
                 observer=events,
                 commit_fn=session.commit,
                 expand_fn=expand_fn,
+                should_stop=should_stop if cache is not None else None,
             )
             await session.commit()
+            if cache is not None:
+                await stop_signal.clear(cache, stop_key)
             # Named before the turn is announced over: a client stops listening at idle, so
             # the title has to ride on that last status to reach it.
             if status is ConversationStatus.IDLE and (named := await _name(session, conversation_id, factory)):

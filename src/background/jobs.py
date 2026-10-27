@@ -1,3 +1,4 @@
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Annotated, Any
 from uuid import UUID
@@ -12,8 +13,10 @@ from src.assistants.context import LLMFactory, ToolContext
 from src.assistants.sql import sql_tool_context
 from src.conversations import relay as conversation_relay
 from src.conversations.events import ConversationEvents
+from src.core import stop as stop_signal
 from src.core.agents.domain import LoopState
-from src.core.agents.runner import AssistantRun, Suspended, continue_assistant
+from src.core.agents.loop import StopCheck
+from src.core.agents.runner import AssistantRun, Stopped, Suspended, continue_assistant
 from src.core.bucket.ports import BucketStore
 from src.core.cache.ports import CacheStore
 from src.core.cryptography.ports import EncryptionService
@@ -135,8 +138,13 @@ async def run_task(
             files = context.files
             await files.make_folder(await files.workspace(), background_use_cases.task_path(task))
 
-            outcome = await _work(context, files, task, resumed, recorder)
+            async def should_stop() -> bool:
+                return cache is not None and await stop_signal.requested(cache, stop_signal.task_key(task.id))
+
+            outcome = await _work(context, files, task, resumed, recorder, should_stop)
             await adapter.record_calls(session, task.id, recorder.calls)
+            if isinstance(outcome, Stopped):
+                return await _halt(session, task, outcome, files, cache, events)
             if isinstance(outcome, Suspended):
                 return await _suspend(session, task, outcome, cache, events)
             if cache and resumed:
@@ -223,7 +231,8 @@ async def _work(
     task: BackgroundTask,
     resumed: paused.PausedRun | None = None,
     recorder: CallRecorder | None = None,
-) -> str | Suspended:
+    should_stop: StopCheck | None = None,
+) -> str | Suspended | Stopped:
     tools = {name: tool for name, tool in server_tools(context).items() if name in config.TOOLS}
     llm = await context.llm_factory(config.MODELS, config.TEMPERATURE)
     # Nobody is watching, so the worker approves its own calls -- except the ones that
@@ -240,7 +249,16 @@ async def _work(
     knowledge = (
         "" if resumed else await knowledge_context(context)
     )
-    state = resumed.state if resumed else LoopState(
+    # stopped by the user and now carried on: the worker is told, so it does not start over
+    carried_on = (
+        replace(
+            resumed.state,
+            messages=[*resumed.state.messages, llm_domain.user(background_use_cases.TASK_RESUMED)],
+        )
+        if resumed and resumed.stopped
+        else None
+    )
+    state = carried_on or (resumed.state if resumed else LoopState(
         messages=[
             llm_domain.system(SYSTEM_PROMPT),
             *([llm_domain.system(knowledge)] if knowledge else []),
@@ -249,7 +267,7 @@ async def _work(
                 f"Task:\n{task.instructions}"
             ),
         ]
-    )
+    ))
     outcome = await continue_assistant(
         llm,
         # the worker's own calls only: a page builder inside one of them reports on
@@ -258,8 +276,9 @@ async def _work(
         state,
         decisions=resumed.decisions if resumed else None,
         max_iterations=config.MAX_ITERATIONS,
+        should_stop=should_stop,
     )
-    if isinstance(outcome, Suspended):
+    if isinstance(outcome, Suspended | Stopped):
         return outcome
     run: AssistantRun = outcome
 
@@ -298,6 +317,31 @@ def _allowance(resumed: paused.PausedRun | None) -> Allowance | None:
     if not spent:
         return None
     return Allowance(remaining=max(0, images_config.IMAGES_PER_APPROVAL - spent), args=picks)
+
+
+async def _halt(
+    session: AsyncSession,
+    task: BackgroundTask,
+    outcome: Stopped,
+    files: ProjectFiles,
+    cache: CacheStore | None,
+    events: ConversationEvents | None,
+) -> str:
+    """The user stopped the task: its run is kept so it can carry on from here, and what it made
+    so far stays in its folder. Not reported to the conversation on its own -- the user just
+    pressed the button -- but the conversation is told on its next turn (drain_notices)."""
+    if cache is not None:
+        await paused.save(cache, task.id, paused.PausedRun(outcome.state, stopped=True))
+        await stop_signal.clear(cache, stop_signal.task_key(task.id))
+
+    result = background_use_cases.stopped_result(
+        await background_use_cases.produced(files, task), resumable=cache is not None
+    )
+    await adapter.finish(session, task.id, TaskStatus.STOPPED, result)
+    await session.commit()
+    if events:
+        await events.task_finished(task.id, task.description, str(TaskStatus.STOPPED))
+    return str(TaskStatus.STOPPED)
 
 
 async def _suspend(

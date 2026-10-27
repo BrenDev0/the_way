@@ -2,12 +2,19 @@ from collections.abc import Awaitable, Callable
 from uuid import UUID
 
 from src.assistants.context import ToolContext
+from src.core.exceptions import ConflictError, NotFoundError
 from src.core.tools.domain import Tool
 from src.projects import config as projects_config
 
 from . import use_cases as background_use_cases
 from .domain import BackgroundTaskCreate, TaskStatus
-from .tool_schemas import CheckBackgroundTask, DeliverTask, StartBackgroundTask
+from .tool_schemas import (
+    CheckBackgroundTask,
+    DeliverTask,
+    ResumeBackgroundTask,
+    StartBackgroundTask,
+    StopBackgroundTask,
+)
 
 Enqueue = Callable[[UUID], Awaitable[object]]
 
@@ -128,11 +135,55 @@ def build(
             )
         return delivered
 
-    return {
+    async def stop_background_task(task_id: str) -> str:
+        parsed = _parse(task_id)
+        stop = context.ports.stop_task_fn
+        if parsed is None or stop is None:
+            return f"Task with id {task_id} not found. Ask the user which task they mean."
+        try:
+            task = await stop(parsed, context.user_id)
+        except (NotFoundError, ConflictError) as exc:
+            return f"Not stopped: {exc.message}."
+        # the user asked for this in the conversation, so the agent knows: not told again later
+        await context.ports.mark_reported_fn([task.id])
+        if task.status is TaskStatus.STOPPED:
+            return (
+                f"Task {task.id} is stopped. What it made stays in "
+                f".the_way/{background_use_cases.task_path(task)}/, and it can be resumed with "
+                "ResumeBackgroundTask if the user wants it to carry on."
+            )
+        return (
+            f"Stop requested for task {task.id}: it ends at its next step, in a moment, and keeps "
+            "its place and its files. Do not say it has stopped yet; CheckBackgroundTask shows "
+            "when it has."
+        )
+
+    async def resume_background_task(task_id: str) -> str:
+        parsed = _parse(task_id)
+        resume = context.ports.resume_task_fn
+        if parsed is None or resume is None:
+            return f"Task with id {task_id} not found. Ask the user which task they mean."
+        try:
+            task = await resume(parsed, context.user_id)
+        except (NotFoundError, ConflictError) as exc:
+            return f"Not resumed: {exc.message}."
+        await enqueue(task.id)
+        return (
+            f"Task {task.id} is running again from where it stopped: {task.description}. You will "
+            "be told when it finishes."
+        )
+
+    tools = {
         StartBackgroundTask.__name__: Tool(schema=StartBackgroundTask, handler=start_background_task),
         CheckBackgroundTask.__name__: Tool(schema=CheckBackgroundTask, handler=check_background_task),
         DeliverTask.__name__: Tool(schema=DeliverTask, handler=deliver_task),
     }
+    # only where there is a way to reach the worker (a cache to ask it through)
+    if context.ports.stop_task_fn is not None:
+        tools[StopBackgroundTask.__name__] = Tool(schema=StopBackgroundTask, handler=stop_background_task)
+    if context.ports.resume_task_fn is not None:
+        tools[ResumeBackgroundTask.__name__] = Tool(schema=ResumeBackgroundTask, handler=resume_background_task)
+    return tools
 
 
 async def drain_notices(context: ToolContext) -> str:

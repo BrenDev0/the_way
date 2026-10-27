@@ -21,7 +21,7 @@ from src.conversations.ports import (
     SaveTurnStateFn,
 )
 from src.core.agents.domain import LoopState, LoopStatus
-from src.core.agents.loop import LoopObserver, advance
+from src.core.agents.loop import LoopObserver, StopCheck, advance
 from src.core.llm import domain as llm_domain
 from src.core.llm.domain import LLMUnavailable, Message
 from src.core.llm.ports import LLM
@@ -33,6 +33,7 @@ STATUS_AFTER = {
     LoopStatus.ITERATION_LIMIT: ConversationStatus.FAILED,
     LoopStatus.CONVERSATION_LIMIT: ConversationStatus.FAILED,
     LoopStatus.PAUSED: ConversationStatus.PAUSED,
+    LoopStatus.STOPPED: ConversationStatus.PAUSED,
 }
 
 
@@ -64,6 +65,7 @@ async def advance_turn(
     observer: LoopObserver | None = None,
     commit_fn: CommitFn | None = None,
     expand_fn: ExpandFn | None = None,
+    should_stop: StopCheck | None = None,
 ) -> ConversationStatus | None:
     """Runs the turn until it ends, waits on the client, or pauses. Along the way, before
     each model call that follows tool work, what the turn has done is stored (and with
@@ -147,9 +149,14 @@ async def advance_turn(
         max_iterations=max_iterations,
         observer=observer,
         checkpoint=checkpoint,
+        should_stop=should_stop,
     )
 
     await store(result.state)
+    stopped = result.status is LoopStatus.STOPPED
+    if stopped:
+        # said in the history itself: the next time the agent speaks, it knows it was stopped
+        await append_messages_fn(conversation_id, [llm_domain.system(prompt.STOPPED_NOTE)])
     status = STATUS_AFTER[result.status]
     await save_turn_state_fn(
         conversation_id,
@@ -160,7 +167,13 @@ async def advance_turn(
             iterations_used=result.state.iterations_used,
             usage=result.state.usage,
             pending_requests=result.state.pending_requests,
-            pause=_pause_for(result.unavailable) if result.unavailable is not None else None,
+            pause=(
+                _pause_for(result.unavailable)
+                if result.unavailable is not None
+                else paused(PauseReason.STOPPED)
+                if stopped
+                else None
+            ),
         ),
     )
     return status

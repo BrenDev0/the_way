@@ -14,6 +14,7 @@ from .. import use_cases as organizations_use_cases
 from ..ports import (
     DeleteOrganizationByIdFn,
     GetOrganizationByIdFn,
+    PurgeOrganizationFilesFn,
     UpdateOrganizationByIdFn,
 )
 from . import dependencies as organizations_dependencies
@@ -78,6 +79,10 @@ async def delete_current_organization_route(
         DeleteOrganizationByIdFn,
         Depends(organizations_dependencies.provide_delete_organization_by_id_fn),
     ],
+    purge_organization_files_fn: Annotated[
+        PurgeOrganizationFilesFn,
+        Depends(organizations_dependencies.provide_purge_organization_files_fn),
+    ],
     cache_store: Annotated[CacheStore, Depends(api_dependencies.get_cache_store)],
     session_cookie_config: Annotated[
         SessionCookieConfig,
@@ -88,6 +93,11 @@ async def delete_current_organization_route(
         organization_id=current_user.organization_id,
         delete_organization_by_id_fn=delete_organization_by_id_fn,
         cache_store=cache_store,
+    )
+    # the rows are gone (and committed with the request); now what it stored in the bucket
+    await organizations_use_cases.purge_files_of_deleted_organization(
+        organization_id=current_user.organization_id,
+        purge_organization_files_fn=purge_organization_files_fn,
     )
 
     response.delete_cookie(

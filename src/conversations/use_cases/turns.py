@@ -1,10 +1,12 @@
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 from uuid import UUID
 
 from src.conversations import attachments as attachments_module
+from src.conversations import prompt
 from src.conversations.domain import (
     Conversation,
     ConversationStatus,
+    PauseReason,
     ToolResolution,
     TurnState,
 )
@@ -13,9 +15,12 @@ from src.conversations.ports import (
     GetConversationForUserFn,
     SaveTurnStateFn,
 )
+from src.core.agents.loop import NOT_RUN, result_messages
 from src.core.exceptions import ConflictError, ValidationError
-from src.core.tools.domain import Decision, ToolLocation
+from src.core.llm import domain as llm_domain
+from src.core.tools.domain import Decision, ToolLocation, ToolResult
 
+from .advance import paused
 from .common import not_found
 
 # A new message may follow a paused turn: what it did is kept in the history, and the
@@ -57,6 +62,7 @@ async def resume_turn(
     user_id: UUID,
     get_conversation_for_user_fn: GetConversationForUserFn,
     save_turn_state_fn: SaveTurnStateFn,
+    append_messages_fn: AppendMessagesFn | None = None,
 ) -> Conversation:
     """Sets a paused turn running again, from where it stopped: its messages are all
     stored, so the next model call picks up after the last thing it did."""
@@ -71,6 +77,11 @@ async def resume_turn(
             code="conversation_not_paused",
         )
 
+    # Continuing work the user stopped: said in the history, or the model would read the
+    # stop note last and think it is still stopped.
+    if turn.pause is not None and turn.pause.reason is PauseReason.STOPPED and append_messages_fn is not None:
+        await append_messages_fn(conversation_id, [llm_domain.system(prompt.RESUMED_NOTE)])
+
     resumed = TurnState(
         status=ConversationStatus.RUNNING,
         pending_tool_calls=turn.pending_tool_calls,
@@ -81,6 +92,49 @@ async def resume_turn(
         decisions=turn.decisions,
     )
     return await save_turn_state_fn(conversation_id, resumed) or conversation
+
+
+async def stop_turn(
+    conversation_id: UUID,
+    user_id: UUID,
+    get_conversation_for_user_fn: GetConversationForUserFn,
+    append_messages_fn: AppendMessagesFn,
+    save_turn_state_fn: SaveTurnStateFn,
+    request_stop_fn: Callable[[], Awaitable[None]],
+) -> Conversation:
+    """The user pressed Stop.
+
+    Working: the stop is asked for, and the worker ends the turn at its next safe point (it
+    announces that itself). Waiting on the client, nobody is working: the turn is ended here,
+    its pending calls answered as not run so the history stays whole, and the agent told in the
+    history. Anything else has nothing to stop."""
+    conversation = await get_conversation_for_user_fn(conversation_id, user_id)
+    if conversation is None:
+        raise not_found()
+
+    turn = conversation.turn
+    if turn.status is ConversationStatus.RUNNING:
+        await request_stop_fn()
+        return conversation
+
+    if turn.status is ConversationStatus.AWAITING_CLIENT:
+        refused = tuple(ToolResult(call.id, NOT_RUN, True) for call in turn.pending_tool_calls)
+        await append_messages_fn(
+            conversation_id,
+            [*result_messages(turn.completed_tool_results + refused), llm_domain.system(prompt.STOPPED_NOTE)],
+        )
+        stopped = TurnState(
+            status=ConversationStatus.PAUSED,
+            iterations_used=turn.iterations_used,
+            usage=turn.usage,
+            pause=paused(PauseReason.STOPPED),
+        )
+        return await save_turn_state_fn(conversation_id, stopped) or conversation
+
+    raise ConflictError(
+        message="This conversation has nothing running to stop",
+        code="conversation_not_running",
+    )
 
 
 async def resolve_tool_calls(

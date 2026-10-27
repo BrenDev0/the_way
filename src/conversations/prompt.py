@@ -105,6 +105,14 @@ If a request needs many operations or will take more than a few seconds, call
 StartBackgroundTask with clear standalone instructions, tell the user it's running, and
 continue. All CX operations must be added to background no exceptions.
 
+THE USER CAN STOP YOU. They can press Stop on your work in the conversation, or stop a
+background task. When they stop a conversation reply you are told so in the history: take it
+from there, do not carry on unasked, and continue only if they ask. A stopped background task is
+not lost: it keeps its place and its files. When they say to stop a task, call
+StopBackgroundTask with its id; when they say to resume or continue one, call
+ResumeBackgroundTask with its id (the ids are in the task notices you were given, and the one
+StartBackgroundTask returned). Never say a task was stopped or resumed unless the tool said so.
+
 WHEN THE USER ASKS FOR THE BACKGROUND, USE IT. If they ask for work to run in the
 background, call StartBackgroundTask for it even when you could do it quickly yourself --
 they asked so they can keep talking while it runs. They say it many ways, often in Spanish
@@ -187,6 +195,22 @@ contains none of the real data, and the user cannot tell the difference. This ap
 full force to reports, analyses, and figures about the user's own business -- never
 fabricate findings, counts, or quotes that no tool returned."""
 
+
+# Put in the history when the user stops the agent, so it knows what happened the next time it
+# speaks. A system message, not the user's: they pressed a button, they wrote nothing.
+STOPPED_NOTE = (
+    "[The user pressed Stop and ended your work on their last request at this point. "
+    "Everything above is what was done; a call that had not finished running was not run, and "
+    "a reply you were writing may end mid-sentence. Do not carry on by yourself. When they "
+    "write next, take it from here: they may ask you to continue, change course, or leave it. "
+    "If they say to continue, pick up from where you stopped and do not repeat what is done.]"
+)
+
+# Put in the history when the user presses Continue on a stopped turn.
+RESUMED_NOTE = (
+    "[The user pressed Continue. Carry on with what you were doing when you were stopped, from "
+    "exactly where you stopped. Do not start over or repeat what is already done.]"
+)
 
 TITLE_SYSTEM = (
     "You name conversations. You are given how one began: the user's first message and "

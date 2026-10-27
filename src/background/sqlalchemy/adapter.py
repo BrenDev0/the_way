@@ -76,6 +76,15 @@ async def set_status(session: AsyncSession, task_id: UUID, status: TaskStatus) -
     )
 
 
+async def reopen(session: AsyncSession, task_id: UUID) -> None:
+    """A stopped task running again. Not yet reported: its end is news again."""
+    await session.execute(
+        update(BackgroundTaskRow)
+        .where(BackgroundTaskRow.id == task_id)
+        .values(status=TaskStatus.RUNNING, reported=False)
+    )
+
+
 async def list_unreported(
     session: AsyncSession, conversation_id: UUID
 ) -> Sequence[BackgroundTask]:

@@ -8,7 +8,7 @@ from src.core.tools.domain import Decision
 from src.core.tools.ports import ToolExecutor
 
 from .domain import DEFAULT_MAX_ITERATIONS, LoopState, LoopStatus
-from .loop import advance
+from .loop import StopCheck, advance
 
 WRAP_UP = (
     "You have reached the limit on tool calls for this run and cannot make another. "
@@ -42,6 +42,14 @@ class Suspended:
     state: LoopState
 
 
+@dataclass(frozen=True)
+class Stopped:
+    """The user stopped the run. `state` is everything it had done, so it can be carried on
+    from exactly there if they ask."""
+
+    state: LoopState
+
+
 async def run_assistant(
     llm: LLM,
     executor: ToolExecutor,
@@ -53,7 +61,7 @@ async def run_assistant(
     outcome = await continue_assistant(
         llm, executor, LoopState(messages=list(messages)), max_iterations=max_iterations
     )
-    if isinstance(outcome, Suspended):  # only a suspending gate gets here
+    if isinstance(outcome, Suspended | Stopped):  # only a suspending gate gets here; nobody can stop this
         return await _unfinished(llm, executor, outcome.state)
     return outcome
 
@@ -64,15 +72,18 @@ async def continue_assistant(
     state: LoopState,
     decisions: Mapping[str, Decision] | None = None,
     max_iterations: int = DEFAULT_MAX_ITERATIONS,
-) -> AssistantRun | Suspended:
+    should_stop: StopCheck | None = None,
+) -> AssistantRun | Suspended | Stopped:
     """Runs an assistant from `state` -- a fresh start, or a run resumed with the user's
     `decisions` -- until it finishes, runs out of steps, or suspends on the user."""
     result = await advance(
         state, llm, executor, decisions=dict(decisions) if decisions else None,
-        max_iterations=max_iterations,
+        max_iterations=max_iterations, should_stop=should_stop,
     )
     if result.is_suspended:
         return Suspended(result.state)
+    if result.status is LoopStatus.STOPPED:
+        return Stopped(result.state)
     # A sub-assistant has no turn of its own to pause: the tool it runs in fails with the
     # reason, and the turn around it pauses at its own next model call.
     if result.status is LoopStatus.PAUSED and result.unavailable is not None:

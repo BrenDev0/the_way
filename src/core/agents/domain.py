@@ -16,6 +16,9 @@ class LoopStatus(StrEnum):
     # The model could not be reached (rate limit, quota, timeout...). The state is where it
     # stopped -- just before that model call -- so retrying carries on from there.
     PAUSED = "paused"
+    # The user asked for the work to stop. The state is where it stopped, with what was done
+    # kept and any call that had not run answered as not run.
+    STOPPED = "stopped"
 
 
 @dataclass(frozen=True)

@@ -15,6 +15,30 @@ from .ports import GetTaskForUserFn, ListTasksForUserFn
 # assistant relaying it cannot mistake an unfinished task for a finished one.
 FAILURE_MARKER = "TASK FAILED"
 
+# A task the user stopped. Said in its result, which the conversation is told next turn, so the
+# agent knows what happened and what it can do about it.
+STOPPED_MARKER = "TASK STOPPED BY THE USER"
+
+# Added to a stopped run when the user lets it carry on.
+TASK_RESUMED = (
+    "The user stopped this task and has now told you to carry on. Continue from exactly where "
+    "you stopped: what you already made is in the task folder, so do not redo it."
+)
+
+
+def stopped_result(produced: str, resumable: bool = True) -> str:
+    carry_on = (
+        "It keeps its place: if the user wants it to carry on, call ResumeBackgroundTask with "
+        "this task's id -- do not start it again from scratch."
+        if resumable
+        else "Its place could not be kept, so it cannot be resumed; to redo it, start a new task."
+    )
+    return (
+        f"{STOPPED_MARKER} -- they pressed Stop before it finished. {produced} It is not "
+        f"complete and nothing was delivered. {carry_on}"
+    )
+
+
 # Injected on the turn a task's result is first relayed. Both forms carry the same
 # verified output; only the first asks for it to be reported, and only the second is kept
 # in the conversation -- left as a live notice, it would be announced again every turn.

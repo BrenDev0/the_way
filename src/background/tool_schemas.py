@@ -63,6 +63,25 @@ class CheckBackgroundTask(BaseModel):
     task_id: str = Field(description="Task id returned by StartBackgroundTask")
 
 
+class StopBackgroundTask(BaseModel):
+    """Stop a background task the user no longer wants running, by its id. It ends at its next
+    step; what it already made stays in its folder and it keeps its place, so it can be resumed.
+
+    Use this when the user says to stop, cancel or pause a task. Never claim a task is stopped
+    unless this returned that it was."""
+
+    task_id: str = Field(description="Task id from StartBackgroundTask or a task notice")
+
+
+class ResumeBackgroundTask(BaseModel):
+    """Carry on a background task the user stopped, from exactly where it stopped, by its id.
+
+    Use this when the user says to resume, continue or restart a stopped task -- do not start a
+    new task for it, which would redo the work."""
+
+    task_id: str = Field(description="Task id of the stopped task, from its notice")
+
+
 class DeliverTask(BaseModel):
     """Copy a finished background task's files out of the '.the_way' workspace and into a
     project folder the user can open.

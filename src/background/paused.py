@@ -24,6 +24,8 @@ class PausedRun:
     state: LoopState
     # the user's answers, once given; empty while the task waits
     decisions: dict[str, Decision] = field(default_factory=dict)
+    # the run was stopped by the user, not suspended on a call: resuming it says so to the worker
+    stopped: bool = False
 
     @property
     def asking(self) -> tuple[ClientRequest, ...]:
@@ -87,6 +89,7 @@ def _dump(paused: PausedRun) -> dict[str, Any]:
             }
             for call_id, d in paused.decisions.items()
         },
+        "stopped": paused.stopped,
     }
 
 
@@ -120,7 +123,7 @@ def _load(data: dict[str, Any]) -> PausedRun:
         )
         for call_id, d in (data.get("decisions") or {}).items()
     }
-    return PausedRun(state=state, decisions=decisions)
+    return PausedRun(state=state, decisions=decisions, stopped=bool(data.get("stopped", False)))
 
 
 def _call(call: ToolCall) -> dict[str, Any]:

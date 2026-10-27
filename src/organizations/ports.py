@@ -3,11 +3,19 @@ from datetime import datetime
 from typing import Any, Protocol
 from uuid import UUID
 
-from .domain import MonthlyUsage, Organization, OrganizationCreate, ProjectStorage
+from .domain import (
+    FilesPurged,
+    MonthlyUsage,
+    Organization,
+    OrganizationCreate,
+    ProjectStorage,
+)
 
 CreateOrganizationFn = Callable[[OrganizationCreate], Awaitable[Organization]]
 GetOrganizationByIdFn = Callable[[UUID], Awaitable[Organization | None]]
 DeleteOrganizationByIdFn = Callable[[UUID], Awaitable[bool]]
+# Everything the organization stored in the bucket. Raises BucketError when it cannot be listed.
+PurgeOrganizationFilesFn = Callable[[UUID], Awaitable[FilesPurged]]
 
 # Read-side reports over data other slices own, counted by the database rather than by
 # loading every row. Every project of the organization, biggest first; and each person's

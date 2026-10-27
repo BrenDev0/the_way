@@ -5,12 +5,15 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.auth.fastapi import dependencies as auth_dependencies
+from src.conversations.events import ConversationEvents
 from src.core.cache.ports import CacheStore
+from src.core.events.ports import EventStream
 from src.fastapi import dependencies as api_dependencies
 from src.users.domain import User
 
-from .. import approvals
+from .. import approvals, control
 from .. import use_cases as background_use_cases
+from ..domain import TaskStatus
 from ..ports import GetTaskForUserFn, ListTasksForUserFn
 from . import dependencies as background_dependencies
 from .schemas import ApproveTaskRequest, BackgroundTaskResponse
@@ -90,5 +93,50 @@ async def approve_background_task_route(
     finally:
         # an approval found expired is recorded even though the request fails
         await session.commit()
+    await run_background_task.kiq(task.id)  # type: ignore[call-overload]
+    return BackgroundTaskResponse.from_domain(task)
+
+
+@router.post(
+    "/{task_id}/stop",
+    response_model=BackgroundTaskResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def stop_background_task_route(
+    task_id: UUID,
+    current_user: CurrentUser,
+    session: Session,
+    cache: Cache,
+    event_stream: Annotated[EventStream, Depends(api_dependencies.get_event_stream)],
+) -> BackgroundTaskResponse:
+    """Stops a task. Running, it ends at its next safe point -- a moment -- and the conversation's
+    stream says so; waiting on an approval, it is stopped now. Its files so far stay, and it keeps
+    its place: POST .../resume carries it on. 409 task_not_running when it is not under way."""
+    task = await control.stop(session, cache, task_id, current_user.id)
+    await session.commit()
+    # a task waiting on the user has no worker to say it ended: said here
+    if task.status is TaskStatus.STOPPED and task.conversation_id is not None:
+        await ConversationEvents(event_stream, task.conversation_id, task_id=task.id).task_finished(
+            task.id, task.description, str(task.status)
+        )
+    return BackgroundTaskResponse.from_domain(task)
+
+
+@router.post(
+    "/{task_id}/resume",
+    response_model=BackgroundTaskResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def resume_background_task_route(
+    task_id: UUID,
+    current_user: CurrentUser,
+    session: Session,
+    cache: Cache,
+) -> BackgroundTaskResponse:
+    """Carries a stopped task on from where it stopped. 409 task_not_stopped otherwise."""
+    from ..jobs import run_background_task  # the worker module imports every tool
+
+    task = await control.resume(session, cache, task_id, current_user.id)
+    await session.commit()  # before it is enqueued: the worker looks for a running task
     await run_background_task.kiq(task.id)  # type: ignore[call-overload]
     return BackgroundTaskResponse.from_domain(task)

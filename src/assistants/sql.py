@@ -11,10 +11,12 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.background import control as background_control
 from src.background.domain import BackgroundTask, BackgroundTaskCreate
 from src.background.sqlalchemy import adapter as background_adapter
 from src.conversations.sqlalchemy import adapter as conversations_adapter
 from src.core.bucket.ports import BucketStore
+from src.core.cache.ports import CacheStore
 from src.core.database.sqlalchemy.core import async_session_factory
 from src.core.tools.ports import ToolEvents
 from src.documents.sqlalchemy import adapter as documents_adapter
@@ -35,7 +37,22 @@ async def create_task_in_its_own_session(task: BackgroundTaskCreate) -> Backgrou
         return created
 
 
-def sql_tool_ports(session: AsyncSession) -> ToolPorts:
+async def stop_task_in_its_own_session(cache: CacheStore, task_id: UUID, user_id: UUID) -> BackgroundTask:
+    async with async_session_factory() as session:
+        task = await background_control.stop(session, cache, task_id, user_id)
+        await session.commit()
+        return task
+
+
+async def resume_task_in_its_own_session(cache: CacheStore, task_id: UUID, user_id: UUID) -> BackgroundTask:
+    """Committed before the tool enqueues it: the worker looks for a running task."""
+    async with async_session_factory() as session:
+        task = await background_control.resume(session, cache, task_id, user_id)
+        await session.commit()
+        return task
+
+
+def sql_tool_ports(session: AsyncSession, cache: CacheStore | None = None) -> ToolPorts:
     return ToolPorts(
         list_skills_fn=partial(skills_adapter.list_for_organization, session),
         get_skill_fn=partial(skills_adapter.get_for_organization, session),
@@ -53,6 +70,8 @@ def sql_tool_ports(session: AsyncSession) -> ToolPorts:
         list_unreported_fn=partial(background_adapter.list_unreported, session),
         mark_reported_fn=partial(background_adapter.mark_reported, session),
         search_messages_fn=partial(conversations_adapter.search_messages, session),
+        stop_task_fn=partial(stop_task_in_its_own_session, cache) if cache is not None else None,
+        resume_task_fn=partial(resume_task_in_its_own_session, cache) if cache is not None else None,
     )
 
 
@@ -67,6 +86,7 @@ def sql_tool_context(
     llm_factory: LLMFactory,
     conversation_id: UUID | None = None,
     events: ToolEvents | None = None,
+    cache: CacheStore | None = None,
 ) -> ToolContext:
     """A run's context on the database, through `session`."""
     return ToolContext(
@@ -77,7 +97,7 @@ def sql_tool_context(
         credentials=credentials,
         llm_factory=llm_factory,
         files=project_files(session, organization_id, user_id, bucket_store),
-        ports=sql_tool_ports(session),
+        ports=sql_tool_ports(session, cache),
         conversation_id=conversation_id,
         events=events,
     )
