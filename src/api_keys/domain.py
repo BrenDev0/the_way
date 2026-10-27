@@ -16,15 +16,17 @@ LLM_PROVIDERS = frozenset({Provider.ANTHROPIC, Provider.OPENAI})
 
 @dataclass
 class ApiKey:
+    """A provider key (or the CX account) an organization works through. Xplorers sets it;
+    every user of the organization uses it, and none of them sees it."""
+
     id: UUID
     organization_id: UUID
-    user_id: UUID
     provider: Provider
     encrypted_secret: str
     last_four: str
     encrypted_account_id: str | None
     model: str | None
-    issued_by: UUID | None
+    set_by: UUID | None
     created_at: datetime
     updated_at: datetime
 
@@ -32,10 +34,9 @@ class ApiKey:
 @dataclass
 class ApiKeyCreate:
     organization_id: UUID
-    user_id: UUID
     provider: Provider
     encrypted_secret: str
     last_four: str
     encrypted_account_id: str | None = None
     model: str | None = None
-    issued_by: UUID | None = None
+    set_by: UUID | None = None

@@ -178,7 +178,7 @@ async def from_link(url: str, api_key: str | None, language: str | None) -> Tran
 
     if api_key is None:
         reason = f"{caption_problem}, and " if caption_problem else ""
-        raise Unavailable(f"{reason}transcribing the audio needs an OpenAI key, and none has been issued to this user")
+        raise Unavailable(f"{reason}transcribing the audio needs an OpenAI key, and none has been set up for this organization")
 
     with tempfile.TemporaryDirectory() as folder:
         try:

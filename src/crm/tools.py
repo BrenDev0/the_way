@@ -20,7 +20,7 @@ def available(context: ToolContext) -> bool:
 
 
 def build(context: ToolContext) -> dict[str, Tool]:
-    """The CX tools, or none when no CX key has been issued to this user -- a missing
+    """The CX tools, or none when no CX account has been set up for this organization -- a missing
     integration removes its own tools rather than failing on every call."""
     credential = context.credentials.get(str(Provider.GOHIGHLEVEL))
     if credential is None or not credential.account_id:

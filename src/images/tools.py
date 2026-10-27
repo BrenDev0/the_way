@@ -22,8 +22,8 @@ from . import config
 from .tool_schemas import EditImage, GenerateImages
 
 NO_KEY = (
-    "Image generation needs an OpenAI key, and none has been issued to this user. Tell them "
-    "an owner or admin can issue one; do not try again."
+    "Image generation needs an OpenAI key, and none has been set up for this organization. "
+    "Tell them Xplorers sets keys up for their organization; do not try again."
 )
 
 CONTENT_TYPES = {"png": "image/png", "jpeg": "image/jpeg", "webp": "image/webp"}

@@ -4,9 +4,9 @@ from uuid import UUID
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from src.api_keys.domain import ApiKeyCreate
+from src.api_keys.domain import ApiKeyCreate, Provider
 from src.api_keys.ports import (
-    DeleteApiKeyForOrganizationFn,
+    DeleteApiKeyFn,
     ListApiKeysFn,
     ListApiKeysForUserFn,
     UpsertApiKeyFn,
@@ -28,8 +28,8 @@ def provide_upsert_api_key_fn(
 def provide_list_api_keys_fn(
     session: Annotated[AsyncSession, Depends(api_dependencies.get_db_session)],
 ) -> ListApiKeysFn:
-    async def list_api_keys_fn(organization_id: UUID, user_id: UUID | None = None):
-        return await adapter.list_for_organization(session, organization_id, user_id)
+    async def list_api_keys_fn(organization_id: UUID):
+        return await adapter.list_for_organization(session, organization_id)
 
     return list_api_keys_fn
 
@@ -43,10 +43,10 @@ def provide_list_api_keys_for_user_fn(
     return list_api_keys_for_user_fn
 
 
-def provide_delete_api_key_for_organization_fn(
+def provide_delete_api_key_fn(
     session: Annotated[AsyncSession, Depends(api_dependencies.get_db_session)],
-) -> DeleteApiKeyForOrganizationFn:
-    async def delete_api_key_for_organization_fn(api_key_id: UUID, organization_id: UUID):
-        return await adapter.delete_for_organization(session, api_key_id, organization_id)
+) -> DeleteApiKeyFn:
+    async def delete_api_key_fn(organization_id: UUID, provider: Provider):
+        return await adapter.delete_for_organization(session, organization_id, provider)
 
-    return delete_api_key_for_organization_fn
+    return delete_api_key_fn

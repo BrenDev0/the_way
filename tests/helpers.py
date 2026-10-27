@@ -186,25 +186,23 @@ def make_api_key(
     *,
     api_key_id: UUID | None = None,
     organization_id: UUID | None = None,
-    user_id: UUID | None = None,
     provider: Provider = Provider.ANTHROPIC,
     encrypted_secret: str = "enc::sk-ant-secret1234",
     last_four: str = "1234",
     encrypted_account_id: str | None = None,
     model: str | None = None,
-    issued_by: UUID | None = None,
+    set_by: UUID | None = None,
 ) -> ApiKey:
     now = datetime.now(UTC)
     return ApiKey(
         id=api_key_id or uuid4(),
         organization_id=organization_id or uuid4(),
-        user_id=user_id or uuid4(),
         provider=provider,
         encrypted_secret=encrypted_secret,
         last_four=last_four,
         encrypted_account_id=encrypted_account_id,
         model=model,
-        issued_by=issued_by,
+        set_by=set_by,
         created_at=now,
         updated_at=now,
     )

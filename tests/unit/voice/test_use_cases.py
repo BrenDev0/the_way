@@ -20,9 +20,8 @@ def listing(*keys):
 async def test_voice_uses_the_openai_key_even_when_anthropic_is_issued(encryption_service):
     user_id = uuid4()
     keys = listing(
-        make_api_key(user_id=user_id, provider=Provider.ANTHROPIC),
+        make_api_key(provider=Provider.ANTHROPIC),
         make_api_key(
-            user_id=user_id,
             provider=Provider.OPENAI,
             encrypted_secret=encryption_service.encrypt("sk-openai"),
         ),

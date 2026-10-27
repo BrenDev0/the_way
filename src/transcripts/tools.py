@@ -82,7 +82,7 @@ async def _from_project(
     if not entry.content_type.startswith(config.AUDIO_TYPES) and not path.lower().endswith(config.AUDIO_SUFFIXES):
         raise fetch.Unavailable(f"'{path}' is {entry.content_type}, not audio or video")
     if api_key is None:
-        raise fetch.Unavailable("transcribing needs an OpenAI key, and none has been issued to this user")
+        raise fetch.Unavailable("transcribing needs an OpenAI key, and none has been set up for this organization")
     _entry, data = await files.read_bytes(project, path, limit=config.MAX_AUDIO_BYTES)
     text = await fetch.transcribe(data, path.rsplit("/", 1)[-1], api_key, language)
     return fetch.Transcript(text=text, title=path.rsplit("/", 1)[-1], how="the recording, transcribed")

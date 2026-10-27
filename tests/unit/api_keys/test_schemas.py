@@ -1,47 +1,43 @@
 from helpers import make_api_key
 
 from src.api_keys.domain import Provider
-from src.api_keys.fastapi.schemas import ApiKeyResponse
+from src.staff.fastapi.schemas import OrganizationApiKeyResponse
 
 SECRET = "enc::sk-ant-supersecret9876"
-ACCOUNT = "enc::loc-abc123"
 
 
-def test_the_response_never_carries_the_secret():
+def decrypt(value: str) -> str:
+    return value.removeprefix("enc::")
+
+
+def test_what_staff_see_afterwards_never_carries_the_secret():
     api_key = make_api_key(encrypted_secret=SECRET)
 
-    payload = ApiKeyResponse.from_domain(api_key).model_dump(by_alias=True)
+    payload = OrganizationApiKeyResponse.from_domain(api_key, decrypt).model_dump(by_alias=True)
 
     assert SECRET not in payload.values()
+    assert "sk-ant-supersecret9876" not in str(payload)
     assert not any("secret" in str(name).lower() for name in payload)
 
 
-def test_the_response_never_carries_the_account_id():
-    api_key = make_api_key(
-        provider=Provider.GOHIGHLEVEL, encrypted_account_id=ACCOUNT
-    )
-
-    payload = ApiKeyResponse.from_domain(api_key).model_dump(by_alias=True)
-
-    assert ACCOUNT not in payload.values()
-    assert not any("account" in str(name).lower() for name in payload)
-
-
 def test_the_response_carries_the_identifying_metadata():
-    api_key = make_api_key(last_four="9876", model="claude-opus-5")
+    api_key = make_api_key(last_four="9876", model="claude-opus-5", set_by=None)
 
-    response = ApiKeyResponse.from_domain(api_key)
+    response = OrganizationApiKeyResponse.from_domain(api_key, decrypt)
 
-    assert response.id == api_key.id
-    assert response.user_id == api_key.user_id
     assert response.provider is api_key.provider
     assert response.last_four == "9876"
     assert response.model == "claude-opus-5"
-    assert response.issued_by == api_key.issued_by
+    assert response.set_by is None
 
 
-def test_the_wire_format_is_camel_case():
-    payload = ApiKeyResponse.from_domain(make_api_key()).model_dump(by_alias=True)
+def test_the_cx_location_id_is_shown_to_staff_because_it_is_not_a_secret():
+    api_key = make_api_key(provider=Provider.GOHIGHLEVEL, encrypted_account_id="enc::loc-abc123")
 
-    assert "lastFour" in payload
-    assert "userId" in payload
+    response = OrganizationApiKeyResponse.from_domain(api_key, decrypt)
+
+    assert response.account_id == "loc-abc123"
+
+
+def test_a_key_with_no_account_id_has_none():
+    assert OrganizationApiKeyResponse.from_domain(make_api_key(), decrypt).account_id is None

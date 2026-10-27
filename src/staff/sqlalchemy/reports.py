@@ -9,9 +9,11 @@ slices' models.
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import Select, and_, case, func, select
+from sqlalchemy import Select, and_, case, exists, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from src.api_keys import config as api_keys_config
+from src.api_keys.sqlalchemy.models import ApiKeyRow
 from src.invitations.sqlalchemy.models import InvitationRow
 from src.organizations.sqlalchemy.models import OrganizationRow
 from src.projects.domain import FileStatus
@@ -74,6 +76,12 @@ def _summaries() -> Select:
             func.coalesce(storage.c.files, 0),
             func.coalesce(storage.c.bytes, 0),
             seen.c.seen,
+            exists()
+            .where(
+                ApiKeyRow.organization_id == OrganizationRow.id,
+                ApiKeyRow.provider.in_([str(provider) for provider in api_keys_config.PROVIDER_PRECEDENCE]),
+            )
+            .label("ai_enabled"),
         )
         .outerjoin(members, members.c.organization_id == OrganizationRow.id)
         .outerjoin(pending, pending.c.organization_id == OrganizationRow.id)
@@ -85,7 +93,7 @@ def _summaries() -> Select:
 
 
 def _summary(row) -> OrganizationSummary:
-    organization, members, pending, owner_email, files, size, seen = row
+    organization, members, pending, owner_email, files, size, seen, ai_enabled = row
     return OrganizationSummary(
         id=organization.id,
         name=organization.name,
@@ -97,6 +105,7 @@ def _summary(row) -> OrganizationSummary:
         files=int(files),
         bytes=int(size),
         last_seen_at=seen,
+        ai_enabled=bool(ai_enabled),
     )
 
 

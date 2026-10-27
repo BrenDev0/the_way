@@ -11,6 +11,7 @@ from src.core.llm.ports import LLM
 from . import config
 from .domain import Provider
 from .ports import ListApiKeysForUserFn
+from .use_cases import NOT_SET_UP
 
 
 async def load_credentials(
@@ -18,7 +19,7 @@ async def load_credentials(
     list_api_keys_for_user_fn: ListApiKeysForUserFn,
     encryption_service: EncryptionService,
 ) -> dict[str, Credential]:
-    """Every key issued to the user, decrypted and keyed by provider. Built once per run
+    """Every key of the user's organization, decrypted and keyed by provider. Built once per run
     and handed to the tools that need it; it never leaves the worker."""
     return {
         str(key.provider): Credential(
@@ -49,10 +50,7 @@ def build_llm_factory(credentials: Mapping[str, Credential]) -> LLMFactory:
                 return _build(model, temperature, credential.secret)
 
         raise ConflictError(
-            message=(
-                "Your account has not been set up yet. "
-                "Ask an owner or admin in your organization to issue you an AI provider key."
-            ),
+            message=NOT_SET_UP,
             code="api_key_not_configured",
         )
 

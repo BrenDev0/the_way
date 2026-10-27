@@ -6,6 +6,7 @@ from uuid import UUID
 
 from pydantic import ConfigDict, Field
 
+from src.api_keys.domain import ApiKey, Provider
 from src.core.cryptography.ports import EncryptionService
 from src.fastapi.schemas import ApiBaseModel
 from src.invitations.fastapi.schemas import InvitationResponse
@@ -131,6 +132,7 @@ class OrganizationSummaryResponse(StoredDataResponse):
     files: int
     bytes: int
     last_seen_at: datetime | None
+    ai_enabled: bool
 
     @classmethod
     def from_domain(cls, summary: OrganizationSummary, owner_email: str | None) -> Self:
@@ -146,6 +148,7 @@ class OrganizationSummaryResponse(StoredDataResponse):
             files=summary.files,
             bytes=summary.bytes,
             last_seen_at=summary.last_seen_at,
+            ai_enabled=summary.ai_enabled,
         )
 
 
@@ -219,3 +222,41 @@ class DeletedOrganizationResponse(StoredDataResponse):
             files_left=record.files_left,
             created_at=record.created_at,
         )
+
+
+class SetApiKeyRequest(ApiBaseModel):
+    """What staff type to set an organization key. The secret is read once and stored
+    encrypted; nothing returns it."""
+
+    secret: str
+    # the CX provider location id; the other providers take none
+    account_id: str | None = None
+    # an LLM provider model, when it should not be the default
+    model: str | None = None
+
+
+class OrganizationApiKeyResponse(StoredDataResponse):
+    """A key as staff see it afterwards: which provider, the last four characters, and the
+    non-secret settings. Never the secret."""
+
+    provider: Provider
+    last_four: str
+    model: str | None
+    account_id: str | None
+    set_by: UUID | None
+    updated_at: datetime
+
+    @classmethod
+    def from_domain(cls, api_key: ApiKey, decrypt: Callable[[str], str]) -> Self:
+        return cls(
+            provider=api_key.provider,
+            last_four=api_key.last_four,
+            model=api_key.model,
+            account_id=decrypt(api_key.encrypted_account_id) if api_key.encrypted_account_id else None,
+            set_by=api_key.set_by,
+            updated_at=api_key.updated_at,
+        )
+
+
+class DeleteOrganizationApiKeyResponse(StoredDataResponse):
+    detail: str

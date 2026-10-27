@@ -98,7 +98,8 @@ async def list_users_route(
         organization_id=current_user.organization_id,
         list_users_fn=list_users_fn,
     )
-    setup_complete_ids = await api_keys_use_cases.list_setup_complete_user_ids(
+    # the organization is what is set up, so everyone in it is or is not
+    set_up = await api_keys_use_cases.organization_is_set_up(
         organization_id=current_user.organization_id,
         list_api_keys_fn=list_api_keys_fn,
     )
@@ -106,7 +107,7 @@ async def list_users_route(
         UserResponse.from_domain(
             user,
             email=encryption_service.decrypt(user.encrypted_email),
-            setup_complete=user.id in setup_complete_ids,
+            setup_complete=set_up,
         )
         for user in users
     ]

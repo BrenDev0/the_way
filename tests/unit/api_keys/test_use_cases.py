@@ -1,7 +1,7 @@
 from uuid import uuid4
 
 import pytest
-from helpers import make_api_key, make_user
+from helpers import make_api_key
 
 from src.api_keys import use_cases as api_keys_use_cases
 from src.api_keys.domain import Provider
@@ -14,81 +14,93 @@ def organization_id():
 
 
 @pytest.fixture
-def issuer_id():
+def staff_id():
     return uuid4()
 
 
 @pytest.fixture
-def issued(organization_id, issuer_id, encryption_service):
+def key_set(organization_id, staff_id, encryption_service):
     stored = []
 
-    async def run(user=None, **overrides):
-        target = user if user is not None else make_user(organization_id=organization_id)
-
-        async def get_user_by_id_fn(uid):
-            return target if uid == target.id else None
-
+    async def run(**overrides):
         async def upsert_api_key_fn(api_key):
             stored.append(api_key)
             return make_api_key(
                 organization_id=api_key.organization_id,
-                user_id=api_key.user_id,
                 provider=api_key.provider,
                 encrypted_secret=api_key.encrypted_secret,
                 last_four=api_key.last_four,
                 encrypted_account_id=api_key.encrypted_account_id,
                 model=api_key.model,
-                issued_by=api_key.issued_by,
+                set_by=api_key.set_by,
             )
 
         payload = {
             "organization_id": organization_id,
-            "user_id": target.id,
             "provider": Provider.ANTHROPIC,
             "secret": "sk-ant-secret1234",
-            "issued_by": issuer_id,
-            "get_user_by_id_fn": get_user_by_id_fn,
+            "set_by": staff_id,
             "upsert_api_key_fn": upsert_api_key_fn,
             "encryption_service": encryption_service,
         }
         payload.update(overrides)
-        return await api_keys_use_cases.issue_api_key(**payload)
+        return await api_keys_use_cases.set_api_key(**payload)
 
     run.stored = stored
     return run
 
 
-async def test_the_secret_is_encrypted_before_it_reaches_the_port(issued):
-    await issued()
+async def test_the_secret_is_encrypted_before_it_reaches_the_port(key_set):
+    await key_set()
 
-    assert issued.stored[0].encrypted_secret == "enc::sk-ant-secret1234"
-
-
-async def test_last_four_comes_from_the_tail_of_the_secret(issued):
-    await issued()
-
-    assert issued.stored[0].last_four == "1234"
+    assert key_set.stored[0].encrypted_secret == "enc::sk-ant-secret1234"
 
 
-async def test_gohighlevel_needs_an_account_id(issued):
+async def test_the_key_belongs_to_the_organization_and_records_who_set_it(key_set, organization_id, staff_id):
+    await key_set()
+
+    assert key_set.stored[0].organization_id == organization_id
+    assert key_set.stored[0].set_by == staff_id
+
+
+async def test_last_four_comes_from_the_tail_of_the_secret(key_set):
+    await key_set()
+
+    assert key_set.stored[0].last_four == "1234"
+
+
+async def test_a_secret_pasted_with_spaces_is_trimmed(key_set):
+    await key_set(secret="  sk-ant-secret1234\n")
+
+    assert key_set.stored[0].encrypted_secret == "enc::sk-ant-secret1234"
+
+
+@pytest.mark.parametrize("secret", ["", "   "])
+async def test_an_empty_secret_is_refused(key_set, secret):
     with pytest.raises(ValidationError) as exc:
-        await issued(provider=Provider.GOHIGHLEVEL, secret="pit-secret")
+        await key_set(secret=secret)
+
+    assert exc.value.code == "api_key_secret_required"
+    assert key_set.stored == []
+
+
+async def test_gohighlevel_needs_an_account_id(key_set):
+    with pytest.raises(ValidationError) as exc:
+        await key_set(provider=Provider.GOHIGHLEVEL, secret="pit-secret")
 
     assert exc.value.code == "api_key_account_id_required"
     assert exc.value.status_code == 422
 
 
-async def test_gohighlevel_account_id_is_encrypted(issued):
-    await issued(
-        provider=Provider.GOHIGHLEVEL, secret="pit-secret", account_id="loc-123"
-    )
+async def test_gohighlevel_account_id_is_encrypted(key_set):
+    await key_set(provider=Provider.GOHIGHLEVEL, secret="pit-secret", account_id="loc-123")
 
-    assert issued.stored[0].encrypted_account_id == "enc::loc-123"
+    assert key_set.stored[0].encrypted_account_id == "enc::loc-123"
 
 
-async def test_gohighlevel_does_not_take_a_model(issued):
+async def test_gohighlevel_does_not_take_a_model(key_set):
     with pytest.raises(ValidationError) as exc:
-        await issued(
+        await key_set(
             provider=Provider.GOHIGHLEVEL,
             secret="pit-secret",
             account_id="loc-123",
@@ -98,35 +110,18 @@ async def test_gohighlevel_does_not_take_a_model(issued):
     assert exc.value.code == "api_key_model_not_supported"
 
 
-async def test_an_unknown_model_is_rejected(issued):
+async def test_an_unknown_model_is_rejected(key_set):
     with pytest.raises(ValidationError) as exc:
-        await issued(model="not-a-real-model")
+        await key_set(model="not-a-real-model")
 
     assert exc.value.code == "llm_model_not_available"
 
 
-async def test_a_model_from_another_provider_is_rejected(issued):
+async def test_a_model_from_another_provider_is_rejected(key_set):
     with pytest.raises(ValidationError) as exc:
-        await issued(provider=Provider.ANTHROPIC, model="gpt-5.4")
+        await key_set(provider=Provider.ANTHROPIC, model="gpt-5.4")
 
     assert exc.value.code == "api_key_model_provider_mismatch"
-
-
-async def test_a_user_from_another_organization_is_not_found(issued):
-    outsider = make_user(organization_id=uuid4())
-
-    with pytest.raises(NotFoundError) as exc:
-        await issued(user=outsider)
-
-    assert exc.value.code == "user_not_found"
-    assert exc.value.status_code == 404
-
-
-async def test_nothing_is_stored_when_the_user_is_rejected(issued):
-    with pytest.raises(NotFoundError):
-        await issued(user=make_user(organization_id=uuid4()))
-
-    assert issued.stored == []
 
 
 @pytest.fixture
@@ -143,7 +138,7 @@ def resolve():
     return run
 
 
-async def test_anthropic_wins_when_a_user_holds_both(resolve):
+async def test_anthropic_wins_when_the_organization_holds_both(resolve):
     credential = await resolve(
         make_api_key(provider=Provider.OPENAI),
         make_api_key(provider=Provider.ANTHROPIC),
@@ -166,11 +161,13 @@ async def test_a_gohighlevel_key_does_not_satisfy_a_turn(resolve):
     assert exc.value.status_code == 409
 
 
-async def test_a_user_with_no_keys_is_refused(resolve):
+async def test_an_organization_with_no_keys_is_refused_and_told_to_contact_xplorers(resolve):
     with pytest.raises(ConflictError) as exc:
         await resolve()
 
     assert exc.value.code == "api_key_not_configured"
+    assert "Contact Xplorers" in exc.value.message
+    assert "owner" not in exc.value.message.lower()
 
 
 async def setup_complete(*held):
@@ -183,7 +180,7 @@ async def setup_complete(*held):
     )
 
 
-async def test_a_user_with_no_keys_is_awaiting_setup():
+async def test_an_organization_with_no_keys_is_awaiting_setup():
     assert await setup_complete() is False
 
 
@@ -196,24 +193,21 @@ async def test_any_ai_key_completes_setup(provider):
     assert await setup_complete(make_api_key(provider=provider)) is True
 
 
-async def test_setup_complete_ids_only_include_users_holding_an_ai_key():
-    organization_id = uuid4()
-    ready, ghl_only, other_ready = uuid4(), uuid4(), uuid4()
+@pytest.mark.parametrize(
+    ("held", "expected"),
+    [
+        ([], False),
+        ([Provider.GOHIGHLEVEL], False),
+        ([Provider.GOHIGHLEVEL, Provider.OPENAI], True),
+    ],
+)
+async def test_the_organization_as_a_whole_is_set_up_by_an_ai_key(held, expected):
+    async def list_api_keys_fn(_organization_id):
+        return [make_api_key(provider=provider) for provider in held]
 
-    async def list_api_keys_fn(_organization_id, _user_id=None):
-        return [
-            make_api_key(user_id=ready, provider=Provider.ANTHROPIC),
-            make_api_key(user_id=ready, provider=Provider.GOHIGHLEVEL),
-            make_api_key(user_id=ghl_only, provider=Provider.GOHIGHLEVEL),
-            make_api_key(user_id=other_ready, provider=Provider.OPENAI),
-        ]
-
-    ids = await api_keys_use_cases.list_setup_complete_user_ids(
-        organization_id=organization_id,
-        list_api_keys_fn=list_api_keys_fn,
+    assert (
+        await api_keys_use_cases.organization_is_set_up(uuid4(), list_api_keys_fn) is expected
     )
-
-    assert ids == {ready, other_ready}
 
 
 def test_the_stored_model_is_used_when_set():
@@ -229,32 +223,32 @@ def test_the_provider_default_is_used_when_no_model_is_stored():
 
 
 async def test_delete_reports_a_missing_key():
-    async def delete_fn(_api_key_id, _organization_id):
+    async def delete_fn(_organization_id, _provider):
         return False
 
     with pytest.raises(NotFoundError) as exc:
         await api_keys_use_cases.delete_api_key(
-            api_key_id=uuid4(),
             organization_id=uuid4(),
-            delete_api_key_for_organization_fn=delete_fn,
+            provider=Provider.OPENAI,
+            delete_api_key_fn=delete_fn,
         )
 
     assert exc.value.code == "api_key_not_found"
     assert exc.value.status_code == 404
 
 
-async def test_delete_is_scoped_to_the_callers_organization():
+async def test_delete_is_scoped_to_one_organization_and_one_provider():
     seen = []
 
-    async def delete_fn(api_key_id, organization_id):
-        seen.append((api_key_id, organization_id))
+    async def delete_fn(organization_id, provider):
+        seen.append((organization_id, provider))
         return True
 
-    api_key_id, organization_id = uuid4(), uuid4()
+    organization_id = uuid4()
     await api_keys_use_cases.delete_api_key(
-        api_key_id=api_key_id,
         organization_id=organization_id,
-        delete_api_key_for_organization_fn=delete_fn,
+        provider=Provider.TAVILY,
+        delete_api_key_fn=delete_fn,
     )
 
-    assert seen == [(api_key_id, organization_id)]
+    assert seen == [(organization_id, Provider.TAVILY)]

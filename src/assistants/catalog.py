@@ -42,11 +42,11 @@ def unavailable(context: ToolContext) -> list[str]:
     something rather than pretend the tools do not exist."""
     missing = []
     if not crm_tools.available(context):
-        missing.append("CX (the CRM) -- no CX key has been issued to this user")
+        missing.append("CX (the CRM) -- no CX account has been set up for this organization")
     if not web_tools.available(context):
-        missing.append("web search -- no web search key has been issued to this user")
+        missing.append("web search -- no web search key has been set up for this organization")
     if not image_tools.available(context):
-        missing.append("image generation -- no OpenAI key has been issued to this user")
+        missing.append("image generation -- no OpenAI key has been set up for this organization")
     return missing
 
 

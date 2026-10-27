@@ -111,6 +111,8 @@ class OrganizationSummary:
     files: int  # files that finished uploading
     bytes: int
     last_seen_at: datetime | None  # the latest sign-in activity of anyone in it
+    # whether it holds an Anthropic or OpenAI key: without one nobody in it can use the agent
+    ai_enabled: bool = False
 
 
 @dataclass(frozen=True)

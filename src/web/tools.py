@@ -32,7 +32,7 @@ def available(context: ToolContext) -> bool:
 
 
 def build(context: ToolContext) -> dict[str, Tool]:
-    """The web tools, or none when no Tavily key has been issued to this user."""
+    """The web tools, or none when no Tavily key has been set up for this organization."""
     credential = context.credentials.get(str(Provider.TAVILY))
     if credential is None:
         return {}

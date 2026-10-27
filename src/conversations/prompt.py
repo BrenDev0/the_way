@@ -290,8 +290,8 @@ def turn_context(
 
     if unavailable:
         lines.append(
-            "Not connected for this user, so you have no tools for it -- say so plainly if "
-            "asked, and tell them an owner or admin can issue the key:\n"
+            "Not connected for this organization, so you have no tools for it -- say so plainly "
+            "if asked, and tell them Xplorers sets these up for their organization:\n"
             + "\n".join(f"- {item}" for item in unavailable)
         )
 

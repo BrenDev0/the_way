@@ -1,18 +1,11 @@
 from collections.abc import Awaitable, Callable, Sequence
-from typing import Protocol
 from uuid import UUID
 
-from .domain import ApiKey, ApiKeyCreate
+from .domain import ApiKey, ApiKeyCreate, Provider
 
 UpsertApiKeyFn = Callable[[ApiKeyCreate], Awaitable[ApiKey]]
+# What a user works through: the keys of the user's organization, by the user's id.
 ListApiKeysForUserFn = Callable[[UUID], Awaitable[Sequence[ApiKey]]]
-
-
-class ListApiKeysFn(Protocol):
-    async def __call__(
-        self, organization_id: UUID, user_id: UUID | None = None
-    ) -> Sequence[ApiKey]: ...
-
-
-class DeleteApiKeyForOrganizationFn(Protocol):
-    async def __call__(self, api_key_id: UUID, organization_id: UUID) -> bool: ...
+ListApiKeysFn = Callable[[UUID], Awaitable[Sequence[ApiKey]]]
+# organization id, provider -> whether there was one to delete
+DeleteApiKeyFn = Callable[[UUID, Provider], Awaitable[bool]]

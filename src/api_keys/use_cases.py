@@ -4,18 +4,22 @@ from uuid import UUID
 from src.core.cryptography.ports import EncryptionService
 from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from src.core.llm.langchain import providers as llm_providers
-from src.users.ports import GetUserByIdFn
 
 from . import config
 from .domain import LLM_PROVIDERS, ApiKey, ApiKeyCreate, Provider
 from .ports import (
-    DeleteApiKeyForOrganizationFn,
+    DeleteApiKeyFn,
     ListApiKeysFn,
     ListApiKeysForUserFn,
     UpsertApiKeyFn,
 )
 
 LAST_FOUR_LENGTH = 4
+
+NOT_SET_UP = (
+    "Your organization's AI access has not been set up yet. "
+    "Contact Xplorers to have it enabled."
+)
 
 
 def _not_found() -> NotFoundError:
@@ -40,18 +44,22 @@ def _validate_model(provider: Provider, model: str | None) -> None:
         )
 
 
-async def issue_api_key(
+async def set_api_key(
     organization_id: UUID,
-    user_id: UUID,
     provider: Provider,
     secret: str,
-    issued_by: UUID,
-    get_user_by_id_fn: GetUserByIdFn,
+    set_by: UUID,
     upsert_api_key_fn: UpsertApiKeyFn,
     encryption_service: EncryptionService,
     account_id: str | None = None,
     model: str | None = None,
 ) -> ApiKey:
+    """Set (or replace) the organization's key for a provider. Only Xplorers staff reach
+    this; the secret is stored encrypted and never leaves the server again."""
+    secret = secret.strip()
+    if not secret:
+        raise ValidationError(message="The key cannot be empty", code="api_key_secret_required")
+
     if provider is Provider.GOHIGHLEVEL and not account_id:
         raise ValidationError(
             message="CX credentials need a location id",
@@ -60,22 +68,17 @@ async def issue_api_key(
 
     _validate_model(provider, model)
 
-    target = await get_user_by_id_fn(user_id)
-    if target is None or target.organization_id != organization_id:
-        raise NotFoundError(message="User not found", code="user_not_found")
-
     return await upsert_api_key_fn(
         ApiKeyCreate(
             organization_id=organization_id,
-            user_id=user_id,
             provider=provider,
             encrypted_secret=encryption_service.encrypt(secret),
             last_four=secret[-LAST_FOUR_LENGTH:],
             encrypted_account_id=(
-                encryption_service.encrypt(account_id) if account_id else None
+                encryption_service.encrypt(account_id.strip()) if account_id else None
             ),
             model=model,
-            issued_by=issued_by,
+            set_by=set_by,
         )
     )
 
@@ -83,17 +86,16 @@ async def issue_api_key(
 async def list_api_keys(
     organization_id: UUID,
     list_api_keys_fn: ListApiKeysFn,
-    user_id: UUID | None = None,
 ) -> Sequence[ApiKey]:
-    return await list_api_keys_fn(organization_id, user_id)
+    return await list_api_keys_fn(organization_id)
 
 
 async def delete_api_key(
-    api_key_id: UUID,
     organization_id: UUID,
-    delete_api_key_for_organization_fn: DeleteApiKeyForOrganizationFn,
+    provider: Provider,
+    delete_api_key_fn: DeleteApiKeyFn,
 ) -> None:
-    if not await delete_api_key_for_organization_fn(api_key_id, organization_id):
+    if not await delete_api_key_fn(organization_id, provider):
         raise _not_found()
 
 
@@ -105,18 +107,16 @@ async def is_setup_complete(
     user_id: UUID,
     list_api_keys_for_user_fn: ListApiKeysForUserFn,
 ) -> bool:
+    """Whether the user's organization has an AI provider key: it is the organization that
+    is set up, not the person."""
     return _holds_llm_credential(await list_api_keys_for_user_fn(user_id))
 
 
-async def list_setup_complete_user_ids(
+async def organization_is_set_up(
     organization_id: UUID,
     list_api_keys_fn: ListApiKeysFn,
-) -> set[UUID]:
-    return {
-        key.user_id
-        for key in await list_api_keys_fn(organization_id)
-        if key.provider in config.PROVIDER_PRECEDENCE
-    }
+) -> bool:
+    return _holds_llm_credential(await list_api_keys_fn(organization_id))
 
 
 async def resolve_llm_credential(
@@ -130,13 +130,7 @@ async def resolve_llm_credential(
         if credential is not None:
             return credential
 
-    raise ConflictError(
-        message=(
-            "Your account has not been set up yet. "
-            "Ask an owner or admin in your organization to issue you an AI provider key."
-        ),
-        code="api_key_not_configured",
-    )
+    raise ConflictError(message=NOT_SET_UP, code="api_key_not_configured")
 
 
 def model_for(credential: ApiKey) -> str:

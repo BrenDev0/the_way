@@ -7,18 +7,15 @@ from src.core.database.sqlalchemy.models import Base, IDMixin, TimestampMixin
 
 
 class ApiKeyRow(Base, IDMixin, TimestampMixin):
+    """One key per provider per organization, set by Xplorers staff."""
+
     __tablename__ = "api_keys"
     __table_args__ = (
-        UniqueConstraint("user_id", "provider", name="uq_api_key_user_provider"),
+        UniqueConstraint("organization_id", "provider", name="uq_api_key_organization_provider"),
     )
 
     organization_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("organizations.id", ondelete="CASCADE"),
-        nullable=False,
-        index=True,
-    )
-    user_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
@@ -27,7 +24,7 @@ class ApiKeyRow(Base, IDMixin, TimestampMixin):
     last_four: Mapped[str] = mapped_column(String(4), nullable=False)
     account_id: Mapped[str | None] = mapped_column(String, nullable=True)
     model: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    issued_by: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"),
+    set_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("staff_members.id", ondelete="SET NULL"),
         nullable=True,
     )

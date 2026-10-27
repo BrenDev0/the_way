@@ -57,7 +57,7 @@ async def openai_key(
     raise ConflictError(
         message=(
             "Voice needs an OpenAI key. "
-            "Ask an owner or admin in your organization to issue you one."
+            "Your organization does not have one yet: contact Xplorers to set it up."
         ),
         code="voice_key_not_configured",
     )
@@ -113,7 +113,7 @@ async def speak(text: str, api_key: str) -> AsyncIterator[bytes]:
 def _upstream(exc: openai.APIError) -> Exception:
     if isinstance(exc, openai.AuthenticationError | openai.PermissionDeniedError):
         return ConflictError(
-            message="Your OpenAI key was rejected. Ask an owner or admin to issue a new one.",
+            message="Your organization's OpenAI key was rejected. Contact Xplorers to replace it.",
             code="voice_key_rejected",
         )
 

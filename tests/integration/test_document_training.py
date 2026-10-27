@@ -55,11 +55,9 @@ async def give_key(db_session, organization, user, provider=Provider.OPENAI):
         db_session,
         ApiKeyCreate(
             organization_id=organization.id,
-            user_id=user.id,
             provider=provider,
             encrypted_secret="enc::sk-secret-1234",
             last_four="1234",
-            issued_by=user.id,
         ),
     )
     await db_session.commit()

@@ -3,6 +3,9 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
 
+from src.api_keys import use_cases as api_keys_use_cases
+from src.api_keys.fastapi import dependencies as api_keys_dependencies
+from src.api_keys.ports import ListApiKeysFn
 from src.auth.fastapi import dependencies as auth_dependencies
 from src.core.cache.ports import CacheStore
 from src.core.communications.ports import EmailSender
@@ -173,6 +176,10 @@ async def accept_invitation_route(
         AcceptInvitationFn,
         Depends(invitations_dependencies.provide_accept_invitation_fn),
     ],
+    list_api_keys_fn: Annotated[
+        ListApiKeysFn,
+        Depends(api_keys_dependencies.provide_list_api_keys_fn),
+    ],
 ) -> UserResponse:
     invitation = await invitations_use_cases.resolve_invitation(
         token=payload.token,
@@ -201,5 +208,9 @@ async def accept_invitation_route(
     return UserResponse.from_domain(
         user,
         email=encryption_service.decrypt(user.encrypted_email),
-        setup_complete=False,
+        # a new member joins an organization that may already be set up
+        setup_complete=await api_keys_use_cases.organization_is_set_up(
+            organization_id=user.organization_id,
+            list_api_keys_fn=list_api_keys_fn,
+        ),
     )
