@@ -16,7 +16,6 @@ from src.sessions.config import SessionCookieConfig
 from src.sessions.tokens import SessionTokenService
 from src.staff import config
 from src.staff.domain import (
-    DeletedOrganizationCreate,
     OwnerInvitationCreate,
     StaffMember,
     StaffMemberCreate,
@@ -35,12 +34,10 @@ from src.staff.ports import (
     GetStaffMemberByEmailHashFn,
     GetStaffMemberByIdFn,
     GetStaffSessionByTokenHashFn,
-    ListDeletedOrganizationsFn,
     ListOrganizationMembersFn,
     ListOrganizationSummariesFn,
     ListOwnerInvitationsFn,
     PurgeOrganizationFilesFn,
-    RecordDeletedOrganizationFn,
     RevokeOwnerInvitationFn,
     RevokePendingOwnerInvitationsForEmailFn,
     RevokeStaffSessionByTokenHashFn,
@@ -196,20 +193,6 @@ def provide_list_organization_members_fn(session: Session) -> ListOrganizationMe
         return await reports.list_members(session, organization_id)
 
     return list_organization_members_fn
-
-
-def provide_record_deleted_organization_fn(session: Session) -> RecordDeletedOrganizationFn:
-    async def record_deleted_organization_fn(record: DeletedOrganizationCreate):
-        return await adapter.record_deleted_organization(session, record)
-
-    return record_deleted_organization_fn
-
-
-def provide_list_deleted_organizations_fn(session: Session) -> ListDeletedOrganizationsFn:
-    async def list_deleted_organizations_fn():
-        return await adapter.list_deleted_organizations(session)
-
-    return list_deleted_organizations_fn
 
 
 def get_optional_bucket_store(request: Request) -> BucketStore | None:

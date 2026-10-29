@@ -136,12 +136,12 @@ class OrganizationDetail:
     pending_invitations: Sequence[Invitation]
 
 
-@dataclass
-class DeletedOrganizationCreate:
-    organization_id: UUID
+@dataclass(frozen=True)
+class OrganizationDeletion:
+    """What deleting an organization did, told to the person who did it. Nothing keeps it: the
+    organization is gone, and so is every trace of it."""
+
     organization_name: str
-    deleted_by: UUID | None
-    deleted_by_encrypted_email: str
     members: int
     files: int
     bytes: int
@@ -149,21 +149,3 @@ class DeletedOrganizationCreate:
     # the bucket could not be listed and so nobody can say
     files_removed: int
     files_left: int | None
-
-
-@dataclass
-class DeletedOrganization:
-    """The record kept when an organization is deleted: what it was and who deleted it. The
-    organization itself is gone, so this is a copy, not a reference."""
-
-    id: UUID
-    organization_id: UUID
-    organization_name: str
-    deleted_by: UUID | None
-    deleted_by_encrypted_email: str
-    members: int
-    files: int
-    bytes: int
-    files_removed: int
-    files_left: int | None
-    created_at: datetime

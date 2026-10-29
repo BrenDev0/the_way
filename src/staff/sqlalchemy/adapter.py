@@ -6,8 +6,6 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.staff.domain import (
-    DeletedOrganization,
-    DeletedOrganizationCreate,
     OwnerInvitation,
     OwnerInvitationCreate,
     StaffMember,
@@ -18,7 +16,6 @@ from src.staff.domain import (
 
 from . import mapper
 from .models import (
-    DeletedOrganizationRow,
     OwnerInvitationRow,
     StaffMemberRow,
     StaffSessionRow,
@@ -162,20 +159,3 @@ async def revoke_pending_invitations_for_email(session: AsyncSession, email_hash
         await session.flush()
     return len(rows)
 
-
-# --- the record of deleted organizations ----------------------------------------------
-
-
-async def record_deleted_organization(
-    session: AsyncSession, record: DeletedOrganizationCreate
-) -> DeletedOrganization:
-    row = mapper.deleted_organization_create_to_row(record)
-    session.add(row)
-    await session.flush()
-    await session.refresh(row)
-    return mapper.deleted_organization_to_domain(row)
-
-
-async def list_deleted_organizations(session: AsyncSession) -> Sequence[DeletedOrganization]:
-    result = await session.execute(select(DeletedOrganizationRow).order_by(DeletedOrganizationRow.created_at.desc()))
-    return [mapper.deleted_organization_to_domain(row) for row in result.scalars().all()]

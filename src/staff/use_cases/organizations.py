@@ -9,19 +9,15 @@ from src.invitations.ports import ListPendingForOrganizationFn
 from src.organizations import use_cases as organizations_use_cases
 from src.organizations.ports import DeleteOrganizationByIdFn
 from src.staff.domain import (
-    DeletedOrganization,
-    DeletedOrganizationCreate,
+    OrganizationDeletion,
     OrganizationDetail,
     OrganizationSummary,
-    StaffMember,
 )
 from src.staff.ports import (
     GetOrganizationSummaryFn,
-    ListDeletedOrganizationsFn,
     ListOrganizationMembersFn,
     ListOrganizationSummariesFn,
     PurgeOrganizationFilesFn,
-    RecordDeletedOrganizationFn,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,29 +53,21 @@ async def get_organization(
     )
 
 
-async def list_deleted_organizations(
-    list_deleted_organizations_fn: ListDeletedOrganizationsFn,
-) -> Sequence[DeletedOrganization]:
-    return await list_deleted_organizations_fn()
-
-
 async def delete_organization(
-    staff: StaffMember,
     organization_id: UUID,
     confirmation: str,
     get_organization_summary_fn: GetOrganizationSummaryFn,
     delete_organization_by_id_fn: DeleteOrganizationByIdFn,
     cache_store: CacheStore,
     purge_organization_files_fn: PurgeOrganizationFilesFn,
-    record_deleted_organization_fn: RecordDeletedOrganizationFn,
-) -> DeletedOrganization:
+) -> OrganizationDeletion:
     """Delete an organization for good: its people, conversations, projects and everything it
     stored. Permanent, so the caller must type the organization's exact name.
 
     The order is deliberate. The database rows go first (one transaction, everything
     cascades), then the files in the bucket -- so there is never an organization whose files
     are gone but which still exists to be used. A bucket that cannot be reached does not stop
-    the deletion: the files left behind are recorded, with the record of who deleted what.
+    the deletion: the files left behind are counted in what comes back, and logged.
     """
     summary = await get_organization_summary_fn(organization_id)
     if summary is None:
@@ -110,16 +98,11 @@ async def delete_organization(
     if files_left:
         logger.warning("%s files of deleted organization %s were left in the bucket", files_left, organization_id)
 
-    return await record_deleted_organization_fn(
-        DeletedOrganizationCreate(
-            organization_id=organization_id,
-            organization_name=summary.name,
-            deleted_by=staff.id,
-            deleted_by_encrypted_email=staff.encrypted_email,
-            members=summary.members,
-            files=summary.files,
-            bytes=summary.bytes,
-            files_removed=files_removed,
-            files_left=files_left,
-        )
+    return OrganizationDeletion(
+        organization_name=summary.name,
+        members=summary.members,
+        files=summary.files,
+        bytes=summary.bytes,
+        files_removed=files_removed,
+        files_left=files_left,
     )

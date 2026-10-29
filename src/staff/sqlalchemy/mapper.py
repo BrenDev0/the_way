@@ -1,6 +1,4 @@
 from src.staff.domain import (
-    DeletedOrganization,
-    DeletedOrganizationCreate,
     OwnerInvitation,
     OwnerInvitationCreate,
     StaffMember,
@@ -10,7 +8,6 @@ from src.staff.domain import (
 )
 
 from .models import (
-    DeletedOrganizationRow,
     OwnerInvitationRow,
     StaffMemberRow,
     StaffSessionRow,
@@ -84,32 +81,3 @@ def invitation_create_to_row(invitation: OwnerInvitationCreate) -> OwnerInvitati
         invited_by=invitation.invited_by,
     )
 
-
-def deleted_organization_to_domain(row: DeletedOrganizationRow) -> DeletedOrganization:
-    return DeletedOrganization(
-        id=row.id,
-        organization_id=row.organization_id,
-        organization_name=row.organization_name,
-        deleted_by=row.deleted_by,
-        deleted_by_encrypted_email=row.deleted_by_email,
-        members=row.members,
-        files=row.files,
-        bytes=row.bytes,
-        files_removed=row.files_removed,
-        files_left=row.files_left,
-        created_at=row.created_at,
-    )
-
-
-def deleted_organization_create_to_row(record: DeletedOrganizationCreate) -> DeletedOrganizationRow:
-    return DeletedOrganizationRow(
-        organization_id=record.organization_id,
-        organization_name=record.organization_name,
-        deleted_by=record.deleted_by,
-        deleted_by_email=record.deleted_by_encrypted_email,
-        members=record.members,
-        files=record.files,
-        bytes=record.bytes,
-        files_removed=record.files_removed,
-        files_left=record.files_left,
-    )

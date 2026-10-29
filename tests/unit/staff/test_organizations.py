@@ -11,27 +11,11 @@ from src.core.exceptions import NotFoundError, ValidationError
 from src.invitations.domain import Invitation
 from src.organizations import cache as organization_cache
 from src.organizations.domain import FilesPurged
-from src.staff.domain import (
-    DeletedOrganization,
-    DeletedOrganizationCreate,
-    OrganizationMember,
-    OrganizationSummary,
-    StaffMember,
-)
+from src.staff.domain import OrganizationMember, OrganizationSummary
 from src.staff.use_cases import organizations as use_cases
 from src.users.domain import Role
 
 NAME = "Acme Inc"
-
-
-def make_staff() -> StaffMember:
-    return StaffMember(
-        id=uuid4(),
-        encrypted_email="enc::ana@xplorers.example",
-        email_hash="dhash::ana@xplorers.example",
-        password_hash="pwhash::x",
-        created_at=datetime.now(UTC),
-    )
 
 
 def make_summary(organization_id: UUID | None = None, *, name: str = NAME, members: int = 4, files: int = 12, size: int = 5_000):
@@ -55,7 +39,6 @@ class Scenario:
     def __init__(self, summary: OrganizationSummary | None, *, purge: FilesPurged | BucketError | None = None):
         self.summary = summary
         self.calls: list[str] = []
-        self.recorded: list[DeletedOrganizationCreate] = []
         self.deleted: list[UUID] = []
         self.purged: list[UUID] = []
         self.cache = FakeCacheStore()
@@ -77,21 +60,14 @@ class Scenario:
             raise self._purge
         return self._purge
 
-    async def record(self, record: DeletedOrganizationCreate) -> DeletedOrganization:
-        self.calls.append("record")
-        self.recorded.append(record)
-        return DeletedOrganization(id=uuid4(), created_at=datetime.now(UTC), **record.__dict__)
-
-    async def run(self, confirmation: str, staff: StaffMember | None = None, organization_id: UUID | None = None):
+    async def run(self, confirmation: str, organization_id: UUID | None = None):
         return await use_cases.delete_organization(
-            staff=staff or make_staff(),
             organization_id=organization_id or (self.summary.id if self.summary else uuid4()),
             confirmation=confirmation,
             get_organization_summary_fn=self.get_summary,
             delete_organization_by_id_fn=self.delete,
             cache_store=self.cache,
             purge_organization_files_fn=self.purge,
-            record_deleted_organization_fn=self.record,
         )
 
 
@@ -166,17 +142,16 @@ async def test_anything_but_the_exact_name_deletes_nothing(typed):
         await scenario.run(typed)
 
     assert exc.value.code == "confirmation_mismatch"
-    assert scenario.calls == ["read"]  # nothing was deleted, purged or recorded
-    assert scenario.recorded == []
+    assert scenario.calls == ["read"]  # nothing was deleted or purged
 
 
 async def test_the_exact_name_deletes_it():
     scenario = Scenario(make_summary())
 
-    record = await scenario.run(NAME)
+    result = await scenario.run(NAME)
 
     assert scenario.deleted == [scenario.summary.id]
-    assert record.organization_name == NAME
+    assert result.organization_name == NAME
 
 
 async def test_stray_spaces_around_the_typed_name_are_forgiven_and_nothing_else():
@@ -199,14 +174,14 @@ async def test_an_unknown_organization_is_not_found_before_anything_is_asked_of_
 # --- deleting: what happens, and in what order ------------------------------------------------------
 
 
-async def test_the_rows_go_first_then_the_files_then_the_record_is_written():
+async def test_the_rows_go_first_then_the_files():
     """If the rows went last, a failure would leave an organization whose files are gone but
     which still exists to be used."""
     scenario = Scenario(make_summary())
 
     await scenario.run(NAME)
 
-    assert scenario.calls == ["read", "delete rows", "purge files", "record"]
+    assert scenario.calls == ["read", "delete rows", "purge files"]
 
 
 async def test_the_files_purged_are_the_organizations_own():
@@ -217,20 +192,14 @@ async def test_the_files_purged_are_the_organizations_own():
     assert scenario.purged == [scenario.summary.id]
 
 
-async def test_the_record_says_who_what_and_how_much():
+async def test_the_result_says_what_the_organization_was_and_how_much_went():
     scenario = Scenario(make_summary(name=NAME, members=4, files=12, size=5_000))
-    staff = make_staff()
 
-    record = await scenario.run(NAME, staff)
+    result = await scenario.run(NAME)
 
-    saved = scenario.recorded[0]
-    assert saved.organization_id == scenario.summary.id
-    assert saved.organization_name == NAME
-    assert saved.deleted_by == staff.id
-    assert saved.deleted_by_encrypted_email == staff.encrypted_email  # encrypted, as it is stored
-    assert (saved.members, saved.files, saved.bytes) == (4, 12, 5_000)
-    assert (saved.files_removed, saved.files_left) == (12, 0)
-    assert record.deleted_by == staff.id
+    assert result.organization_name == NAME
+    assert (result.members, result.files, result.bytes) == (4, 12, 5_000)
+    assert (result.files_removed, result.files_left) == (12, 0)
 
 
 async def test_the_organizations_cached_copy_is_cleared():
@@ -248,7 +217,7 @@ async def test_the_organizations_cached_copy_is_cleared():
 # --- deleting: when the bucket does not cooperate --------------------------------------------------------
 
 
-async def test_files_that_could_not_be_deleted_are_recorded_as_left_behind():
+async def test_files_that_could_not_be_deleted_are_counted_as_left_behind():
     scenario = Scenario(make_summary(), purge=FilesPurged(removed=9, failed=3))
 
     record = await scenario.run(NAME)
@@ -263,7 +232,7 @@ async def test_a_bucket_that_cannot_be_reached_does_not_stop_the_deletion():
     record = await scenario.run(NAME)
 
     assert scenario.deleted == [scenario.summary.id]
-    assert scenario.calls == ["read", "delete rows", "purge files", "record"]
+    assert scenario.calls == ["read", "delete rows", "purge files"]
     # None says nobody can tell what is left, not that nothing is
     assert (record.files_removed, record.files_left) == (0, None)
 

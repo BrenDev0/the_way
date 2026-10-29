@@ -41,9 +41,9 @@ def test_a_response_describing_stored_data_accepts_a_one_letter_name():
     from datetime import UTC, datetime
     from uuid import uuid4
 
-    from src.staff.domain import DeletedOrganization, OrganizationSummary
+    from src.staff.domain import OrganizationDeletion, OrganizationSummary
     from src.staff.fastapi.schemas import (
-        DeletedOrganizationResponse,
+        OrganizationDeletionResponse,
         OrganizationSummaryResponse,
     )
 
@@ -51,13 +51,12 @@ def test_a_response_describing_stored_data_accepts_a_one_letter_name():
         id=uuid4(), name="Z", seat_limit=None, created_at=datetime.now(UTC), members=0, pending_invitations=0,
         owner_encrypted_email=None, files=0, bytes=0, last_seen_at=None,
     )
-    record = DeletedOrganization(
-        id=uuid4(), organization_id=uuid4(), organization_name="Z", deleted_by=None, deleted_by_encrypted_email="e",
-        members=0, files=0, bytes=0, files_removed=0, files_left=0, created_at=datetime.now(UTC),
+    deletion = OrganizationDeletion(
+        organization_name="Z", members=0, files=0, bytes=0, files_removed=0, files_left=0,
     )
 
     assert OrganizationSummaryResponse.from_domain(summary, owner_email=None).name == "Z"
-    assert DeletedOrganizationResponse.from_domain(record, deleted_by_email="a@b.co").organization_name == "Z"
+    assert OrganizationDeletionResponse.from_domain(deletion).organization_name == "Z"
 
 
 class FakeEncryption:

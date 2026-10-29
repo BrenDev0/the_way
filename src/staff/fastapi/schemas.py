@@ -11,7 +11,7 @@ from src.core.cryptography.ports import EncryptionService
 from src.fastapi.schemas import ApiBaseModel
 from src.invitations.fastapi.schemas import InvitationResponse
 from src.staff.domain import (
-    DeletedOrganization,
+    OrganizationDeletion,
     OrganizationDetail,
     OrganizationMember,
     OrganizationSummary,
@@ -199,32 +199,24 @@ class DeleteOrganizationRequest(ApiBaseModel):
     confirmation: str = Field(min_length=0)
 
 
-class DeletedOrganizationResponse(StoredDataResponse):
-    id: UUID
-    organization_id: UUID
+class OrganizationDeletionResponse(StoredDataResponse):
     organization_name: str
-    deleted_by_email: str
     members: int
     files: int
     bytes: int
     # what clearing the bucket did; files_left is null when the bucket could not be listed
     files_removed: int
     files_left: int | None
-    created_at: datetime
 
     @classmethod
-    def from_domain(cls, record: DeletedOrganization, deleted_by_email: str) -> Self:
+    def from_domain(cls, deletion: OrganizationDeletion) -> Self:
         return cls(
-            id=record.id,
-            organization_id=record.organization_id,
-            organization_name=record.organization_name,
-            deleted_by_email=deleted_by_email,
-            members=record.members,
-            files=record.files,
-            bytes=record.bytes,
-            files_removed=record.files_removed,
-            files_left=record.files_left,
-            created_at=record.created_at,
+            organization_name=deletion.organization_name,
+            members=deletion.members,
+            files=deletion.files,
+            bytes=deletion.bytes,
+            files_removed=deletion.files_removed,
+            files_left=deletion.files_left,
         )
 
 

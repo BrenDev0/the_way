@@ -188,7 +188,6 @@ def test_every_staff_organization_route_needs_a_staff_session(client, organizati
     path = f"{WEB}/staff/organizations"
 
     assert call(client, "GET", path).status_code == 401
-    assert call(client, "GET", f"{path}/deleted").status_code == 401
     assert call(client, "GET", f"{path}/{organization['id']}").status_code == 401
     assert call(client, "DELETE", f"{path}/{organization['id']}", {"confirmation": organization["name"]}).status_code == 401
     # and nothing was touched
@@ -261,8 +260,6 @@ def test_a_wrong_name_deletes_nothing(client, staff, organization, typed):
     assert response.json()["code"] == "confirmation_mismatch"
     assert str(organization["id"]) in list_organizations(client)
     assert len(stored_under(client, organization_keys.organization_prefix(organization["id"]))) == 3
-    records = call(client, "GET", f"{WEB}/staff/organizations/deleted").json()
-    assert all(record["organizationId"] != str(organization["id"]) for record in records)  # no record: nothing was deleted
 
 
 def test_deleting_with_the_exact_name_removes_the_organization_its_people_and_its_files(client, staff, organization):
@@ -271,12 +268,11 @@ def test_deleting_with_the_exact_name_removes_the_organization_its_people_and_it
     )
 
     assert response.status_code == 200, response.text
-    record = response.json()
-    assert record["organizationName"] == organization["name"]
-    assert record["organizationId"] == str(organization["id"])
-    assert record["deletedByEmail"] == staff
-    assert (record["members"], record["files"], record["bytes"]) == (3, 2, 3_000)
-    assert (record["filesRemoved"], record["filesLeft"]) == (3, 0)
+    result = response.json()
+    assert result["organizationName"] == organization["name"]
+    assert (result["members"], result["files"], result["bytes"]) == (3, 2, 3_000)
+    assert (result["filesRemoved"], result["filesLeft"]) == (3, 0)
+    assert set(result) == {"organizationName", "members", "files", "bytes", "filesRemoved", "filesLeft"}
 
     # the organization is gone, as is everything it had
     assert str(organization["id"]) not in list_organizations(client)
@@ -337,19 +333,6 @@ def test_deleting_one_organization_leaves_every_other_one_and_its_files_untouche
     assert call(client, "POST", f"{WEB}/auth/login", {"email": other_email, "password": PASSWORD}).status_code == 200
 
 
-def test_a_deletion_stays_on_record_with_who_did_it_and_what_it_was(client, staff, organization):
-    call(client, "DELETE", f"{WEB}/staff/organizations/{organization['id']}", {"confirmation": organization["name"]})
-
-    records = call(client, "GET", f"{WEB}/staff/organizations/deleted")
-
-    assert records.status_code == 200
-    mine = [r for r in records.json() if r["organizationId"] == str(organization["id"])]
-    assert len(mine) == 1
-    assert mine[0]["organizationName"] == organization["name"]
-    assert mine[0]["deletedByEmail"] == staff
-    assert (mine[0]["members"], mine[0]["files"], mine[0]["filesLeft"]) == (3, 2, 0)
-
-
 def test_deleting_the_same_organization_twice_is_a_404_the_second_time(client, staff, organization):
     path = f"{WEB}/staff/organizations/{organization['id']}"
     assert call(client, "DELETE", path, {"confirmation": organization["name"]}).status_code == 200
@@ -357,8 +340,6 @@ def test_deleting_the_same_organization_twice_is_a_404_the_second_time(client, s
     again = call(client, "DELETE", path, {"confirmation": organization["name"]})
 
     assert again.status_code == 404
-    records = [r for r in call(client, "GET", f"{WEB}/staff/organizations/deleted").json() if r["organizationId"] == str(organization["id"])]
-    assert len(records) == 1  # one deletion, one record
 
 
 # --- a damaged record must not hide the rest ---------------------------------------------------

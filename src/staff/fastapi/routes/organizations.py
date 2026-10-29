@@ -1,5 +1,5 @@
 """Every organization, as Xplorers staff see them: the list, one organization's people, and
-deleting one. Read only except for the delete, which is permanent and kept on record."""
+deleting one. Read only except for the delete, which is permanent and leaves nothing behind."""
 
 from typing import Annotated
 from uuid import UUID
@@ -16,18 +16,16 @@ from src.organizations.ports import DeleteOrganizationByIdFn
 from src.staff.domain import StaffMember
 from src.staff.ports import (
     GetOrganizationSummaryFn,
-    ListDeletedOrganizationsFn,
     ListOrganizationMembersFn,
     ListOrganizationSummariesFn,
     PurgeOrganizationFilesFn,
-    RecordDeletedOrganizationFn,
 )
 from src.staff.use_cases import organizations as use_cases
 
 from .. import dependencies as staff_dependencies
 from ..schemas import (
-    DeletedOrganizationResponse,
     DeleteOrganizationRequest,
+    OrganizationDeletionResponse,
     OrganizationDetailResponse,
     OrganizationSummaryResponse,
     tolerant_decrypt,
@@ -63,24 +61,6 @@ async def list_organizations_route(
     ]
 
 
-# Before /{organization_id}, which would otherwise take "deleted" for an id.
-@router.get("/deleted", response_model=list[DeletedOrganizationResponse])
-async def list_deleted_organizations_route(
-    staff: CurrentStaff,
-    encryption_service: Encryption,
-    list_deleted_organizations_fn: Annotated[
-        ListDeletedOrganizationsFn,
-        Depends(staff_dependencies.provide_list_deleted_organizations_fn),
-    ],
-) -> list[DeletedOrganizationResponse]:
-    decrypt = tolerant_decrypt(encryption_service)
-    records = await use_cases.list_deleted_organizations(list_deleted_organizations_fn)
-    return [
-        DeletedOrganizationResponse.from_domain(record, deleted_by_email=decrypt(record.deleted_by_encrypted_email))
-        for record in records
-    ]
-
-
 @router.get("/{organization_id}", response_model=OrganizationDetailResponse)
 async def get_organization_route(
     organization_id: UUID,
@@ -105,12 +85,11 @@ async def get_organization_route(
     return OrganizationDetailResponse.from_domain(detail, decrypt=tolerant_decrypt(encryption_service))
 
 
-@router.delete("/{organization_id}", response_model=DeletedOrganizationResponse)
+@router.delete("/{organization_id}", response_model=OrganizationDeletionResponse)
 async def delete_organization_route(
     organization_id: UUID,
     payload: DeleteOrganizationRequest,
     staff: CurrentStaff,
-    encryption_service: Encryption,
     cache_store: Annotated[CacheStore, Depends(api_dependencies.get_cache_store)],
     get_organization_summary_fn: GetSummary,
     delete_organization_by_id_fn: Annotated[
@@ -121,21 +100,13 @@ async def delete_organization_route(
         PurgeOrganizationFilesFn,
         Depends(staff_dependencies.provide_purge_organization_files_fn),
     ],
-    record_deleted_organization_fn: Annotated[
-        RecordDeletedOrganizationFn,
-        Depends(staff_dependencies.provide_record_deleted_organization_fn),
-    ],
-) -> DeletedOrganizationResponse:
-    record = await use_cases.delete_organization(
-        staff=staff,
+) -> OrganizationDeletionResponse:
+    deletion = await use_cases.delete_organization(
         organization_id=organization_id,
         confirmation=payload.confirmation,
         get_organization_summary_fn=get_organization_summary_fn,
         delete_organization_by_id_fn=delete_organization_by_id_fn,
         cache_store=cache_store,
         purge_organization_files_fn=purge_organization_files_fn,
-        record_deleted_organization_fn=record_deleted_organization_fn,
     )
-    return DeletedOrganizationResponse.from_domain(
-        record, deleted_by_email=tolerant_decrypt(encryption_service)(record.deleted_by_encrypted_email)
-    )
+    return OrganizationDeletionResponse.from_domain(deletion)

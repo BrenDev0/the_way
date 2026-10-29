@@ -1,5 +1,5 @@
 """The staff panel's view across organizations, against real Postgres: the counts per
-organization, the people in one, and the record kept when one is deleted."""
+organization and the people in one."""
 
 import asyncio
 from datetime import UTC, datetime, timedelta
@@ -13,8 +13,7 @@ from src.projects.domain import FileStatus
 from src.projects.sqlalchemy.models import FileRow, ProjectRow
 from src.sessions.domain import SessionCreate
 from src.sessions.sqlalchemy import adapter as sessions_adapter
-from src.staff.domain import DeletedOrganizationCreate, StaffMemberCreate
-from src.staff.sqlalchemy import adapter, reports
+from src.staff.sqlalchemy import reports
 from src.users.domain import Role, UserCreate
 from src.users.sqlalchemy import adapter as users_adapter
 
@@ -223,63 +222,3 @@ async def test_only_this_organizations_people_are_listed(db_session):
     assert [m.id for m in await reports.list_members(db_session, mine.id)] == [me.id]
     assert await reports.list_members(db_session, uuid4()) == []
 
-
-# --- the record of deleted organizations -----------------------------------------------------------------
-
-
-async def test_a_deleted_organization_is_kept_on_record_and_listed_newest_first(db_session):
-    staff = await adapter.create_member(
-        db_session, StaffMemberCreate(encrypted_email="enc::ana@x.example", email_hash=f"dhash::{uuid4()}", password_hash="p")
-    )
-    await db_session.commit()
-
-    def record(name, left):
-        return DeletedOrganizationCreate(
-            organization_id=uuid4(), organization_name=name, deleted_by=staff.id,
-            deleted_by_encrypted_email="enc::ana@x.example", members=3, files=10, bytes=12_345,
-            files_removed=10, files_left=left,
-        )
-
-    first = await adapter.record_deleted_organization(db_session, record("First Co", 0))
-    await db_session.commit()
-    await asyncio.sleep(0.01)
-    second = await adapter.record_deleted_organization(db_session, record("Second Co", None))
-    await db_session.commit()
-
-    listed = [r.id for r in await adapter.list_deleted_organizations(db_session)]
-
-    assert listed.index(second.id) < listed.index(first.id)
-    assert (first.members, first.files, first.bytes, first.files_removed, first.files_left) == (3, 10, 12_345, 10, 0)
-    assert second.files_left is None  # unknown is kept distinct from zero
-
-
-async def test_the_record_outlives_the_staff_member_and_the_organization_it_describes(db_session):
-    """No foreign key points at the organization (it is gone), and the staff member's
-    link goes empty if they are removed, but the encrypted email still says who."""
-    staff = await adapter.create_member(
-        db_session, StaffMemberCreate(encrypted_email="enc::gone@x.example", email_hash=f"dhash::{uuid4()}", password_hash="p")
-    )
-    organization = await make_org(db_session)
-    await db_session.commit()
-    saved = await adapter.record_deleted_organization(
-        db_session,
-        DeletedOrganizationCreate(
-            organization_id=organization.id, organization_name="Gone Co", deleted_by=staff.id,
-            deleted_by_encrypted_email="enc::gone@x.example", members=1, files=0, bytes=0, files_removed=0, files_left=0,
-        ),
-    )
-    await db_session.commit()
-
-    await organizations_adapter.delete_by_id(db_session, organization.id)
-    from sqlalchemy import delete
-
-    from src.staff.sqlalchemy.models import StaffMemberRow
-
-    await db_session.execute(delete(StaffMemberRow).where(StaffMemberRow.id == staff.id))
-    await db_session.commit()
-
-    kept = next(r for r in await adapter.list_deleted_organizations(db_session) if r.id == saved.id)
-    assert kept.organization_name == "Gone Co"
-    assert kept.organization_id == organization.id
-    assert kept.deleted_by is None
-    assert kept.deleted_by_encrypted_email == "enc::gone@x.example"

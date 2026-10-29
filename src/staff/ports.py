@@ -5,8 +5,6 @@ from uuid import UUID
 from src.organizations.domain import FilesPurged
 
 from .domain import (
-    DeletedOrganization,
-    DeletedOrganizationCreate,
     OrganizationMember,
     OrganizationSummary,
     OwnerInvitation,
@@ -42,11 +40,9 @@ class ClaimOwnerInvitationFn(Protocol):
 
     async def __call__(self, invitation_id: UUID, organization_id: UUID) -> bool: ...
 
-# Every organization, read across all of them (the staff panel), and the record kept when one is deleted.
+# Every organization, read across all of them (the staff panel).
 ListOrganizationSummariesFn = Callable[[], Awaitable[Sequence[OrganizationSummary]]]
 GetOrganizationSummaryFn = Callable[[UUID], Awaitable[OrganizationSummary | None]]
 ListOrganizationMembersFn = Callable[[UUID], Awaitable[Sequence[OrganizationMember]]]
-RecordDeletedOrganizationFn = Callable[[DeletedOrganizationCreate], Awaitable[DeletedOrganization]]
-ListDeletedOrganizationsFn = Callable[[], Awaitable[Sequence[DeletedOrganization]]]
 # Everything the organization has in the bucket, removed (organizations.files.purge_files).
 PurgeOrganizationFilesFn = Callable[[UUID], Awaitable[FilesPurged]]

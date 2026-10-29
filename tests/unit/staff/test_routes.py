@@ -25,7 +25,6 @@ def test_staff_can_sign_in_and_invite_owners_and_nothing_else():
         ("DELETE", f"{WEB}/staff/owner-invitations/{{invitation_id}}"),
         ("DELETE", f"{WEB}/staff/owner-invitations/{{invitation_id}}/record"),
         ("GET", f"{WEB}/staff/organizations"),
-        ("GET", f"{WEB}/staff/organizations/deleted"),
         ("GET", f"{WEB}/staff/organizations/{{organization_id}}"),
         ("DELETE", f"{WEB}/staff/organizations/{{organization_id}}"),
         ("GET", f"{WEB}/staff/organizations/{{organization_id}}/api-keys"),
