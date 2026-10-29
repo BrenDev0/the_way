@@ -48,6 +48,8 @@ class OwnerInvitationStatus(StrEnum):
     ACCEPTED = "accepted"
     REVOKED = "revoked"
     EXPIRED = "expired"
+    # It was accepted and its organization has since been deleted: all that is left is the record.
+    ORGANIZATION_DELETED = "organization_deleted"
 
 
 @dataclass
@@ -83,8 +85,11 @@ class OwnerInvitationCreate:
 
 def status_of(invitation: OwnerInvitation, now: datetime) -> OwnerInvitationStatus:
     """Accepted and revoked win over expired: an invitation that was used stays 'accepted'
-    after its link would have lapsed."""
+    after its link would have lapsed -- until its organization is deleted, which clears the link
+    to it (the record stays) and is what tells the two apart."""
     if invitation.accepted_at is not None:
+        if invitation.organization_id is None:
+            return OwnerInvitationStatus.ORGANIZATION_DELETED
         return OwnerInvitationStatus.ACCEPTED
     if invitation.revoked_at is not None:
         return OwnerInvitationStatus.REVOKED

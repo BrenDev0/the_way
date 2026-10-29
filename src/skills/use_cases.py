@@ -8,9 +8,11 @@ from src.core.exceptions import ConflictError, NotFoundError, ValidationError
 from . import config, frontmatter
 from .domain import Skill, SkillCreate
 from .ports import (
+    CountPersonalSkillsFn,
     CountSkillsFn,
     DeleteSkillFn,
     GetSkillFn,
+    GetSkillInScopeFn,
     ListSkillsForOrganizationFn,
     UpsertSkillFn,
 )
@@ -167,6 +169,16 @@ def _limit_reached() -> ConflictError:
     )
 
 
+def _personal_limit_reached() -> ConflictError:
+    return ConflictError(
+        message=(
+            f"You can keep at most {config.MAX_PERSONAL_SKILLS_PER_USER} skills of your own: "
+            "delete one before saving another"
+        ),
+        code="skill_personal_limit_reached",
+    )
+
+
 async def save_skill(
     organization_id: UUID,
     instructions: str,
@@ -178,7 +190,12 @@ async def save_skill(
     description: str | None = None,
     triggers: Sequence[str] | None = None,
     files: dict[str, str] | None = None,
+    owner_id: UUID | None = None,
+    count_personal_skills_fn: CountPersonalSkillsFn | None = None,
+    get_skill_in_scope_fn: GetSkillInScopeFn | None = None,
 ) -> Skill:
+    """Saves a skill for the whole organization, or -- with `owner_id` -- as that person's own.
+    A person's own skills are limited per person; the organization's, per organization."""
     skill = prepare_skill(
         organization_id=organization_id,
         instructions=instructions,
@@ -189,11 +206,22 @@ async def save_skill(
         files=files,
     )
 
-    existing = await get_skill_fn(skill.name, organization_id)
+    skill.owner_id = owner_id
+    # Whether it already exists in the place it is being saved to, not wherever it is seen from:
+    # a person's skill of the same name as an organization's is a separate skill.
+    if get_skill_in_scope_fn is not None:
+        existing = await get_skill_in_scope_fn(skill.name, organization_id, owner_id)
+    else:
+        existing = await get_skill_fn(skill.name, organization_id)
+
     if existing is None:
-        held = await count_skills_fn(organization_id)
-        if held >= config.MAX_SKILLS_PER_ORGANIZATION:
-            raise _limit_reached()
+        if owner_id is None:
+            held = await count_skills_fn(organization_id)
+            if held >= config.MAX_SKILLS_PER_ORGANIZATION:
+                raise _limit_reached()
+        elif count_personal_skills_fn is not None:
+            if await count_personal_skills_fn(owner_id) >= config.MAX_PERSONAL_SKILLS_PER_USER:
+                raise _personal_limit_reached()
 
     return await upsert_skill_fn(skill)
 

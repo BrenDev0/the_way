@@ -30,6 +30,9 @@ CreateOwnerInvitationFn = Callable[[OwnerInvitationCreate], Awaitable[OwnerInvit
 GetOwnerInvitationByTokenHashFn = Callable[[str], Awaitable[OwnerInvitation | None]]
 ListOwnerInvitationsFn = Callable[[], Awaitable[Sequence[OwnerInvitation]]]
 RevokeOwnerInvitationFn = Callable[[UUID], Awaitable[bool]]
+GetOwnerInvitationFn = Callable[[UUID], Awaitable[OwnerInvitation | None]]
+# Removes the record of an invitation for good; whether there was one to remove.
+DeleteOwnerInvitationFn = Callable[[UUID], Awaitable[bool]]
 RevokePendingOwnerInvitationsForEmailFn = Callable[[str], Awaitable[int]]
 
 

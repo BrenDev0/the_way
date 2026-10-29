@@ -19,6 +19,8 @@ DOCUMENTS_HEADER = (
 )
 
 MISSING_DESCRIPTION = "(no description)"
+# Beside a skill that is this person's own, in the listing: nobody else in the organization has it.
+PERSONAL_MARK = " (yours)"
 
 # Readable as soon as their text is out: waiting on someone to press "Entrenar" left a
 # brand book uploaded and invisible.
@@ -45,7 +47,7 @@ def _clip(text: str, limit: int) -> str:
 
 def _skill_line(skill: Skill) -> str:
     line = (
-        f"- {skill.name}: "
+        f"- {skill.name}{PERSONAL_MARK if skill.owner_id is not None else ''}: "
         f"{_clip(skill.description, config.MAX_DESCRIPTION_CHARS) or MISSING_DESCRIPTION}"
     )
     triggers = [

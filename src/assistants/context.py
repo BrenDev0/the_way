@@ -24,8 +24,11 @@ from src.preferences.ports import CreatePreferenceFn, ListPreferencesForUserFn
 from src.projects.files import ProjectFiles
 from src.projects.ports import GetLibraryFn, ListTreeFn
 from src.skills.ports import (
+    CountPersonalSkillsFn,
     CountSkillsFn,
+    DeleteSkillInScopeFn,
     GetSkillFn,
+    GetSkillInScopeFn,
     ListSkillsForOrganizationFn,
     UpsertSkillFn,
 )
@@ -79,6 +82,10 @@ class ToolPorts:
     # a worker through, and the tools for it are then not offered
     stop_task_fn: StopTaskFn | None = None
     resume_task_fn: ResumeTaskFn | None = None
+    # a person's own skills, apart from the organization's
+    count_personal_skills_fn: CountPersonalSkillsFn | None = None
+    get_skill_in_scope_fn: GetSkillInScopeFn | None = None
+    delete_skill_in_scope_fn: DeleteSkillInScopeFn | None = None
 
 
 @dataclass(frozen=True)

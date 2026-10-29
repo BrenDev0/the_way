@@ -47,6 +47,7 @@ def make_invitation(
     expires_in: timedelta = timedelta(days=7),
     accepted_at=None,
     revoked_at=None,
+    organization_id=None,
 ) -> OwnerInvitation:
     now = datetime.now(UTC)
     return OwnerInvitation(
@@ -59,7 +60,7 @@ def make_invitation(
         accepted_at=accepted_at,
         revoked_at=revoked_at,
         invited_by=uuid4(),
-        organization_id=None,
+        organization_id=organization_id,
         created_at=now,
         updated_at=now,
     )
@@ -371,11 +372,74 @@ def test_status_reads_the_invitation_as_it_stands():
     assert status_of(make_invitation(), now) is OwnerInvitationStatus.PENDING
     assert status_of(make_invitation(expires_in=timedelta(days=-1)), now) is OwnerInvitationStatus.EXPIRED
     assert status_of(make_invitation(revoked_at=now), now) is OwnerInvitationStatus.REVOKED
-    assert status_of(make_invitation(accepted_at=now), now) is OwnerInvitationStatus.ACCEPTED
+    assert status_of(make_invitation(accepted_at=now, organization_id=uuid4()), now) is OwnerInvitationStatus.ACCEPTED
 
 
 def test_an_accepted_invitation_stays_accepted_after_its_link_would_have_lapsed():
     now = datetime.now(UTC)
-    invitation = make_invitation(expires_in=timedelta(days=-1), accepted_at=now - timedelta(days=3))
+    invitation = make_invitation(expires_in=timedelta(days=-1), accepted_at=now - timedelta(days=3), organization_id=uuid4())
 
     assert status_of(invitation, now) is OwnerInvitationStatus.ACCEPTED
+
+
+def test_an_accepted_invitation_whose_organization_was_deleted_says_so():
+    now = datetime.now(UTC)
+    # accepting fills in the organization; deleting the organization clears it again
+    deleted = make_invitation(accepted_at=now - timedelta(days=2), organization_id=None)
+
+    assert status_of(deleted, now) is OwnerInvitationStatus.ORGANIZATION_DELETED
+
+
+class Records:
+    """Invitations held in memory, with the two ports the delete takes."""
+
+    def __init__(self, *invitations: OwnerInvitation) -> None:
+        self.held = {invitation.id: invitation for invitation in invitations}
+
+    async def get(self, invitation_id):
+        return self.held.get(invitation_id)
+
+    async def delete(self, invitation_id):
+        return self.held.pop(invitation_id, None) is not None
+
+
+@pytest.mark.parametrize(
+    "invitation",
+    [
+        make_invitation(revoked_at=datetime.now(UTC)),
+        make_invitation(expires_in=timedelta(days=-1)),
+        make_invitation(accepted_at=datetime.now(UTC), organization_id=None),
+    ],
+    ids=["revoked", "lapsed", "organization-deleted"],
+)
+async def test_a_finished_invitation_can_be_taken_off_the_list(invitation):
+    records = Records(invitation)
+
+    await use_cases.delete_owner_invitation(invitation.id, records.get, records.delete)
+
+    assert records.held == {}
+
+
+@pytest.mark.parametrize(
+    "invitation",
+    [make_invitation(), make_invitation(accepted_at=datetime.now(UTC), organization_id=uuid4())],
+    ids=["still-usable", "organization-exists"],
+)
+async def test_an_invitation_still_in_use_cannot_be_deleted(invitation):
+    records = Records(invitation)
+
+    with pytest.raises(ConflictError) as exc:
+        await use_cases.delete_owner_invitation(invitation.id, records.get, records.delete)
+
+    assert exc.value.code == "owner_invitation_in_use"
+    assert exc.value.status_code == 409
+    assert invitation.id in records.held
+
+
+async def test_deleting_an_unknown_invitation_is_not_found():
+    records = Records()
+
+    with pytest.raises(NotFoundError) as exc:
+        await use_cases.delete_owner_invitation(uuid4(), records.get, records.delete)
+
+    assert exc.value.code == "invitation_not_found"

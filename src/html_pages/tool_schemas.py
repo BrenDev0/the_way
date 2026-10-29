@@ -47,7 +47,7 @@ class BuildHtmlPage(BaseModel):
     skill: str | None = Field(
         default=None,
         description="Optional. The organization skill this page is made under, by name "
-        "exactly as your skill listing gives it (e.g. 'landing-pages', 'output-documents'). "
+        "exactly as your skill listing gives it (e.g. 'brand-voice'). "
         "The page builder then follows that skill's method, rules and templates too -- "
         "without it, it never sees them. Pass it whenever you read a skill for this work.",
     )

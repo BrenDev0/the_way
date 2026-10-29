@@ -121,7 +121,7 @@ def tally_workers(
 
 async def measure(session: AsyncSession, organization_id: UUID, since: datetime) -> Usage:
     skill_names = (
-        await session.scalars(select(SkillRow.name).where(SkillRow.organization_id == organization_id))
+        await session.scalars(select(SkillRow.name).where(SkillRow.organization_id == organization_id, SkillRow.owner_id.is_(None)))
     ).all()
 
     in_window = (ConversationRow.organization_id == organization_id) & (MessageRow.created_at >= since)

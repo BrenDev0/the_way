@@ -52,10 +52,19 @@ async def resume_task_in_its_own_session(cache: CacheStore, task_id: UUID, user_
         return task
 
 
-def sql_tool_ports(session: AsyncSession, cache: CacheStore | None = None) -> ToolPorts:
+def sql_tool_ports(
+    session: AsyncSession, cache: CacheStore | None = None, user_id: UUID | None = None
+) -> ToolPorts:
+    async def list_skills_fn(organization_id: UUID):
+        # the organization's skills and this person's own: a run is on behalf of one person
+        return await skills_adapter.list_for_organization(session, organization_id, user_id)
+
+    async def get_skill_fn(name: str, organization_id: UUID):
+        return await skills_adapter.get_for_organization(session, name, organization_id, user_id)
+
     return ToolPorts(
-        list_skills_fn=partial(skills_adapter.list_for_organization, session),
-        get_skill_fn=partial(skills_adapter.get_for_organization, session),
+        list_skills_fn=list_skills_fn,
+        get_skill_fn=get_skill_fn,
         count_skills_fn=partial(skills_adapter.count_for_organization, session),
         upsert_skill_fn=partial(skills_adapter.upsert, session),
         list_preferences_fn=partial(preferences_adapter.list_for_user, session),
@@ -72,6 +81,9 @@ def sql_tool_ports(session: AsyncSession, cache: CacheStore | None = None) -> To
         search_messages_fn=partial(conversations_adapter.search_messages, session),
         stop_task_fn=partial(stop_task_in_its_own_session, cache) if cache is not None else None,
         resume_task_fn=partial(resume_task_in_its_own_session, cache) if cache is not None else None,
+        count_personal_skills_fn=partial(skills_adapter.count_personal, session),
+        get_skill_in_scope_fn=partial(skills_adapter.get_in_scope, session),
+        delete_skill_in_scope_fn=partial(skills_adapter.delete_for_organization, session),
     )
 
 
@@ -97,7 +109,7 @@ def sql_tool_context(
         credentials=credentials,
         llm_factory=llm_factory,
         files=project_files(session, organization_id, user_id, bucket_store),
-        ports=sql_tool_ports(session, cache),
+        ports=sql_tool_ports(session, cache, user_id),
         conversation_id=conversation_id,
         events=events,
     )

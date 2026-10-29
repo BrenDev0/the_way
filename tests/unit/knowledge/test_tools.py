@@ -77,29 +77,17 @@ async def test_an_unknown_skill_is_reported(read_skill):
     assert "No skill named 'nope'" in await read_skill(name="nope")
 
 
-async def test_a_skill_written_for_a_shell_says_first_how_it_runs_here(read_skill):
-    read_skill.stored["output-documents"] = make_skill(
-        name="output-documents", instructions="Run `node engine/render.js <file>.html`."
-    )
+async def test_a_skill_is_read_exactly_as_its_author_wrote_it(read_skill):
+    text = "Run `node engine/render.js <file>.html`, then `git push`."
+    read_skill.stored["any-name"] = make_skill(name="any-name", instructions=text)
 
-    text = await read_skill(name="output-documents")
-
-    # the note comes ahead of the skill, so it is on the first page of a long one
-    assert text.index("RUNNING THIS SKILL HERE") < text.index("node engine/render.js")
-    assert "HtmlToPdf" in text
+    assert await read_skill(name="any-name") == text
 
 
-async def test_a_skill_that_runs_as_written_gets_no_note(read_skill):
-    read_skill.stored["brand-voice"] = make_skill()
+async def test_nothing_is_put_ahead_of_a_skill_whatever_it_is_called(read_skill):
+    for name in ("output-documents", "landing-pages", "drift-check", "my-own-thing"):
+        read_skill.stored[name] = make_skill(name=name, instructions="Do the thing.")
 
-    assert "RUNNING THIS SKILL HERE" not in await read_skill(name="brand-voice")
+        assert await read_skill(name=name) == "Do the thing."
 
 
-async def test_a_brand_landing_page_reads_the_pack_before_asking_and_flags_the_request(read_skill):
-    read_skill.stored["landing-pages"] = make_skill(name="landing-pages", instructions="0 Brief.")
-
-    text = await read_skill(name="landing-pages")
-    note = text.split("=== THE SKILL")[0]
-
-    assert "<brand>/voice.md" in note and "BEFORE asking" in note
-    assert "forbids" in note and "another library brand's name" in note

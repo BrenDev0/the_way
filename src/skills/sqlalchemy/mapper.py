@@ -18,6 +18,7 @@ def row_to_domain(
         created_at=row.created_at,
         updated_at=row.updated_at,
         triggers=list(row.triggers or []),
+        owner_id=row.owner_id,
         files=dict(row.files or {}) if with_files else None,
         file_names=sorted(file_names),
     )
@@ -32,4 +33,5 @@ def domain_create_to_row(skill: SkillCreate) -> SkillRow:
         triggers=list(skill.triggers),
         files=dict(skill.files or {}),
         created_by=skill.created_by,
+        owner_id=skill.owner_id,
     )

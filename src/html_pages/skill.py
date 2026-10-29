@@ -6,7 +6,6 @@ skill's text and its reference files (a template, a stylesheet, a list of laws) 
 passes whole, so the page is made the skill's way rather than the house's guess at it.
 """
 
-from src.knowledge import skill_notes
 from src.skills.domain import Skill
 
 from . import config
@@ -31,7 +30,7 @@ def render(skill: Skill) -> str:
         HEADER.format(name=skill.name),
         GUIDANCE,
         "",
-        skill_notes.note_for(skill.name, skill.instructions) + skill.instructions.strip(),
+        skill.instructions.strip(),
     ]
     budget = config.MAX_SKILL_CHARS - len(sections[-1])
     left_out: list[str] = []

@@ -108,6 +108,10 @@ class RevokeOwnerInvitationResponse(ApiBaseModel):
     detail: str
 
 
+class DeleteOwnerInvitationResponse(ApiBaseModel):
+    detail: str
+
+
 class AcceptOwnerInvitationRequest(ApiBaseModel):
     token: str
     password: str

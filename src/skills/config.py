@@ -3,6 +3,8 @@ MAX_NAME_CHARS = 64
 MAX_DESCRIPTION_CHARS = 500
 MAX_INSTRUCTIONS_CHARS = 100_000
 MAX_SKILLS_PER_ORGANIZATION = 200
+# What one person may keep of their own, apart from the organization's skills.
+MAX_PERSONAL_SKILLS_PER_USER = 15
 
 # Example requests that should route to a skill. They are listed beside its description in
 # the agent's skill index, so they cost context in every conversation: keep them few.

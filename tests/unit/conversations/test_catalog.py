@@ -97,12 +97,16 @@ def test_a_web_search_key_brings_the_web_tools():
     assert {"WebSearch", "ExtractWebPages", "CrawlWebPages"} <= set(tools)
 
 
-def test_members_cannot_author_organization_skills():
-    assert "BuildSkill" not in conversation_tools.build(context(Role.MEMBER), desktop=False)
+@pytest.mark.parametrize("role", [Role.OWNER, Role.ADMIN, Role.MEMBER])
+def test_everyone_can_build_and_delete_skills_of_their_own(role):
+    tools = conversation_tools.build(context(role), desktop=False)
+
+    assert {"BuildSkill", "DeleteMySkill"} <= set(tools)
+    assert tools["DeleteMySkill"].requires_approval is True
 
 
-@pytest.mark.parametrize("role", [Role.OWNER, Role.ADMIN])
-def test_owners_and_admins_can_and_are_asked_first(role):
+@pytest.mark.parametrize("role", [Role.OWNER, Role.ADMIN, Role.MEMBER])
+def test_saving_a_skill_always_asks_first(role):
     tool = conversation_tools.build(context(role), desktop=False)["BuildSkill"]
 
     assert tool.requires_approval is True

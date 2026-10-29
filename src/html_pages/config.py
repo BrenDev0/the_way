@@ -36,8 +36,8 @@ BUILDER_TOOLS = frozenset(
 MAX_BRAND_FILE_CHARS = 8_000
 
 # A skill named for the page goes to both passes: its text, then its reference files, until
-# this budget is spent (the kit's largest, output-documents, is about 47 000 without its
-# script). Files past it are named, not sent.
+# this budget is spent (a large skill can run to about 47 000 characters without its
+# scripts). Files past it are named, not sent.
 MAX_SKILL_CHARS = 60_000
 
 # Reference files that are programs, not method: the builder cannot run them, and a page

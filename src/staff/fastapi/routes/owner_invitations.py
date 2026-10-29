@@ -13,6 +13,8 @@ from src.fastapi import dependencies as api_dependencies
 from src.staff.domain import StaffMember
 from src.staff.ports import (
     CreateOwnerInvitationFn,
+    DeleteOwnerInvitationFn,
+    GetOwnerInvitationFn,
     ListOwnerInvitationsFn,
     RevokeOwnerInvitationFn,
     RevokePendingOwnerInvitationsForEmailFn,
@@ -24,6 +26,7 @@ from src.users.ports import GetUserByEmailHashFn
 from .. import dependencies as staff_dependencies
 from ..schemas import (
     CreateOwnerInvitationRequest,
+    DeleteOwnerInvitationResponse,
     OwnerInvitationResponse,
     RevokeOwnerInvitationResponse,
 )
@@ -101,3 +104,23 @@ async def revoke_owner_invitation_route(
 ) -> RevokeOwnerInvitationResponse:
     await use_cases.revoke_owner_invitation(invitation_id, revoke_owner_invitation_fn)
     return RevokeOwnerInvitationResponse(detail="Invitation revoked")
+
+
+@router.delete("/{invitation_id}/record", response_model=DeleteOwnerInvitationResponse)
+async def delete_owner_invitation_route(
+    invitation_id: UUID,
+    staff: CurrentStaff,
+    get_owner_invitation_fn: Annotated[
+        GetOwnerInvitationFn,
+        Depends(staff_dependencies.provide_get_owner_invitation_fn),
+    ],
+    delete_owner_invitation_fn: Annotated[
+        DeleteOwnerInvitationFn,
+        Depends(staff_dependencies.provide_delete_owner_invitation_fn),
+    ],
+) -> DeleteOwnerInvitationResponse:
+    """Takes a finished invitation off the list for good: revoked, lapsed, or accepted for an
+    organization that has since been deleted. 409 owner_invitation_in_use for one still usable or
+    whose organization exists."""
+    await use_cases.delete_owner_invitation(invitation_id, get_owner_invitation_fn, delete_owner_invitation_fn)
+    return DeleteOwnerInvitationResponse(detail="Invitation deleted")

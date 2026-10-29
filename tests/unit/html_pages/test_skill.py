@@ -16,8 +16,8 @@ def test_the_skill_and_its_reference_files_reach_the_builder():
     assert "0 Brief, 1 Structure." in text
     assert "--- landing-pages/brief.md ---\n# Ten questions" in text
     assert "Every figure attributed." in text
-    # the translation for this product rides along
-    assert "CheckPage" in text
+    # the skill is the customer's: nothing is added to it, whatever it is called
+    assert "RUNNING THIS SKILL HERE" not in text
 
 
 def test_a_program_among_the_files_is_named_not_sent():

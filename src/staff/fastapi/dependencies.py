@@ -28,8 +28,10 @@ from src.staff.ports import (
     CreateOwnerInvitationFn,
     CreateStaffMemberFn,
     CreateStaffSessionFn,
+    DeleteOwnerInvitationFn,
     GetOrganizationSummaryFn,
     GetOwnerInvitationByTokenHashFn,
+    GetOwnerInvitationFn,
     GetStaffMemberByEmailHashFn,
     GetStaffMemberByIdFn,
     GetStaffSessionByTokenHashFn,
@@ -150,6 +152,20 @@ def provide_revoke_owner_invitation_fn(session: Session) -> RevokeOwnerInvitatio
         return await adapter.revoke_invitation(session, invitation_id)
 
     return revoke_owner_invitation_fn
+
+
+def provide_get_owner_invitation_fn(session: Session) -> GetOwnerInvitationFn:
+    async def get_owner_invitation_fn(invitation_id: UUID):
+        return await adapter.get_invitation(session, invitation_id)
+
+    return get_owner_invitation_fn
+
+
+def provide_delete_owner_invitation_fn(session: Session) -> DeleteOwnerInvitationFn:
+    async def delete_owner_invitation_fn(invitation_id: UUID):
+        return await adapter.delete_invitation(session, invitation_id)
+
+    return delete_owner_invitation_fn
 
 
 def provide_revoke_pending_owner_invitations_for_email_fn(

@@ -20,7 +20,10 @@ each one with ReadSkill before your first other call. If it names none but a lis
 covers the work (its description or "Asked as" examples match), read and follow that one
 too. Read all of a skill, not its description: the detail is the method. When you build a
 page under a skill, pass its name to BuildHtmlPage as `skill` so the page builder follows
-it as well. In your report, name the skills you followed.
+it as well. In your report, name the skills you followed. A skill may name a tool or a command
+you do not have, because its author wrote it for another agent: follow its method with your own
+tools. Where nothing you have can do a step, do not invent it -- say in your report which step
+was not done.
 
 PUT INDEPENDENT TOOL CALLS IN ONE REPLY. Several tool calls in the same reply are run at
 the same time, and the whole reply costs one step. Reading six files, searching for three

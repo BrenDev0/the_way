@@ -2,7 +2,7 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from src.staff.domain import (
@@ -131,6 +131,18 @@ async def revoke_invitation(session: AsyncSession, invitation_id: UUID) -> bool:
         row.revoked_at = datetime.now(UTC)
         await session.flush()
     return True
+
+
+async def get_invitation(session: AsyncSession, invitation_id: UUID) -> OwnerInvitation | None:
+    row = await session.get(OwnerInvitationRow, invitation_id)
+    return mapper.invitation_to_domain(row) if row else None
+
+
+async def delete_invitation(session: AsyncSession, invitation_id: UUID) -> bool:
+    result = await session.execute(
+        delete(OwnerInvitationRow).where(OwnerInvitationRow.id == invitation_id).returning(OwnerInvitationRow.id)
+    )
+    return result.scalar_one_or_none() is not None
 
 
 async def revoke_pending_invitations_for_email(session: AsyncSession, email_hash: str) -> int:

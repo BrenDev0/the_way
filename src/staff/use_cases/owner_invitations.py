@@ -9,11 +9,19 @@ from src.organizations.domain import Organization, OrganizationCreate
 from src.organizations.ports import CreateOrganizationFn
 from src.staff import emails as staff_emails
 from src.staff import tokens
-from src.staff.domain import OwnerInvitation, OwnerInvitationCreate, StaffMember
+from src.staff.domain import (
+    OwnerInvitation,
+    OwnerInvitationCreate,
+    OwnerInvitationStatus,
+    StaffMember,
+    status_of,
+)
 from src.staff.ports import (
     ClaimOwnerInvitationFn,
     CreateOwnerInvitationFn,
+    DeleteOwnerInvitationFn,
     GetOwnerInvitationByTokenHashFn,
+    GetOwnerInvitationFn,
     ListOwnerInvitationsFn,
     RevokeOwnerInvitationFn,
     RevokePendingOwnerInvitationsForEmailFn,
@@ -106,6 +114,28 @@ async def revoke_owner_invitation(
 ) -> None:
     if not await revoke_owner_invitation_fn(invitation_id):
         raise NotFoundError(message="Invitation not found", code="invitation_not_found")
+
+
+async def delete_owner_invitation(
+    invitation_id: UUID,
+    get_owner_invitation_fn: GetOwnerInvitationFn,
+    delete_owner_invitation_fn: DeleteOwnerInvitationFn,
+) -> None:
+    """Takes an invitation off the list for good -- one that has done its job and nobody needs to
+    see: revoked, lapsed, or accepted for an organization that has since been deleted. One that
+    could still be used (pending), or whose organization still exists (accepted), is the record
+    of how something came to be: it is revoked, or the organization deleted, first."""
+    invitation = await get_owner_invitation_fn(invitation_id)
+    if invitation is None:
+        raise NotFoundError(message="Invitation not found", code="invitation_not_found")
+
+    if status_of(invitation, datetime.now(UTC)) in (OwnerInvitationStatus.PENDING, OwnerInvitationStatus.ACCEPTED):
+        raise ConflictError(
+            message="This invitation is still in use: revoke it, or delete its organization, first",
+            code="owner_invitation_in_use",
+        )
+
+    await delete_owner_invitation_fn(invitation_id)
 
 
 async def resolve_owner_invitation(

@@ -342,3 +342,56 @@ def test_an_owner_made_this_way_can_invite_their_own_people(client, sender, staf
     )
 
     assert response.status_code == 201, response.text
+
+
+def test_an_invitation_whose_organization_was_deleted_says_so_and_can_then_be_removed(client, sender, staff):
+    address = f"gone-{uuid4().hex[:8]}@acme.example"
+    invite(client, organizationName="Short Lived Inc", email=address)
+    organization_id = accept(client, sender.token_in_last_email()).json()["organizationId"]
+    sign_in_staff(client, staff)
+
+    def mine():
+        listed = call(client, "GET", f"{WEB}/staff/owner-invitations").json()
+        return next(item for item in listed if item["email"] == address)
+
+    # while the organization exists, the record of how it began cannot be removed
+    assert mine()["status"] == "accepted"
+    refused = call(client, "DELETE", f"{WEB}/staff/owner-invitations/{mine()['id']}/record")
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "owner_invitation_in_use"
+
+    deleted = call(
+        client,
+        "DELETE",
+        f"{WEB}/staff/organizations/{organization_id}",
+        {"confirmation": "Short Lived Inc"},
+    )
+    assert deleted.status_code == 200, deleted.text
+
+    # the invitation stays as a record, and now says what became of the organization
+    assert mine()["status"] == "organization_deleted"
+    assert mine()["organizationId"] is None
+
+    removed = call(client, "DELETE", f"{WEB}/staff/owner-invitations/{mine()['id']}/record")
+
+    assert removed.status_code == 200, removed.text
+    assert [item for item in call(client, "GET", f"{WEB}/staff/owner-invitations").json() if item["email"] == address] == []
+    assert call(client, "DELETE", f"{WEB}/staff/owner-invitations/{uuid4()}/record").status_code == 404
+
+
+def test_a_pending_invitation_cannot_be_deleted_only_revoked(client, sender, staff):
+    address = f"pending-{uuid4().hex[:8]}@acme.example"
+    created = invite(client, organizationName="Acme", email=address).json()
+
+    refused = call(client, "DELETE", f"{WEB}/staff/owner-invitations/{created['id']}/record")
+
+    assert refused.status_code == 409
+    assert call(client, "DELETE", f"{WEB}/staff/owner-invitations/{created['id']}").status_code == 200
+    # revoked, it can be taken off the list
+    assert call(client, "DELETE", f"{WEB}/staff/owner-invitations/{created['id']}/record").status_code == 200
+
+
+def test_removing_an_invitation_needs_a_staff_session(client, sender):
+    client.cookies.clear()
+
+    assert call(client, "DELETE", f"{WEB}/staff/owner-invitations/{uuid4()}/record").status_code == 401
