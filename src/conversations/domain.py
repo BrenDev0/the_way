@@ -87,6 +87,8 @@ class Conversation:
     created_at: datetime
     updated_at: datetime
     client: ConversationClient = ConversationClient.DESKTOP
+    # the person's folder it is kept in, or None: in the main list
+    folder_id: UUID | None = None
 
 
 @dataclass(frozen=True)
@@ -99,6 +101,17 @@ class TurnContext:
     stable: tuple[str, ...] = ()
     # After the history: the date, the working folder, voice, preferences.
     current: str = ""
+
+
+@dataclass(frozen=True)
+class ConversationFolder:
+    """A folder of one person's own chats, to keep them apart (by client, by topic). One level:
+    a folder holds chats, never other folders. Nobody else sees it."""
+
+    id: UUID
+    user_id: UUID
+    name: str
+    created_at: datetime
 
 
 @dataclass

@@ -10,15 +10,19 @@ from src.conversations.fastapi.schemas import (
     CreateConversationRequest,
     DeleteConversationResponse,
     MessageResponse,
+    MoveConversationRequest,
 )
 from src.conversations.ports import (
     CreateConversationFn,
     DeleteConversationForUserFn,
     GetConversationForUserFn,
+    GetFolderFn,
     ListConversationsForUserFn,
     ListMessagesForUserFn,
+    MoveConversationFn,
 )
 from src.conversations.use_cases import conversations as conversation_use_cases
+from src.conversations.use_cases import folders as folder_use_cases
 
 router = APIRouter(tags=["conversations"])
 
@@ -70,6 +74,27 @@ async def get_conversation_route(
         conversation_id=conversation_id,
         user_id=current_user.id,
         get_conversation_for_user_fn=get_conversation_for_user_fn,
+    )
+    return ConversationResponse.from_domain(conversation)
+
+
+@router.patch("/{conversation_id}/folder", response_model=ConversationResponse)
+async def move_conversation_route(
+    conversation_id: UUID,
+    payload: MoveConversationRequest,
+    current_user: CurrentUser,
+    get_folder_fn: Annotated[GetFolderFn, Depends(conversations_dependencies.provide_get_folder_fn)],
+    move_conversation_fn: Annotated[
+        MoveConversationFn, Depends(conversations_dependencies.provide_move_conversation_fn)
+    ],
+) -> ConversationResponse:
+    """Files the chat in one of the person's folders; a null folderId takes it out of its folder."""
+    conversation = await folder_use_cases.move_conversation(
+        conversation_id=conversation_id,
+        user_id=current_user.id,
+        folder_id=payload.folder_id,
+        get_folder_fn=get_folder_fn,
+        move_conversation_fn=move_conversation_fn,
     )
     return ConversationResponse.from_domain(conversation)
 

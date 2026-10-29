@@ -9,12 +9,20 @@ from src.auth.fastapi import dependencies as auth_dependencies
 from src.conversations.domain import ConversationCreate, TurnState
 from src.conversations.ports import (
     AppendMessagesFn,
+    CountFoldersFn,
     CreateConversationFn,
+    CreateFolderFn,
     DeleteConversationForUserFn,
+    DeleteFolderFn,
+    FindFolderByNameFn,
     GetConversationByIdFn,
     GetConversationForUserFn,
+    GetFolderFn,
     ListConversationsForUserFn,
+    ListFoldersFn,
     ListMessagesForUserFn,
+    MoveConversationFn,
+    RenameFolderFn,
     SaveTurnStateFn,
 )
 from src.core.bucket.ports import BucketStore
@@ -62,6 +70,65 @@ def provide_list_conversations_for_user_fn(
         return await adapter.list_for_user(session, user_id)
 
     return list_conversations_for_user_fn
+
+
+Db = Annotated[AsyncSession, Depends(api_dependencies.get_db_session)]
+
+
+def provide_list_folders_fn(session: Db) -> ListFoldersFn:
+    async def list_folders_fn(user_id: UUID):
+        return await adapter.list_folders(session, user_id)
+
+    return list_folders_fn
+
+
+def provide_count_folders_fn(session: Db) -> CountFoldersFn:
+    async def count_folders_fn(user_id: UUID):
+        return await adapter.count_folders(session, user_id)
+
+    return count_folders_fn
+
+
+def provide_find_folder_by_name_fn(session: Db) -> FindFolderByNameFn:
+    async def find_folder_by_name_fn(user_id: UUID, name: str):
+        return await adapter.find_folder_by_name(session, user_id, name)
+
+    return find_folder_by_name_fn
+
+
+def provide_get_folder_fn(session: Db) -> GetFolderFn:
+    async def get_folder_fn(folder_id: UUID, user_id: UUID):
+        return await adapter.get_folder(session, folder_id, user_id)
+
+    return get_folder_fn
+
+
+def provide_create_folder_fn(session: Db) -> CreateFolderFn:
+    async def create_folder_fn(user_id: UUID, name: str):
+        return await adapter.create_folder(session, user_id, name)
+
+    return create_folder_fn
+
+
+def provide_rename_folder_fn(session: Db) -> RenameFolderFn:
+    async def rename_folder_fn(folder_id: UUID, user_id: UUID, name: str):
+        return await adapter.rename_folder(session, folder_id, user_id, name)
+
+    return rename_folder_fn
+
+
+def provide_delete_folder_fn(session: Db) -> DeleteFolderFn:
+    async def delete_folder_fn(folder_id: UUID, user_id: UUID):
+        return await adapter.delete_folder(session, folder_id, user_id)
+
+    return delete_folder_fn
+
+
+def provide_move_conversation_fn(session: Db) -> MoveConversationFn:
+    async def move_conversation_fn(conversation_id: UUID, user_id: UUID, folder_id: UUID | None):
+        return await adapter.move_to_folder(session, conversation_id, user_id, folder_id)
+
+    return move_conversation_fn
 
 
 def provide_delete_conversation_for_user_fn(

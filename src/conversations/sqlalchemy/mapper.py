@@ -4,6 +4,7 @@ from src.conversations.domain import (
     Conversation,
     ConversationClient,
     ConversationCreate,
+    ConversationFolder,
     ConversationStatus,
     PauseReason,
     TurnPause,
@@ -12,7 +13,7 @@ from src.conversations.domain import (
 from src.core.llm.domain import Message, TokenUsage, ToolCall
 from src.core.tools.domain import ClientRequest, Decision, ToolLocation, ToolResult
 
-from .models import ConversationRow, MessageRow
+from .models import ConversationFolderRow, ConversationRow, MessageRow
 
 
 def row_to_domain(row: ConversationRow) -> Conversation:
@@ -45,7 +46,12 @@ def row_to_domain(row: ConversationRow) -> Conversation:
         created_at=row.created_at,
         updated_at=row.updated_at,
         client=ConversationClient(row.client or ConversationClient.DESKTOP),
+        folder_id=row.folder_id,
     )
+
+
+def folder_to_domain(row: ConversationFolderRow) -> ConversationFolder:
+    return ConversationFolder(id=row.id, user_id=row.user_id, name=row.name, created_at=row.created_at)
 
 
 def domain_create_to_row(conversation: ConversationCreate) -> ConversationRow:

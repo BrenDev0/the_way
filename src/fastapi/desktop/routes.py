@@ -21,6 +21,9 @@ from src.conversations.fastapi.routes.conversations import (
     router as conversations_router,
 )
 from src.conversations.fastapi.routes.events import router as conversation_events_router
+from src.conversations.fastapi.routes.folders import (
+    router as conversation_folders_router,
+)
 from src.conversations.fastapi.routes.turns import router as conversation_turns_router
 from src.desktop.fastapi.routes import router as desktop_tools_router
 from src.downloads.fastapi.desktop_routes import router as app_version_router
@@ -36,6 +39,7 @@ router.include_router(app_version_router, prefix="/app")
 router.include_router(desktop_auth_router, prefix="/auth")
 router.include_router(sessions_router, prefix="/auth")
 router.include_router(background_router, prefix="/background-tasks")
+router.include_router(conversation_folders_router, prefix="/conversation-folders")
 router.include_router(conversations_router, prefix="/conversations")
 router.include_router(conversation_attachments_router, prefix="/conversations")
 router.include_router(conversation_turns_router, prefix="/conversations")

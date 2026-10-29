@@ -9,6 +9,18 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.core.database.sqlalchemy.models import Base, IDMixin, TimestampMixin
 
 
+class ConversationFolderRow(Base, IDMixin, TimestampMixin):
+    __tablename__ = "conversation_folders"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_conversation_folder_name"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(60), nullable=False)
+
+
 class ConversationRow(Base, IDMixin, TimestampMixin):
     __tablename__ = "conversations"
 
@@ -23,6 +35,12 @@ class ConversationRow(Base, IDMixin, TimestampMixin):
         index=True,
     )
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # Deleting a folder puts its chats back in the main list; it never deletes them.
+    folder_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("conversation_folders.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     client: Mapped[str] = mapped_column(String(16), nullable=False, default="desktop")
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     pending_tool_calls: Mapped[list[Any]] = mapped_column(JSONB, nullable=False, default=list)

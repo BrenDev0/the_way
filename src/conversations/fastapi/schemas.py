@@ -11,6 +11,7 @@ from src.fastapi.schemas import ApiBaseModel
 from ..domain import (
     Conversation,
     ConversationClient,
+    ConversationFolder,
     ConversationStatus,
     PauseReason,
     ToolResolution,
@@ -21,6 +22,27 @@ from ..domain import (
 class CreateConversationRequest(ApiBaseModel):
     title: str = "New conversation"
     client: ConversationClient = ConversationClient.DESKTOP
+
+
+class FolderNameRequest(ApiBaseModel):
+    # the use case trims it and gives its own reasons; the field only keeps the body sane
+    name: str = Field(min_length=0, max_length=200)
+
+
+class MoveConversationRequest(ApiBaseModel):
+    # null takes the chat out of its folder
+    folder_id: UUID | None = None
+
+
+class FolderResponse(ApiBaseModel):
+    id: UUID
+    # a one-letter name is allowed, which the base model's two-character minimum would refuse
+    name: str = Field(min_length=0)
+    created_at: datetime
+
+    @classmethod
+    def from_domain(cls, folder: ConversationFolder) -> Self:
+        return cls(id=folder.id, name=folder.name, created_at=folder.created_at)
 
 
 class SendMessageRequest(ApiBaseModel):
@@ -113,6 +135,8 @@ class ConversationResponse(ApiBaseModel):
     id: UUID
     title: str
     client: ConversationClient
+    # the person's folder this chat is filed in, if any
+    folder_id: UUID | None = None
     status: ConversationStatus
     # why the turn stopped, while status is 'paused'
     pause: PauseResponse | None = None
@@ -129,6 +153,7 @@ class ConversationResponse(ApiBaseModel):
             id=conversation.id,
             title=conversation.title,
             client=conversation.client,
+            folder_id=conversation.folder_id,
             status=conversation.turn.status,
             pause=PauseResponse.from_domain(pause) if pause is not None else None,
             pending_tool_calls=[
