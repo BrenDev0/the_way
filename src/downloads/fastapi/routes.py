@@ -13,27 +13,16 @@ from fastapi import APIRouter, Depends
 
 from src.core.bucket.domain import BucketError
 from src.core.bucket.ports import BucketStore
-from src.core.exceptions import NotFoundError, ServiceUnavailableError
 from src.fastapi import dependencies as api_dependencies
 from src.fastapi.schemas import ApiBaseModel
 
-from .. import config, versions
+from .. import config, links, versions
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["downloads"])
 
 Bucket = Annotated[BucketStore, Depends(api_dependencies.get_bucket_store)]
-
-
-def _unavailable(exc: BucketError) -> ServiceUnavailableError:
-    """The bucket could not be read: the page is told to try again, not given a 500, and the
-    reason is logged."""
-    logger.warning("The installers bucket could not be read: %s", exc)
-    return ServiceUnavailableError(
-        message="Las descargas no están disponibles en este momento. Inténtalo de nuevo en unos minutos.",
-        code="downloads_unavailable",
-    )
 
 
 class InstallerResponse(ApiBaseModel):
@@ -57,17 +46,18 @@ async def list_installers(bucket: Bucket) -> list[InstallerResponse]:
         published = {item.key: item for item in await bucket.list(config.folder())}
         recorded = await versions.published(bucket)
     except BucketError as exc:
-        raise _unavailable(exc) from exc
+        raise links.unavailable(exc) from exc
     listed = []
     for installer in config.INSTALLERS.values():
         found = published.get(config.key(installer))
+        version = recorded.get(installer.platform) if found else None
         listed.append(
             InstallerResponse(
                 platform=installer.platform,
                 label=installer.label,
-                filename=installer.filename,
+                filename=config.download_name(installer, version),
                 available=found is not None,
-                version=recorded.get(installer.platform) if found else None,
+                version=version,
                 size_bytes=found.size if found else None,
                 updated_at=found.modified if found else None,
             )
@@ -77,19 +67,5 @@ async def list_installers(bucket: Bucket) -> list[InstallerResponse]:
 
 @router.get("/desktop/{platform}", response_model=InstallerLinkResponse)
 async def installer_link(platform: str, bucket: Bucket) -> InstallerLinkResponse:
-    installer = config.INSTALLERS.get(platform)
-    try:
-        published = installer is not None and await bucket.exists(config.key(installer))
-    except BucketError as exc:
-        raise _unavailable(exc) from exc
-    if installer is None or not published:
-        raise NotFoundError(
-            message="Ese instalador todavía no está publicado.", code="installer_not_published"
-        )
-    try:
-        url = await bucket.presign_get(
-            config.key(installer), config.LINK_SECONDS, download_name=installer.filename
-        )
-    except BucketError as exc:
-        raise _unavailable(exc) from exc
-    return InstallerLinkResponse(url=url, filename=installer.filename)
+    link = await links.installer_link(bucket, platform)
+    return InstallerLinkResponse(url=link.url, filename=link.filename)

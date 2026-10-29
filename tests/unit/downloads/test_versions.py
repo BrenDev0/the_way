@@ -110,3 +110,71 @@ async def test_a_healthy_bucket_still_answers_as_before():
     answer = await desktop_routes.app_version(bucket_with(windows="0.1.1", mac="0.1.0"))
 
     assert answer.latest == {"windows": "0.1.1", "mac": "0.1.0"}
+
+
+# --- the version in the name the installer is saved as ----------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("platform", "version", "name"),
+    [
+        ("windows", "0.1.7", "THE-WAY-Setup-0.1.7.exe"),
+        ("mac", "1.20.3", "THE-WAY-mac-1.20.3.zip"),
+        ("windows", None, "THE-WAY-Setup.exe"),
+        # read from a file in the bucket: only a plain x.y.z goes into a file name
+        ("windows", "0.1.7/../../x", "THE-WAY-Setup.exe"),
+        ("windows", "0.1.7-beta", "THE-WAY-Setup.exe"),
+        ("windows", "", "THE-WAY-Setup.exe"),
+    ],
+)
+def test_the_name_it_is_saved_as_carries_the_version_when_it_is_known(platform, version, name):
+    assert config.download_name(config.INSTALLERS[platform], version) == name
+
+
+async def test_the_link_saves_the_installer_under_a_name_with_its_version():
+    bucket = bucket_with(windows="0.1.7")
+
+    link = await routes.installer_link("windows", bucket)
+
+    assert link.filename == "THE-WAY-Setup-0.1.7.exe"
+    key, _, name = bucket.presigned_gets[0]
+    assert key == config.key(config.INSTALLERS["windows"])  # still the one fixed key in the bucket
+    assert name == "THE-WAY-Setup-0.1.7.exe"
+
+
+async def test_the_page_lists_the_installer_under_its_versioned_name():
+    listed = {item.platform: item for item in await routes.list_installers(bucket_with(windows="0.1.7"))}
+
+    assert listed["windows"].filename == "THE-WAY-Setup-0.1.7.exe"
+    assert listed["mac"].filename == "THE-WAY-mac.zip"  # nothing published, no version to name
+
+
+# --- the desktop app updating itself -------------------------------------------------------------
+
+
+async def test_the_app_is_given_a_link_to_the_installer_with_its_version():
+    bucket = bucket_with(windows="0.1.7")
+
+    answer = await desktop_routes.app_installer("windows", bucket)
+
+    assert answer.version == "0.1.7"
+    assert answer.filename == "THE-WAY-Setup-0.1.7.exe"
+    assert answer.url == "https://bucket.example/download"
+
+
+async def test_the_app_is_told_when_there_is_nothing_to_download():
+    from src.core.exceptions import NotFoundError
+
+    with pytest.raises(NotFoundError) as raised:
+        await desktop_routes.app_installer("windows", FakeBucketStore())
+
+    assert raised.value.code == "installer_not_published"
+
+
+async def test_the_app_gets_a_503_not_a_500_when_the_bucket_cannot_be_read():
+    from src.core.exceptions import ServiceUnavailableError
+
+    with pytest.raises(ServiceUnavailableError) as raised:
+        await desktop_routes.app_installer("windows", BrokenBucketStore())
+
+    assert raised.value.code == "downloads_unavailable"

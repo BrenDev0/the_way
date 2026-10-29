@@ -5,7 +5,9 @@ link, so the bucket needs no public part. One file per platform, at a fixed key:
 a new version replaces it, and the page always offers the latest.
 """
 
+import re
 from dataclasses import dataclass
+from pathlib import PurePosixPath
 from urllib.parse import urlparse
 
 from src.core.settings.api import settings as api_settings
@@ -24,6 +26,20 @@ INSTALLERS = {
     "windows": Installer("windows", "Windows", "THE-WAY-Setup.exe"),
     "mac": Installer("mac", "macOS", "THE-WAY-mac.zip"),
 }
+
+# Only a plain x.y.z goes into a file name: the version is read from a file in the bucket.
+_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
+
+
+def download_name(installer: Installer, version: str | None) -> str:
+    """What the browser saves the installer as: the version in it when it is known
+    (THE-WAY-Setup-0.1.7.exe), so two downloads are told apart and a file says what it is.
+    The bucket still holds it at its one fixed name."""
+    if not version or not _VERSION.match(version):
+        return installer.filename
+    path = PurePosixPath(installer.filename)
+    return f"{path.stem}-{version}{path.suffix}"
+
 
 # Long enough to start a slow download -- the link only has to be valid when it begins.
 LINK_SECONDS = 10 * 60
