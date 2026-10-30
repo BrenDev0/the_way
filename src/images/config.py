@@ -18,6 +18,9 @@ IMAGES_PER_APPROVAL = 10
 
 MAX_IMAGES_PER_CALL = 8
 
+# The calls that allowance covers; anything else that must ask (a video) asks every time.
+TOOLS = frozenset({"GenerateImages", "EditImage"})
+
 
 def images_in(name: str, args: dict) -> int:
     """How many images a call makes -- what it costs against the run's allowance."""

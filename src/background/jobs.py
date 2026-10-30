@@ -237,11 +237,13 @@ async def _work(
     llm = await context.llm_factory(config.MODELS, config.TEMPERATURE)
     # Nobody is watching, so the worker approves its own calls -- except the ones that
     # must always ask the user, on which it suspends. Once they have approved an image,
-    # the rest of the run's images go through on that approval, up to its allowance.
+    # the rest of the run's images go through on that approval, up to its allowance --
+    # never a video, which asks every time.
     gate = AllowanceGate(
         frozenset(name for name, tool in tools.items() if tool.always_ask),
         _allowance(resumed),
         lambda request: images_config.images_in(request.call.name, request.call.args),
+        covers=images_config.TOOLS,
     )
 
     # The same knowledge listing the conversation sees. Without it the worker held ReadSkill

@@ -42,6 +42,9 @@ TOOLS = frozenset(
         # Always ask: the worker suspends on these until the user approves (see jobs.py).
         "GenerateImages",
         "EditImage",
+        "GenerateVideo",
+        "AnimateImage",
+        "EditVideo",
         "WebSearch",
         "MapWebPages",
         "ExtractWebPages",

@@ -41,22 +41,26 @@ class Allowance:
 class AllowanceGate(AskOnlyGate):
     """A background run's gate once the user has approved its first image: further calls
     that must ask go through on their own -- with the user's picks -- while the allowance
-    lasts, and the run suspends again only when it runs out."""
+    lasts, and the run suspends again only when it runs out. Only the tools in `covers`
+    draw on it (all that must ask, when not given); a call to any other still asks."""
 
     def __init__(
         self,
         always_ask: frozenset[str],
         allowance: Allowance | None,
         cost: Callable[[ClientRequest], int],
+        covers: frozenset[str] | None = None,
     ) -> None:
         super().__init__(always_ask)
         self.allowance = allowance
         self._cost = cost
+        self._covers = always_ask if covers is None else covers
 
     async def decide(self, requests: Sequence[ClientRequest]) -> tuple[Decision, ...]:
         asking = [request for request in requests if request.call.name in self._always_ask]
+        covered = all(request.call.name in self._covers for request in asking)
         needed = sum(self._cost(request) for request in asking)
-        if asking and self.allowance and needed <= self.allowance.remaining:
+        if asking and covered and self.allowance and needed <= self.allowance.remaining:
             self.allowance.remaining -= needed
             picks = dict(self.allowance.args)
             return tuple(
