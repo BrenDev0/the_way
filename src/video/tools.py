@@ -9,6 +9,7 @@ key, as jobs on fal's queue: submitted, polled until done, then downloaded.
 import asyncio
 from pathlib import PurePosixPath
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -107,17 +108,24 @@ def build(context: ToolContext) -> dict[str, Tool]:
         return response
 
     async def upload(http: httpx.AsyncClient, name: str, data: bytes, content_type: str) -> str:
-        """Puts a source file in fal's storage; the endpoints take sources as URLs."""
-        started = (
-            await send(http, "POST", config.UPLOAD_URL, {"file_name": name, "content_type": content_type})
-        ).json()
+        """Puts a source file on fal's CDN; the endpoints take sources as URLs."""
+        token = (await send(http, "POST", config.UPLOAD_TOKEN_URL, {})).json()
         try:
-            stored = await http.put(started["upload_url"], content=data, headers={"Content-Type": content_type})
-        except httpx.HTTPError as exc:
+            stored = await http.post(
+                f"{token['base_url'].rstrip('/')}/files/upload",
+                content=data,
+                headers={
+                    "Authorization": f"{token['token_type']} {token['token']}",
+                    "Content-Type": content_type,
+                    # a header takes ASCII only, and names here are often Spanish
+                    "X-Fal-File-Name": quote(name),
+                },
+            )
+        except (httpx.HTTPError, KeyError) as exc:
             raise FalError(f"the source file could not be uploaded to fal: {exc}") from exc
         if stored.is_error:
-            raise FalError(f"the source file could not be uploaded to fal ({stored.status_code})")
-        return str(started["file_url"])
+            raise FalError(f"the source file could not be uploaded to fal: {_reason(stored)}")
+        return str(stored.json()["access_url"])
 
     async def load(http: httpx.AsyncClient, target: Any, path: str, limit: int) -> str:
         # a source may be in another project (project:<name>/<path>); results stay in target

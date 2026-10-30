@@ -3,6 +3,7 @@ submitted to the queue, polled while it works, and the clip downloaded into the 
 
 import json
 from types import SimpleNamespace
+from urllib.parse import unquote
 from uuid import uuid4
 
 import httpx
@@ -26,6 +27,7 @@ class FakeFiles:
 
     def __init__(self) -> None:
         self.stored = {("Campana", "fotos/gato.png"): (b"png-bytes", "image/png"),
+                       ("Borradores", "adjuntos/WhatsApp Image 2026-10-22 at 16.23.24-cabaña.png"): (b"png", "image/png"),
                        ("Borradores", "clip.mp4"): (b"mp4-bytes", "video/mp4")}
         self.written: dict[str, tuple[bytes, str]] = {}
 
@@ -69,16 +71,20 @@ def fal(monkeypatch):
 
     def handle(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
+        if url == "https://v3.fal.media/files/upload":
+            # the bytes go up with the CDN token, never the key
+            assert request.headers["Authorization"] == "Bearer cdn-token"
+            name = unquote(request.headers["X-Fal-File-Name"])
+            seen.append((request.method, url, {"file_name": name, "bytes": len(request.content)}))
+            return httpx.Response(200, json={"access_url": f"https://files.fal/{name}"})
         body = json.loads(request.content) if request.content and request.method == "POST" else None
         seen.append((request.method, url, body))
-        if url.startswith("https://rest.fal.ai/storage/upload/initiate"):
+        if url == "https://rest.fal.ai/storage/auth/token?storage_type=fal-cdn-v3":
             assert request.headers["Authorization"] == "Key fal-test"
             return httpx.Response(200, json={
-                "upload_url": f"https://upload.fal/{body['file_name']}",
-                "file_url": f"https://files.fal/{body['file_name']}",
+                "token": "cdn-token", "token_type": "Bearer",
+                "base_url": "https://v3.fal.media", "expires_at": "2026-10-30T12:00:00+00:00",
             })
-        if url.startswith("https://upload.fal/"):
-            return httpx.Response(200)
         if url == "https://cdn.fal/out.mp4":
             assert "Authorization" not in request.headers  # fal's key goes only to fal's API
             return httpx.Response(200, content=CLIP)
@@ -148,6 +154,22 @@ async def test_an_image_from_another_project_is_uploaded_and_animated(fal):
     assert submit[1] == "https://queue.fal.run/bytedance/seedance-2.5/image-to-video"
     assert submit[2] == {"prompt": "el gato salta", "image_url": "https://files.fal/gato.png"}
     assert "Borradores/gato.mp4" in files.written
+
+
+async def test_a_png_with_spaces_and_accents_in_its_name_goes_up(fal):
+    files = FakeFiles()
+    animate = video_tools.build(context(files))["AnimateImage"].handler
+
+    result = await animate(
+        project="Borradores", image_path="adjuntos/WhatsApp Image 2026-10-22 at 16.23.24-cabaña.png",
+        prompt="la cámara se acerca a la cabaña", output_path="cabana.mp4", model="kling-3",
+    )
+
+    uploaded = next(body for _, url, body in fal.seen if url == "https://v3.fal.media/files/upload")
+    assert uploaded["file_name"] == "WhatsApp Image 2026-10-22 at 16.23.24-cabaña.png"
+    submit = next(body for _, url, body in fal.seen if url.endswith("/v3/pro/image-to-video"))
+    assert submit["start_image_url"] == "https://files.fal/WhatsApp Image 2026-10-22 at 16.23.24-cabaña.png"
+    assert "Borradores/cabana.mp4" in result
 
 
 async def test_a_clip_is_edited_with_kling_omni(fal):

@@ -78,12 +78,15 @@ EDIT_MODELS = tuple(key for key, model in MODELS_BY_KEY.items() if model.edit)
 DEFAULT_MODEL = KLING_4
 
 QUEUE_URL = "https://queue.fal.run"
-UPLOAD_URL = "https://rest.fal.ai/storage/upload/initiate?storage_type=gcs"
+# Sources go to fal's CDN: the key buys a short-lived upload token, and the file is posted
+# with it to the base_url the token names.
+UPLOAD_TOKEN_URL = "https://rest.fal.ai/storage/auth/token?storage_type=fal-cdn-v3"
 
-# What the endpoints accept as sources: Kling 4 takes images up to 30 MB, and Kling Omni
-# videos up to 200 MB.
+# What the endpoints accept as sources: Kling 4 takes images up to 30 MB. Kling Omni takes
+# videos up to 200 MB, but past 100 MB fal's CDN wants a multipart upload, which this does
+# not do -- a clip of 15-30 seconds is well under it.
 MAX_IMAGE_BYTES = 30 * 1024 * 1024
-MAX_VIDEO_BYTES = 200 * 1024 * 1024
+MAX_VIDEO_BYTES = 100 * 1024 * 1024
 
 # A video is made as a job on fal's side: submitted, then polled until it is done. A long
 # or high-resolution clip takes several minutes.
