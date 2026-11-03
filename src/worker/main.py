@@ -2,6 +2,7 @@ import taskiq_fastapi
 
 from src.background import jobs as background_jobs
 from src.conversations import tasks as conversation_tasks
+from src.core.log_noise import quiet_http_clients
 from src.core.tasks.broker import broker
 from src.documents import tasks as document_tasks
 
@@ -9,4 +10,5 @@ from . import health as health_tasks
 
 TASK_MODULES = (health_tasks, conversation_tasks, document_tasks, background_jobs)
 
+quiet_http_clients()
 taskiq_fastapi.init(broker, "src.fastapi.main:app")

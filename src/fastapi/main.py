@@ -12,6 +12,7 @@ from src.core.cryptography.bcrypt import adapter as bcrypt_adapter
 from src.core.cryptography.fernet import adapter as fernet_adapter
 from src.core.database import migrations
 from src.core.events.redis import adapter as events_adapter
+from src.core.log_noise import quiet_http_clients
 from src.core.settings.api import settings as api_settings
 from src.core.settings.shared import settings
 from src.core.tasks.broker import broker
@@ -23,6 +24,8 @@ from src.sessions.tokens import SessionTokenService
 from .desktop.routes import router as desktop_router
 from .rate_limit import RateLimitMiddleware
 from .v1.routes import router as v1_router
+
+quiet_http_clients()
 
 
 @asynccontextmanager
