@@ -87,10 +87,21 @@ async def create_project(
     )
 
 
+def is_workspace(project: Project) -> bool:
+    """The agent's own working space (config.WORKSPACE_PROJECT), not one of the person's projects."""
+    return project.name.lower() == config.WORKSPACE_PROJECT.lower()
+
+
 async def list_projects(
-    owner_id: UUID, list_projects_for_owner_fn: ListProjectsForOwnerFn
+    owner_id: UUID,
+    list_projects_for_owner_fn: ListProjectsForOwnerFn,
+    include_workspace: bool = False,
 ) -> Sequence[Project]:
-    return await list_projects_for_owner_fn(owner_id)
+    """The person's projects, without the agent's workspace unless it is asked for: the apps'
+    lists leave it out, while whatever finds a project by name (a file opened from a task, a
+    transfer) asks for it."""
+    projects = await list_projects_for_owner_fn(owner_id)
+    return projects if include_workspace else [p for p in projects if not is_workspace(p)]
 
 
 async def rename_project(

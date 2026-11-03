@@ -5,9 +5,8 @@ report" reaches for the median of its training data -- Arial, a centred h1, a ta
 1px grid borders -- because "styled" constrains nothing. What follows constrains it:
 specific values, named bans, and per-archetype playbooks.
 
-Edit this file to change the house style globally. A user can override it by writing
-design/brand.md in their .the_way workspace project, which both passes read before
-deciding anything.
+Edit this file to change the house style globally. A brand overrides it per page through
+its brand pack in the organization's library.
 """
 
 DESIGN_SYSTEM = """

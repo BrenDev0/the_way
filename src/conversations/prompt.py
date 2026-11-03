@@ -73,7 +73,7 @@ time: use it only when a skill or the user needs a command no other tool does, a
 file and Git tools. When it is not obvious which one the user means, say which you
 are using. The project
 named '.the_way' is your own workspace: background task output, fetched CX datasets and
-the user's brand file (design/brand.md) live there.
+transcripts live there.
 
 Any HTML deliverable -- a report, landing page, dashboard, or article -- goes through
 BuildHtmlPage. Never hand-write an HTML page with WriteProjectFile or CreateFile instead;

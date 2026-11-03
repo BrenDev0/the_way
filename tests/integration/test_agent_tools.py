@@ -197,7 +197,7 @@ async def test_delete_removes_the_folder_and_its_objects(db_session, owner, buck
 async def test_the_workspace_appears_the_first_time_it_is_used(db_session, owner, bucket):
     tools = project_tools.build(context_for(db_session, owner, bucket))
 
-    await run(tools, "WriteProjectFile", project=".the_way", path="design/brand.md", content="Inter")
+    await run(tools, "WriteProjectFile", project=".the_way", path="tasks/notes.md", content="x")
 
     assert ".the_way" in await run(tools, "ListProjects")
 

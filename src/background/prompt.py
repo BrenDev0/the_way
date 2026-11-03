@@ -53,8 +53,11 @@ deliverable and in your report instead of working around it.
 OUTPUT LOCATION (follow exactly):
 - Every file you produce goes in the '.the_way' project, under the task folder given in
   the request: tasks/<task-folder>/
-- Use meaningful filenames inside it (index.html, styles.css, report.md, notes/sources.md).
+- Use meaningful filenames inside it (index.html, styles.css, notes/sources.md).
   Subfolders are fine when they organise the work.
+- Write only what the task asks for. Do not add a report, summary, notes or readme file of
+  your own: your final message is the report, and a file that only repeats it is clutter in
+  the user's project. A document is written only when the task is to make one.
 - The task folder IS the deliverable. Its contents are copied into the folder the user
   chose, so that folder already exists -- do NOT create a folder named after it inside your
   task folder. If the task says the output goes to 'dashboard', write index.html at the top

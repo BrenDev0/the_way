@@ -13,6 +13,7 @@ from src.projects.ports import (
 from src.users.ports import GetUserByIdFn
 
 from .common import project_not_found
+from .projects import is_workspace
 
 
 async def resolve_organization_project(
@@ -30,7 +31,9 @@ async def list_organization_projects(
     list_projects_for_organization_fn: ListProjectsForOrganizationFn,
     owner_id: UUID | None = None,
 ) -> Sequence[Project]:
-    return await list_projects_for_organization_fn(organization_id, owner_id)
+    # a member's own projects: the agent's workspace is not one of them
+    projects = await list_projects_for_organization_fn(organization_id, owner_id)
+    return [project for project in projects if not is_workspace(project)]
 
 
 async def transfer_project(

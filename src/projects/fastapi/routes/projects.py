@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 
 from src.projects.fastapi import dependencies as projects_dependencies
 from src.projects.fastapi.dependencies import (
@@ -54,10 +54,12 @@ async def list_projects_route(
         ListProjectsForOwnerFn,
         Depends(projects_dependencies.provide_list_projects_for_owner_fn),
     ],
+    include_workspace: Annotated[bool, Query(alias="includeWorkspace")] = False,
 ) -> list[ProjectResponse]:
-    projects = await project_use_cases.list_projects(
+    projects =await project_use_cases.list_projects(
         owner_id=current_user.id,
         list_projects_for_owner_fn=list_projects_for_owner_fn,
+        include_workspace=include_workspace,
     )
     return [ProjectResponse.from_domain(project) for project in projects]
 

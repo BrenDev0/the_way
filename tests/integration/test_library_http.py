@@ -95,6 +95,21 @@ def test_owners_build_the_library_and_members_only_read_it(client, team):
     assert library["id"] not in [p["id"] for p in client.get(f"{DESKTOP}/projects", headers=owner).json()]
 
 
+def test_the_agents_workspace_is_left_out_of_the_list_unless_asked_for(client, team):
+    owner, _ = team
+    made = client.post(f"{DESKTOP}/projects", json={"name": ".the_way"}, headers=owner)
+    assert made.status_code == 201, made.text
+    client.post(f"{DESKTOP}/projects", json={"name": "Campaña"}, headers=owner)
+
+    default = [p["name"] for p in client.get(f"{DESKTOP}/projects", headers=owner).json()]
+    everything = [p["name"] for p in client.get(f"{DESKTOP}/projects?includeWorkspace=true", headers=owner).json()]
+
+    assert default == ["Campaña"]
+    assert sorted(everything) == [".the_way", "Campaña"]
+    # still reachable by its id, so a file opened from a task finds it
+    assert client.get(f"{DESKTOP}/projects/{made.json()['id']}", headers=owner).status_code == 200
+
+
 def test_its_name_cannot_be_taken_by_a_project(client, team):
     owner, _ = team
 
