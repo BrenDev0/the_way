@@ -138,7 +138,8 @@ async def test_the_link_saves_the_installer_under_a_name_with_its_version():
 
     assert link.filename == "THE-WAY-Setup-0.1.7.exe"
     key, _, name = bucket.presigned_gets[0]
-    assert key == config.key(config.INSTALLERS["windows"])  # still the one fixed key in the bucket
+    # published before versions went in the key: the file at the fixed name is still served
+    assert key == config.key(config.INSTALLERS["windows"])
     assert name == "THE-WAY-Setup-0.1.7.exe"
 
 
@@ -178,3 +179,139 @@ async def test_the_app_gets_a_503_not_a_500_when_the_bucket_cannot_be_read():
         await desktop_routes.app_installer("windows", BrokenBucketStore())
 
     assert raised.value.code == "downloads_unavailable"
+
+
+# --- the version in the key it is stored under ------------------------------------------------
+
+
+def stored_with_version(version: str, platform: str = "windows", *, also_fixed: bool = False) -> FakeBucketStore:
+    """A bucket whose installer sits under its versioned name, as a publish now leaves it."""
+    installer = config.INSTALLERS[platform]
+    bucket = FakeBucketStore()
+    bucket.objects[config.versioned_key(installer, version)] = 123
+    if also_fixed:
+        bucket.objects[config.key(installer)] = 99
+    body = json.dumps({"version": version}).encode()
+    bucket.objects[config.version_key(installer)] = len(body)
+    bucket.contents[config.version_key(installer)] = body
+    return bucket
+
+
+def test_a_version_is_stored_under_the_name_it_is_saved_as():
+    installer = config.INSTALLERS["windows"]
+    key = config.versioned_key(installer, "0.1.11")
+
+    assert key is not None and key.endswith("/windows/THE-WAY-Setup-0.1.11.exe")
+    assert key.startswith(config.folder())
+    assert key.rsplit("/", 1)[1] == config.download_name(installer, "0.1.11")
+
+
+@pytest.mark.parametrize("version", [None, "", "latest", "0.1.7/../../x", "0.1.7-beta"])
+def test_only_a_plain_version_makes_a_key(version):
+    assert config.versioned_key(config.INSTALLERS["windows"], version) is None
+
+
+async def test_the_link_goes_to_the_file_stored_with_its_version():
+    bucket = stored_with_version("0.1.11")
+
+    link = await routes.installer_link("windows", bucket)
+
+    key, _, name = bucket.presigned_gets[0]
+    assert key.endswith("/windows/THE-WAY-Setup-0.1.11.exe")
+    assert name == link.filename == "THE-WAY-Setup-0.1.11.exe"
+
+
+async def test_the_versioned_file_wins_over_one_left_at_the_old_fixed_name():
+    bucket = stored_with_version("0.1.11", also_fixed=True)
+
+    await routes.installer_link("windows", bucket)
+
+    assert bucket.presigned_gets[0][0].endswith("THE-WAY-Setup-0.1.11.exe")
+
+
+async def test_a_version_recorded_without_its_file_is_not_handed_out():
+    from src.core.exceptions import NotFoundError
+
+    bucket = stored_with_version("0.1.11")
+    del bucket.objects[config.versioned_key(config.INSTALLERS["windows"], "0.1.11")]
+
+    with pytest.raises(NotFoundError):
+        await routes.installer_link("windows", bucket)
+
+
+async def test_the_page_and_the_app_see_the_size_of_the_versioned_file():
+    bucket = stored_with_version("0.1.11", also_fixed=True)
+
+    listed = {item.platform: item for item in await routes.list_installers(bucket)}
+    answer = await desktop_routes.app_installer("windows", bucket)
+
+    assert listed["windows"].available and listed["windows"].size_bytes == 123
+    assert listed["windows"].filename == "THE-WAY-Setup-0.1.11.exe"
+    assert answer.filename == "THE-WAY-Setup-0.1.11.exe" and answer.version == "0.1.11"
+
+
+def keys_for(*names: str) -> list[str]:
+    installer = config.INSTALLERS["windows"]
+    return [config.platform_folder(installer) + name for name in names]
+
+
+def test_a_publish_keeps_the_newest_versions_and_removes_the_rest():
+    installer = config.INSTALLERS["windows"]
+    held = keys_for(
+        "THE-WAY-Setup-0.1.7.exe", "THE-WAY-Setup-0.1.8.exe", "THE-WAY-Setup-0.1.9.exe",
+        "THE-WAY-Setup-0.1.10.exe", "THE-WAY-Setup-0.1.11.exe", "latest.json", "notes.txt",
+    )
+
+    removed = config.superseded(installer, held, current="0.1.11")
+
+    # numerically, not alphabetically: 0.1.10 is newer than 0.1.9
+    assert removed == keys_for("THE-WAY-Setup-0.1.7.exe", "THE-WAY-Setup-0.1.8.exe")
+
+
+def test_a_publish_removes_the_file_at_the_old_fixed_name():
+    installer = config.INSTALLERS["windows"]
+    held = keys_for("THE-WAY-Setup.exe", "THE-WAY-Setup-0.1.11.exe", "latest.json")
+
+    assert config.superseded(installer, held, current="0.1.11") == keys_for("THE-WAY-Setup.exe")
+
+
+def test_what_is_announced_is_never_removed_even_when_older_than_what_is_kept():
+    installer = config.INSTALLERS["windows"]
+    held = keys_for(
+        "THE-WAY-Setup-0.1.5.exe", "THE-WAY-Setup-0.1.9.exe", "THE-WAY-Setup-0.1.10.exe",
+        "THE-WAY-Setup-0.1.11.exe",
+    )
+
+    removed = config.superseded(installer, held, current="0.1.5")
+
+    assert keys_for("THE-WAY-Setup-0.1.5.exe")[0] not in removed
+    assert removed == []  # the three newest and the one announced: nothing else is held
+
+
+def test_nothing_that_is_not_an_installer_of_that_platform_is_removed():
+    installer = config.INSTALLERS["windows"]
+    held = keys_for("latest.json", "notes.txt", "THE-WAY-mac-0.1.1.zip", "THE-WAY-Setup-0.1.x.exe")
+
+    assert config.superseded(installer, held, current="0.1.11") == []
+
+
+async def test_publishing_stores_the_version_in_the_key_then_clears_the_old(tmp_path, monkeypatch):
+    from src.core.bucket.boto3 import adapter
+    from src.core.settings.shared import settings
+
+    installer = config.INSTALLERS["windows"]
+    bucket = FakeBucketStore()
+    for name in ("THE-WAY-Setup.exe", "THE-WAY-Setup-0.1.8.exe", "THE-WAY-Setup-0.1.9.exe", "THE-WAY-Setup-0.1.10.exe"):
+        bucket.objects[config.platform_folder(installer) + name] = 1
+    monkeypatch.setattr(adapter, "Boto3BucketStore", lambda **_: bucket)
+    monkeypatch.setattr(settings, "BUCKET_NAME", "test-bucket")
+    source = tmp_path / "THE-WAY-Setup.exe"
+    source.write_bytes(b"installer")
+
+    message = await publish.publish("windows", source, "0.1.11")
+
+    assert config.versioned_key(installer, "0.1.11") in bucket.objects
+    assert json.loads(bucket.contents[config.version_key(installer)])["version"] == "0.1.11"
+    assert config.key(installer) not in bucket.objects  # the old fixed name is gone
+    assert config.platform_folder(installer) + "THE-WAY-Setup-0.1.8.exe" not in bucket.objects
+    assert "2 older removed" in message

@@ -49,7 +49,8 @@ async def list_installers(bucket: Bucket) -> list[InstallerResponse]:
         raise links.unavailable(exc) from exc
     listed = []
     for installer in config.INSTALLERS.values():
-        found = published.get(config.key(installer))
+        stored = config.stored_key(installer, recorded.get(installer.platform), published)
+        found = published.get(stored) if stored else None
         version = recorded.get(installer.platform) if found else None
         listed.append(
             InstallerResponse(

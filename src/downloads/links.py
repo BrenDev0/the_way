@@ -32,18 +32,26 @@ class InstallerLink:
 
 async def installer_link(bucket: BucketStore, platform: str) -> InstallerLink:
     installer = config.INSTALLERS.get(platform)
-    try:
-        published = installer is not None and await bucket.exists(config.key(installer))
-    except BucketError as exc:
-        raise unavailable(exc) from exc
-    if installer is None or not published:
-        raise NotFoundError(
-            message="Ese instalador todavía no está publicado.", code="installer_not_published"
-        )
+    if installer is None:
+        raise _not_published()
     try:
         version = (await versions.published(bucket)).get(installer.platform)
+        # the file named with its version, or the one at the fixed name from before that
+        stored = None
+        for candidate in (config.versioned_key(installer, version), config.key(installer)):
+            if candidate is not None and await bucket.exists(candidate):
+                stored = candidate
+                break
+        if stored is None:
+            raise _not_published()
         name = config.download_name(installer, version)
-        url = await bucket.presign_get(config.key(installer), config.LINK_SECONDS, download_name=name)
+        url = await bucket.presign_get(stored, config.LINK_SECONDS, download_name=name)
     except BucketError as exc:
         raise unavailable(exc) from exc
     return InstallerLink(url=url, filename=name, version=version)
+
+
+def _not_published() -> NotFoundError:
+    return NotFoundError(
+        message="Ese instalador todavía no está publicado.", code="installer_not_published"
+    )

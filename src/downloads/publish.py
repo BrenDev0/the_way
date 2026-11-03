@@ -4,10 +4,11 @@
     python -m src.downloads.publish mac THE-WAY-mac.zip --version 0.1.1
 
 It writes to whichever bucket the BUCKET_* settings name -- for production, run it with
-the production bucket's settings in the environment. The file replaces the one published
-before; the page offers it as soon as the upload finishes. --version is the app's version
-(`version` in the_way_desktop/package.json): it is recorded beside the file, and installed
-apps older than it tell their operator a new version is out.
+the production bucket's settings in the environment. The file is stored under a name with
+its version (THE-WAY-Setup-0.1.1.exe) and the page offers it as soon as the upload finishes;
+the newest few versions stay, the older ones and any file at the old fixed name are removed.
+--version is the app's version (`version` in the_way_desktop/package.json): it is recorded
+beside the file, and installed apps older than it tell their operator a new version is out.
 """
 
 import argparse
@@ -39,8 +40,11 @@ async def publish(platform: str, source: Path, version: str) -> str:
         endpoint_url=settings.BUCKET_ENDPOINT,
         public_endpoint_url=settings.BUCKET_PUBLIC_ENDPOINT,
     )
+    target = config.versioned_key(installer, version)
+    if target is None:
+        raise SystemExit(f"Not a version like 0.1.1: {version}")
     try:
-        stored = await bucket.put(config.key(installer), source)
+        stored = await bucket.put(target, source)
         # after the file: an app told about a version must find its installer there
         with tempfile.TemporaryDirectory() as folder:
             record = Path(folder) / config.VERSION_FILE
@@ -49,11 +53,17 @@ async def publish(platform: str, source: Path, version: str) -> str:
                 encoding="utf-8",
             )
             await bucket.put(config.version_key(installer), record)
+        # last, once the new version is what the apps are told: older ones may go
+        held = [item.key for item in await bucket.list(config.platform_folder(installer))]
+        removed = config.superseded(installer, held, current=version)
+        for old in removed:
+            await bucket.delete(old)
     finally:
         await bucket.aclose()
     return (
         f"{installer.label} {version}: {stored.size / 1_000_000:.1f} MB -> "
         f"{settings.BUCKET_NAME}/{stored.key}"
+        + (f" ({len(removed)} older removed)" if removed else "")
     )
 
 
