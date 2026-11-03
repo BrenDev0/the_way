@@ -483,3 +483,23 @@ async def test_the_agent_is_told_plainly_when_a_task_cannot_be_stopped_or_resume
     assert "Not stopped" in await tools["StopBackgroundTask"].handler(task_id=str(task.id))
     assert "Not resumed" in await tools["ResumeBackgroundTask"].handler(task_id=str(task.id))
     assert "not found" in await tools["StopBackgroundTask"].handler(task_id="not-an-id")
+
+
+async def test_the_tools_of_a_task_hear_a_stop_too(db_session, owner, bucket, cache, monkeypatch):
+    """A tool that waits minutes (a video) is given the way to ask, so Stop is heard during it."""
+    task = await make_task(db_session, owner)
+    seen = {}
+    real = background_jobs.server_tools
+
+    def capture(context):
+        seen["context"] = context
+        return real(context)
+
+    monkeypatch.setattr(background_jobs, "server_tools", capture)
+    await background_jobs.run_task(task.id, bucket, llm_factory=factory_of(FakeLLM("done")), cache=cache)
+
+    should_stop = seen["context"].should_stop
+    assert should_stop is not None
+    assert await should_stop() is False
+    await stop_signal.request(cache, stop_signal.task_key(task.id))
+    assert await should_stop() is True

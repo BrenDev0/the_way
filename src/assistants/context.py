@@ -1,4 +1,4 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 from uuid import UUID
@@ -108,3 +108,6 @@ class ToolContext:
     # Where a tool that runs an assistant of its own reports that assistant's tool calls,
     # so whoever watches the run sees the work instead of one long silent call.
     events: ToolEvents | None = None
+    # Asked by a tool that waits a long time (a video being made), so that the user pressing Stop
+    # is heard now and not when the call ends. None where nobody can stop the run.
+    should_stop: Callable[[], Awaitable[bool]] | None = None

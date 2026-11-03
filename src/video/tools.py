@@ -34,6 +34,13 @@ NO_KEY = (
 )
 
 
+STOPPED = (
+    "The user stopped the work while this video was being made, so it was cancelled and nothing "
+    "was saved (a job fal was already making may still finish and be billed there). Do not ask "
+    "for it again unless the user says to."
+)
+
+
 class FalError(Exception):
     pass
 
@@ -172,6 +179,14 @@ def build(context: ToolContext) -> dict[str, Tool]:
                     break
                 if status != "IN_QUEUE" and running_since is None:
                     running_since = time.monotonic()
+                # the user pressed Stop: not at the end of this call, which can be many minutes
+                if context.should_stop is not None and await context.should_stop():
+                    logger.info(
+                        "Video stopped by the user after %.0fs (status %s): endpoint=%s seconds=%s",
+                        time.monotonic() - started, status, endpoint, length,
+                    )
+                    await cancel(http, job)
+                    return STOPPED
                 if time.monotonic() - started >= config.TIMEOUT_SECONDS:
                     logger.warning(
                         "Video abandoned after %.0fs (status %s): endpoint=%s seconds=%s",

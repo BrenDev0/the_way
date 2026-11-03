@@ -141,7 +141,8 @@ async def run_task(
             async def should_stop() -> bool:
                 return cache is not None and await stop_signal.requested(cache, stop_signal.task_key(task.id))
 
-            outcome = await _work(context, files, task, resumed, recorder, should_stop)
+            # the tools hear a Stop too, so a long call (a video) ends at once instead of at its end
+            outcome = await _work(replace(context, should_stop=should_stop), files, task, resumed, recorder, should_stop)
             await adapter.record_calls(session, task.id, recorder.calls)
             if isinstance(outcome, Stopped):
                 return await _halt(session, task, outcome, files, cache, events)

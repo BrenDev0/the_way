@@ -51,8 +51,9 @@ class FakeFiles:
         return SimpleNamespace(size_bytes=len(content))
 
 
-def context(files: FakeFiles, credentials: dict | None = None) -> ToolContext:
+def context(files: FakeFiles, credentials: dict | None = None, should_stop=None) -> ToolContext:
     return ToolContext(
+        should_stop=should_stop,
         files=files,  # type: ignore[arg-type]
         ports=make_tool_ports(),
         organization_id=uuid4(),
@@ -298,3 +299,49 @@ async def test_fal_refusing_to_cancel_changes_nothing(fal, monkeypatch, caplog):
 
     assert "abandoned" in result and files.written == {}
     assert "did not cancel" in caplog.text
+
+
+# --- the user presses Stop while a video is being made ---------------------------------------------
+
+
+async def test_stop_ends_the_wait_at_once_and_cancels_the_job_on_fal(fal):
+    fal.state["polls"] = 100
+    asked = []
+
+    async def should_stop():
+        asked.append(1)
+        return len(asked) >= 2  # pressed during the second look at the job
+
+    files = FakeFiles()
+    generate = video_tools.build(context(files, should_stop=should_stop))["GenerateVideo"].handler
+
+    result = await generate(project="Campana", prompt="p", output_path="a.mp4")
+
+    assert result == video_tools.STOPPED
+    assert files.written == {}
+    assert ("PUT", "https://queue.fal.run/x/requests/r1/cancel") in [(m, u) for m, u, _ in fal.seen]
+    assert len(asked) == 2  # it did not carry on polling
+
+
+async def test_a_video_that_is_already_made_is_kept_when_stop_comes_after_it_finished(fal):
+    fal.state["polls"] = 0  # fal says COMPLETED at the first look
+
+    async def should_stop():
+        return True
+
+    files = FakeFiles()
+    generate = video_tools.build(context(files, should_stop=should_stop))["GenerateVideo"].handler
+
+    result = await generate(project="Campana", prompt="p", output_path="a.mp4")
+
+    assert result.startswith("Made with") and len(files.written) == 1
+
+
+async def test_a_run_nobody_can_stop_waits_as_before(fal):
+    generate = video_tools.build(context(FakeFiles()))["GenerateVideo"].handler
+
+    assert (await generate(project="Campana", prompt="p", output_path="a.mp4")).startswith("Made with")
+
+
+def test_the_stopped_message_tells_the_agent_not_to_start_over():
+    assert "Do not ask" in video_tools.STOPPED
