@@ -173,3 +173,31 @@ async def test_an_image_call_reaches_the_client_marked_to_ask_even_in_auto_mode(
 
     asked = {r.call.id: PendingToolCallResponse.from_domain(r).always_ask for r in stopped.value.requests}  # type: ignore[attr-defined]
     assert asked == {"call-image": True, "call-edit": False}
+
+
+# --- videos are only ever made in a background task ---------------------------------------------
+
+VIDEO_TOOLS = {"GenerateVideo", "AnimateImage", "EditVideo"}
+
+
+def test_the_conversation_has_no_video_tool_even_with_a_fal_key():
+    ctx = context(fal={"secret": "fal-1"})
+
+    assert VIDEO_TOOLS.isdisjoint(conversation_tools.build(ctx, desktop=False))
+    assert VIDEO_TOOLS.isdisjoint(conversation_tools.build(ctx, desktop=True))
+
+
+def test_a_background_task_still_has_them_and_asks_every_time():
+    ctx = context(fal={"secret": "fal-1"})
+    tools = {name: tool for name, tool in catalog.server_tools(ctx).items() if name in background_config.TOOLS}
+
+    assert VIDEO_TOOLS <= set(tools)
+    assert all(tools[name].always_ask for name in VIDEO_TOOLS)
+
+
+def test_the_conversation_is_told_to_start_a_task_for_a_video_and_not_to_promise_a_time():
+    from src.conversations import prompt
+
+    assert "ALWAYS MADE IN A BACKGROUND TASK" in prompt.SYSTEM
+    assert "several minutes" in prompt.SYSTEM
+    assert "10 minutes" not in prompt.SYSTEM

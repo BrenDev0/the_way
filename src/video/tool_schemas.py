@@ -31,7 +31,7 @@ class GenerateVideo(BaseModel):
 
     It spends the user's money -- far more than an image -- so the user approves every
     call, even inside a background task, which waits for them, and picks the model as they
-    do. One call makes one clip and takes a few minutes. Write the full prompt first and
+    do. One call makes one clip and can take several minutes. Write the full prompt first and
     never call it speculatively.
 
     Never present a generated clip as footage of a specific real person, venue or event."""

@@ -97,6 +97,10 @@ def fal(monkeypatch):
                 "status_url": "https://queue.fal.run/x/requests/r1/status",
                 "response_url": "https://queue.fal.run/x/requests/r1",
             })
+        if request.method == "PUT" and url.endswith("/cancel"):
+            if state.get("cancel_status", 200) != 200:
+                return httpx.Response(state["cancel_status"], json={"detail": "ALREADY_IN_PROGRESS"})
+            return httpx.Response(200, json={"status": "CANCELLATION_REQUESTED"})
         if url.endswith("/status"):
             if state["polls"]:
                 state["polls"] -= 1
@@ -197,15 +201,34 @@ async def test_a_refusal_comes_back_as_text_the_model_can_act_on(fal):
     assert files.written == {}
 
 
-async def test_a_job_that_runs_too_long_is_abandoned(fal, monkeypatch):
+async def test_each_video_logs_how_long_it_waited_and_how_long_it_took(fal, caplog):
+    fal.state["polls"] = 2
+    files = FakeFiles()
+    generate = video_tools.build(context(files))["GenerateVideo"].handler
+
+    with caplog.at_level("INFO", logger="src.video.tools"):
+        await generate(project="Campana", prompt="p", output_path="a.mp4", seconds=9, model="seedance-2.5")
+
+    [line] = [r.getMessage() for r in caplog.records if r.getMessage().startswith("Video made")]
+    assert "seconds=9" in line and "queued=" in line and "generating=" in line and "total=" in line
+
+
+async def test_the_default_wait_is_long_enough_for_a_longer_clip():
+    # measured: 9 seconds takes 9 to 11 minutes
+    assert video_config.TIMEOUT_SECONDS >= 30 * 60
+
+
+async def test_a_job_that_runs_too_long_is_abandoned(fal, monkeypatch, caplog):
     fal.state["polls"] = 10
     monkeypatch.setattr(video_config, "TIMEOUT_SECONDS", 0)
     files = FakeFiles()
     generate = video_tools.build(context(files))["GenerateVideo"].handler
 
-    result = await generate(project="Campana", prompt="p", output_path="a.mp4")
+    with caplog.at_level("WARNING", logger="src.video.tools"):
+        result = await generate(project="Campana", prompt="p", output_path="a.mp4")
 
     assert "abandoned" in result and files.written == {}
+    assert "Video abandoned after" in caplog.text
 
 
 def test_without_a_fal_key_there_are_no_video_tools():
@@ -239,3 +262,39 @@ async def test_an_image_approval_never_lets_a_video_through():
     with pytest.raises(ClientActionRequired) as stopped:
         await gate.decide([video])
     assert [r.call.id for r in stopped.value.requests] == ["v"]
+
+
+# --- a job we stop waiting for is cancelled on fal's side ---------------------------------------
+
+
+async def test_an_abandoned_job_is_cancelled_on_fal(fal, monkeypatch):
+    fal.state["polls"] = 10
+    monkeypatch.setattr(video_config, "TIMEOUT_SECONDS", 0)
+    generate = video_tools.build(context(FakeFiles()))["GenerateVideo"].handler
+
+    await generate(project="Campana", prompt="p", output_path="a.mp4")
+
+    assert ("PUT", "https://queue.fal.run/x/requests/r1/cancel") in [(m, u) for m, u, _ in fal.seen]
+
+
+async def test_a_finished_job_is_not_cancelled(fal):
+    generate = video_tools.build(context(FakeFiles()))["GenerateVideo"].handler
+
+    await generate(project="Campana", prompt="p", output_path="a.mp4")
+
+    assert not [seen for seen in fal.seen if seen[0] == "PUT"]
+
+
+async def test_fal_refusing_to_cancel_changes_nothing(fal, monkeypatch, caplog):
+    """A job already being made cannot be cancelled: the clip is still reported as abandoned."""
+    fal.state["polls"] = 10
+    fal.state["cancel_status"] = 400
+    monkeypatch.setattr(video_config, "TIMEOUT_SECONDS", 0)
+    files = FakeFiles()
+    generate = video_tools.build(context(files))["GenerateVideo"].handler
+
+    with caplog.at_level("INFO", logger="src.video.tools"):
+        result = await generate(project="Campana", prompt="p", output_path="a.mp4")
+
+    assert "abandoned" in result and files.written == {}
+    assert "did not cancel" in caplog.text

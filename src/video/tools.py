@@ -7,6 +7,8 @@ key, as jobs on fal's queue: submitted, polled until done, then downloaded.
 """
 
 import asyncio
+import logging
+import time
 from pathlib import PurePosixPath
 from typing import Any
 from urllib.parse import quote
@@ -19,6 +21,12 @@ from src.core.tools.domain import Tool
 
 from . import config
 from .tool_schemas import AnimateImage, EditVideo, GenerateVideo
+
+logger = logging.getLogger(__name__)
+
+# The tools that make a video. They are only ever used inside a background task (a clip takes
+# minutes, and a chat turn should not): the conversation is not given them.
+NAMES = (GenerateVideo.__name__, AnimateImage.__name__, EditVideo.__name__)
 
 NO_KEY = (
     "Video generation needs a fal key, and none has been set up for this organization. "
@@ -133,6 +141,17 @@ def build(context: ToolContext) -> dict[str, Tool]:
         found, data = await files.read_bytes(source, inner, limit=limit)
         return await upload(http, found.name, data, found.content_type)
 
+    async def cancel(http: httpx.AsyncClient, job: dict) -> None:
+        """Asks fal to drop a job we have stopped waiting for, so it is not made and billed for
+        nothing. Best effort: fal only cancels a job still in its queue; one already being made
+        runs to its end, and whatever it answers, we are done with it."""
+        url = job.get("cancel_url") or f"{str(job['status_url']).removesuffix('/status')}/cancel"
+        try:
+            outcome = (await send(http, "PUT", url)).json().get("status")
+            logger.info("Asked fal to cancel the video job: %s", outcome)
+        except (FalError, ValueError) as exc:
+            logger.info("fal did not cancel the video job: %s", exc)
+
     async def run(http: httpx.AsyncClient, endpoint: str, body: dict) -> bytes | str:
         """Submits the job, polls it until done, and downloads the clip. A str is the
         message when it ran out of time."""
@@ -141,22 +160,47 @@ def build(context: ToolContext) -> dict[str, Tool]:
         if not status_url or not response_url:
             raise FalError(f"fal did not start a job: {str(job)[:300]}")
 
-        waited = 0.0
-        while (await send(http, "GET", status_url)).json().get("status") != "COMPLETED":
-            if waited >= config.TIMEOUT_SECONDS:
-                return (
-                    f"The video was still being made after {config.TIMEOUT_SECONDS // 60} minutes "
-                    "and was abandoned. Tell the user; try a shorter clip or another model."
-                )
-            await asyncio.sleep(config.POLL_SECONDS)
-            waited += config.POLL_SECONDS
+        # the one line per video that says how long it really takes: how long it waited in fal's
+        # queue, how long it was being made, and the total
+        started = time.monotonic()
+        running_since: float | None = None
+        length = body.get("duration", "default")
+        try:
+            while True:
+                status = (await send(http, "GET", status_url)).json().get("status")
+                if status == "COMPLETED":
+                    break
+                if status != "IN_QUEUE" and running_since is None:
+                    running_since = time.monotonic()
+                if time.monotonic() - started >= config.TIMEOUT_SECONDS:
+                    logger.warning(
+                        "Video abandoned after %.0fs (status %s): endpoint=%s seconds=%s",
+                        time.monotonic() - started, status, endpoint, length,
+                    )
+                    await cancel(http, job)
+                    return (
+                        f"The video was still being made after {config.TIMEOUT_SECONDS // 60} minutes "
+                        "and was abandoned. Tell the user; try a shorter clip or another model."
+                    )
+                await asyncio.sleep(config.POLL_SECONDS)
+        except asyncio.CancelledError:
+            # the worker is stopping: nobody will collect this clip
+            await asyncio.shield(cancel(http, job))
+            raise
+        finished = time.monotonic()
 
         # a job that failed on fal's side answers here with its error
         result = (await send(http, "GET", response_url)).json()
         url = (result.get("video") or {}).get("url")
         if not url:
             raise FalError(f"no video came back: {str(result)[:300]}")
-        return (await send(http, "GET", url, signed=False)).content
+        clip = (await send(http, "GET", url, signed=False)).content
+        queued = (running_since or finished) - started
+        logger.info(
+            "Video made: endpoint=%s seconds=%s queued=%.0fs generating=%.0fs total=%.0fs size=%s bytes",
+            endpoint, length, queued, finished - (running_since or finished), time.monotonic() - started, f"{len(clip):,}",
+        )
+        return clip
 
     async def make(project: str, output_path: str, model: str, endpoint_of: Any, inputs: Any) -> str:
         """Everything the three tools share: the project is found before anything is paid

@@ -7,6 +7,7 @@ from src.core.tools.domain import Tool
 from src.desktop import tools as desktop_tools
 from src.preferences import tools as preference_tools
 from src.skills import tools as skill_tools
+from src.video import tools as video_tools
 
 from .tool_schemas import SearchConversationHistory
 
@@ -66,7 +67,8 @@ def build(context: ToolContext, desktop: bool) -> dict[str, Tool]:
         return "\n".join(lines) or f"Nothing in the saved conversations matches '{query}'."
 
     tools = {
-        **server_tools(context),
+        # a video takes minutes: it is only made in a background task, never in the conversation
+        **{name: tool for name, tool in server_tools(context).items() if name not in video_tools.NAMES},
         **preference_tools.build(context),
         **skill_tools.build(context),
         **background_tools.build(context),

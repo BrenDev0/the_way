@@ -88,8 +88,10 @@ UPLOAD_TOKEN_URL = "https://rest.fal.ai/storage/auth/token?storage_type=fal-cdn-
 MAX_IMAGE_BYTES = 30 * 1024 * 1024
 MAX_VIDEO_BYTES = 100 * 1024 * 1024
 
-# A video is made as a job on fal's side: submitted, then polled until it is done. A long
-# or high-resolution clip takes several minutes.
+# A video is made as a job on fal's side: submitted, then polled until it is done. Measured: a
+# 9-second clip takes 9 to 11 minutes, so a 15-second one can pass 15 and a 30-second one more.
+# Past this, the job is abandoned, and fal is asked to cancel it (it can only do so while the job
+# still waits in its queue).
 REQUEST_TIMEOUT_SECONDS = 120
 POLL_SECONDS = 5
-TIMEOUT_SECONDS = 900
+TIMEOUT_SECONDS = 30 * 60

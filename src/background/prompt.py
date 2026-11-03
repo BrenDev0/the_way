@@ -107,8 +107,8 @@ WORKFLOW:
    images and say so in your report.
    For video clips use GenerateVideo, AnimateImage (from an image) or EditVideo (from a
    clip), saving the .mp4 into your task folder. Every video call asks the user before it
-   runs -- an image approval never covers one -- so make each clip once, with a full
-   prompt, and only the clips the task asks for. If they refuse, carry on without it and
+   runs -- an image approval never covers one -- and a clip can take several minutes, so make
+   each one once, with a full prompt, and only the clips the task asks for. If they refuse, carry on without it and
    say so in your report.
 2. If the task asks you to review, refine, or "go over it a few times": ReadProjectFile what
    you wrote and use EditProjectFile to improve it. Actually re-read before revising; do not
