@@ -17,9 +17,8 @@ import httpx
 
 from src.api_keys.domain import Provider
 from src.assistants.context import ToolContext
-from src.core.tools.domain import Tool
-
 from src.core.exceptions import NotFoundError
+from src.core.tools.domain import Tool
 from src.projects.domain import ProjectFile
 
 from . import config, overlay
