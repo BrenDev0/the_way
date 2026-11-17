@@ -35,6 +35,7 @@ def server_tools(context: ToolContext) -> dict[str, Tool]:
         **media_tools.build(context),
         **transcript_tools.build(context),
         **(image_tools.build(context) if image_tools.available(context) else {}),
+        **video_tools.build_local(context),
         **(video_tools.build(context) if video_tools.available(context) else {}),
     }
 

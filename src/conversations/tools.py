@@ -68,7 +68,11 @@ def build(context: ToolContext, desktop: bool) -> dict[str, Tool]:
 
     tools = {
         # a video takes minutes: it is only made in a background task, never in the conversation
-        **{name: tool for name, tool in server_tools(context).items() if name not in video_tools.NAMES},
+        **{
+            name: tool
+            for name, tool in server_tools(context).items()
+            if name not in (*video_tools.NAMES, *video_tools.LOCAL_NAMES)
+        },
         **preference_tools.build(context),
         **skill_tools.build(context),
         **background_tools.build(context),

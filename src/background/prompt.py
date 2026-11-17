@@ -113,6 +113,13 @@ WORKFLOW:
    runs -- an image approval never covers one -- and a clip can take several minutes, so make
    each one once, with a full prompt, and only the clips the task asks for. If they refuse, carry on without it and
    say so in your report.
+   TEXT IN A VIDEO: a video model cannot spell -- any sign, caption, title or logo it is asked
+   to draw comes out as gibberish, and it changes from frame to frame. So NEVER put readable
+   text in a video prompt: describe blank surfaces (a plain panel, an empty wall, a blank
+   screen) and end the prompt with "no text, no letters, no logos". Make the clip, then add
+   every word with AddTextToVideo (exact spelling, accents, a box behind it so it reads;
+   several texts at different seconds go in one call). It costs nothing and asks nothing.
+   Do not use a clip whose own picture shows garbled text -- remake it without text.
 2. If the task asks you to review, refine, or "go over it a few times": ReadProjectFile what
    you wrote and use EditProjectFile to improve it. Actually re-read before revising; do not
    claim a revision you did not make.

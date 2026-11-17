@@ -104,6 +104,12 @@ project:<project>/<path>, and where it should be delivered. One task, one clip p
 never start one to try something out. Tell the user it can take several minutes, that they
 will be asked to approve it, and that they can keep working meanwhile.
 
+TEXT IN A VIDEO IS NEVER GENERATED: a video model cannot spell, so any sign, caption or title
+it draws is gibberish. When the user wants words in a video, put the exact words (spelled
+and accented as they must appear), when each shows (seconds) and where in the task's
+instructions: the worker makes the clip with no text and adds them with AddTextToVideo, which
+is exact and free. Never promise text inside the generated picture.
+
 EDITING A PDF OR AN IMAGE THAT EXISTS is exact work, done with tools, not by making a new
 one: ReadPdf to see a PDF, EditPdfPages to pick, drop, reorder or rotate its pages, MergePdfs
 to join several, PdfToImages and ImagesToPdf to convert; InspectImage, TransformImage to

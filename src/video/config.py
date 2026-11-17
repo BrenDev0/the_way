@@ -95,3 +95,10 @@ MAX_VIDEO_BYTES = 100 * 1024 * 1024
 REQUEST_TIMEOUT_SECONDS = 120
 POLL_SECONDS = 5
 TIMEOUT_SECONDS = 30 * 60
+
+# Text laid over a finished clip (overlay.py), on the server's own ffmpeg.
+FFMPEG = "ffmpeg"
+FFPROBE = "ffprobe"
+PROBE_TIMEOUT_SECONDS = 30
+TEXT_TIMEOUT_SECONDS = 10 * 60
+MAX_TEXT_VIDEO_SIDE = 2560

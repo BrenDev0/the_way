@@ -19,14 +19,18 @@ from src.api_keys.domain import Provider
 from src.assistants.context import ToolContext
 from src.core.tools.domain import Tool
 
-from . import config
-from .tool_schemas import AnimateImage, EditVideo, GenerateVideo
+from src.core.exceptions import NotFoundError
+from src.projects.domain import ProjectFile
+
+from . import config, overlay
+from .tool_schemas import AddTextToVideo, AnimateImage, EditVideo, GenerateVideo
 
 logger = logging.getLogger(__name__)
 
 # The tools that make a video. They are only ever used inside a background task (a clip takes
 # minutes, and a chat turn should not): the conversation is not given them.
 NAMES = (GenerateVideo.__name__, AnimateImage.__name__, EditVideo.__name__)
+LOCAL_NAMES = (AddTextToVideo.__name__,)
 
 NO_KEY = (
     "Video generation needs a fal key, and none has been set up for this organization. "
@@ -332,6 +336,64 @@ def build(context: ToolContext) -> dict[str, Tool]:
             preview=_preview_edit,
         ),
     }
+
+
+def build_local(context: ToolContext) -> dict[str, Tool]:
+    files = context.files
+
+    async def add_text_to_video(
+        project: str,
+        video_path: str,
+        texts: list[dict[str, Any]],
+        output_path: str | None = None,
+        size: int | None = None,
+        color: str = "white",
+        font: str = "sans-bold",
+        box: str | None = None,
+        box_opacity: float = 0.6,
+        margin: int | None = None,
+        max_width: float = 0.9,
+        fade_seconds: float = 0.25,
+        overwrite: bool = False,
+    ) -> str:
+        target = await files.project(project)
+        source, inner = await files.source(target, video_path)
+        default = PurePosixPath(inner.strip("/"))
+        path = _mp4(output_path or str(default.with_name(f"{default.stem}-con-texto.mp4")))
+        try:
+            existing = await files.entry(target, path)
+        except NotFoundError:
+            existing = None
+        if existing is not None and not overwrite and isinstance(existing, ProjectFile):
+            return (
+                f"{target.name}/{path} already exists. Pick another output_path, or pass "
+                "overwrite=true if the user wants it replaced."
+            )
+
+        _, clip = await files.read_bytes(source, inner, limit=config.MAX_VIDEO_BYTES)
+        cards = [
+            overlay.Card(
+                text=str(t["text"]), start=float(t.get("start_seconds", 0)),
+                end=None if t.get("end_seconds") is None else float(t["end_seconds"]),
+                position=str(t.get("position", "bottom")),
+            )
+            for t in (card if isinstance(card, dict) else card.model_dump() for card in texts)
+        ]
+        style = overlay.Style(
+            size=size, color=color, font=font, box=box, box_opacity=box_opacity,
+            margin=margin, max_width=max_width, fade=fade_seconds,
+        )
+        try:
+            made, info = await overlay.burn_text(clip, cards, style)
+        except (overlay.OverlayError, ValueError) as exc:
+            return f"Could not add the text: {exc}"
+        saved = await files.write(target, path, made, overwrite=True, content_type="video/mp4")
+        return (
+            f"Saved {target.name}/{path} ({len(cards)} text{'' if len(cards) == 1 else 's'} on a "
+            f"{info.width}x{info.height} clip of {info.seconds:.1f}s, {saved.size_bytes:,} bytes)"
+        )
+
+    return {AddTextToVideo.__name__: Tool(schema=AddTextToVideo, handler=add_text_to_video)}
 
 
 def _reason(response: httpx.Response) -> str:

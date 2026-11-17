@@ -39,6 +39,7 @@ TOOLS = frozenset(
         "TransformImage",
         "AddTextToImage",
         "OverlayImage",
+        "AddTextToVideo",
         # Always ask: the worker suspends on these until the user approves (see jobs.py).
         "GenerateImages",
         "EditImage",
