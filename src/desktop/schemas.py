@@ -385,15 +385,17 @@ COMPUTER_PATH = (
 
 
 class RequestComputerAccess(BaseModel):
-    """Ask the user for READ-ONLY access to one more folder on their computer, outside the
-    folder they have open -- their Documents, Downloads, a client's folder. The user is asked
-    and picks the folder themselves; you cannot choose it. Ask only when what they want is
-    not in the open folder or in a folder already granted (ListComputerFolder shows those),
-    and ask once: if they decline or pick nothing, carry on without it and do not ask again
-    unless they do."""
+    """Ask the user to let you SEARCH THEIR COMPUTER, read-only, to find a file or folder
+    outside the one they have open. Use it whenever they want something and have not said
+    where it is: never ask them where a file is, ask for this and search. The user gets a
+    popup and can allow searching their whole user folder (Desktop, Documents, Downloads,
+    OneDrive...), pick one specific folder instead (for another disk), or refuse. Ask only
+    when what they want is not in the open folder or already granted (ListComputerFolder
+    shows what is), and ask once: if they refuse, carry on without it and do not ask again
+    unless they do. Once the whole folder is allowed, start with SearchComputer."""
 
     reason: str = Field(
-        description="One short sentence the user reads before choosing: what you are looking "
+        description="One short sentence the user reads in the popup: what you are looking "
         "for and why, for example 'Buscar el contrato de Acme para resumirlo'"
     )
 
