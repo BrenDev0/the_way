@@ -34,6 +34,7 @@ from .schemas import (
     RunCommand,
     SearchCode,
     SearchComputer,
+    SearchComputerText,
     SearchFile,
     SendWhatsappMessage,
     SwitchBrowserTab,
@@ -78,6 +79,7 @@ COMPUTER: tuple[type[BaseModel], ...] = (
     RequestComputerAccess,
     ListComputerFolder,
     SearchComputer,
+    SearchComputerText,
     ReadComputerFile,
 )
 

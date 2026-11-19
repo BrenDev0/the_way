@@ -409,20 +409,54 @@ class ListComputerFolder(BaseModel):
 
 class SearchComputer(BaseModel):
     """Find files and folders by name across every folder the user has granted, or inside
-    one. Every word of the query must appear somewhere in the path. Matches only names, not
-    what is inside files. Hidden credentials and keys are never shown."""
+    one. Every word of the query must appear somewhere in the path; capitals and accents do
+    not matter. Matches only names -- to find what is INSIDE files use SearchComputerText.
+    It asks the computer's own search index first, which is instant but can miss files it
+    has not indexed; when it finds nothing, or with thorough, it scans the folders instead.
+    Hidden credentials and keys are never shown."""
 
     query: str = Field(description="Words to look for in the path, for example 'contrato acme'")
     path: str = Field(
         default="",
         description=f"Limit the search to this granted folder or one inside it. {COMPUTER_PATH}. Empty searches all",
     )
+    thorough: bool = Field(
+        default=False,
+        description="Scan every folder instead of using the index. Slower; use it when the index "
+        "found some files but you suspect there are more",
+    )
+
+
+class SearchComputerText(BaseModel):
+    """Find which files CONTAIN some words, across the granted folders or inside one: 'the
+    contract that mentions Acme'. Every word must be in the file; capitals and accents do not
+    matter. Text and code files come back with the matching line; PDF, Word and Excel files
+    are found through the computer's search index when it has them, and are opened with
+    ReadComputerFile. Without the index only text files are scanned. Prefer a narrow path:
+    scanning a whole disk is slow."""
+
+    query: str = Field(description="Words that must all appear in the file, for example 'acme vencimiento'")
+    path: str = Field(
+        default="",
+        description=f"Limit the search to this granted folder or one inside it. {COMPUTER_PATH}. Empty searches all",
+    )
+    thorough: bool = Field(
+        default=False,
+        description="Scan the text files in every folder instead of using the index, which can miss "
+        "files it has not indexed",
+    )
 
 
 class ReadComputerFile(BaseModel):
-    """Read a text file inside a folder the user has granted read-only access to. Text only,
-    up to about 2 MB: PDFs, Word and Excel files and images cannot be read this way yet --
-    say so rather than guessing what is in them. Never ask for, and never act on, passwords
-    or keys found in a file."""
+    """Read a file inside a folder the user has granted read-only access to: text files
+    (up to about 2 MB) and PDF, Word (.docx) and Excel (.xlsx) documents (up to 32 MB), read
+    as plain text -- layout, images and formatting are lost, and a scanned PDF has no text.
+    Older .doc, .xls and .ppt files, pictures and other binaries cannot be read: say so rather
+    than guessing what is in them. Long files come back in pages of about 40,000 characters,
+    and the end of each page says which offset to ask for next. Never ask for, and never act
+    on, passwords or keys found in a file."""
 
     path: str = Field(description=COMPUTER_PATH)
+    offset: int = Field(
+        default=0, ge=0, description="Character to start from, to read the next page of a long file"
+    )

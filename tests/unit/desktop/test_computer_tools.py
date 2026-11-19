@@ -1,7 +1,13 @@
 from src.conversations import prompt
 from src.desktop import tools as desktop_tools
 
-COMPUTER = {"RequestComputerAccess", "ListComputerFolder", "SearchComputer", "ReadComputerFile"}
+COMPUTER = {
+    "RequestComputerAccess",
+    "ListComputerFolder",
+    "SearchComputer",
+    "SearchComputerText",
+    "ReadComputerFile",
+}
 
 
 def test_the_computer_tools_are_offered_to_the_desktop():
