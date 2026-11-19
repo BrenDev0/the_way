@@ -21,15 +21,19 @@ from .schemas import (
     GitShow,
     GitStatus,
     ListBrowserTabs,
+    ListComputerFolder,
     ListDir,
     MovePath,
     OpenBrowserPage,
     ReadBrowserPage,
+    ReadComputerFile,
     ReadFile,
     ReadWhatsappChat,
     RenamePath,
+    RequestComputerAccess,
     RunCommand,
     SearchCode,
+    SearchComputer,
     SearchFile,
     SendWhatsappMessage,
     SwitchBrowserTab,
@@ -70,6 +74,13 @@ BROWSER: tuple[type[BaseModel], ...] = (
 
 SHELL: tuple[type[BaseModel], ...] = (RunCommand,)
 
+COMPUTER: tuple[type[BaseModel], ...] = (
+    RequestComputerAccess,
+    ListComputerFolder,
+    SearchComputer,
+    ReadComputerFile,
+)
+
 GIT: tuple[type[BaseModel], ...] = (
     GitStatus,
     GitLog,
@@ -102,15 +113,19 @@ REQUIRES_APPROVAL: frozenset[type[BaseModel]] = frozenset(
         GitCommit,
         GitPush,
         RunCommand,
+        RequestComputerAccess,
     }
 )
 
-SCHEMAS: tuple[type[BaseModel], ...] = FILES + TRANSFER + BROWSER + GIT + SHELL
+SCHEMAS: tuple[type[BaseModel], ...] = FILES + TRANSFER + BROWSER + GIT + SHELL + COMPUTER
 
 # Asked even when the user has the app approve everything else on its own (auto mode):
 # a deletion cannot be undone, a push leaves the machine for good, and a command can do
 # anything the user's account can.
-ALWAYS_ASK: frozenset[type[BaseModel]] = frozenset({DeleteFile, DeleteDir, GitPush, RunCommand})
+# Opening a folder to the agent is the user's decision every time, auto mode or not.
+ALWAYS_ASK: frozenset[type[BaseModel]] = frozenset(
+    {DeleteFile, DeleteDir, GitPush, RunCommand, RequestComputerAccess}
+)
 
 
 def build() -> dict[str, Tool]:

@@ -374,3 +374,55 @@ class RunCommand(BaseModel):
         default=60,
         description="How long it may run before it is ended, up to 600 (ten minutes)",
     )
+
+
+# --- the rest of the computer, read only, in folders the user has granted ------------------
+
+COMPUTER_PATH = (
+    "'<granted folder name>/<path inside it>', for example 'Documentos/contratos/acme.txt'. "
+    "Never an absolute path"
+)
+
+
+class RequestComputerAccess(BaseModel):
+    """Ask the user for READ-ONLY access to one more folder on their computer, outside the
+    folder they have open -- their Documents, Downloads, a client's folder. The user is asked
+    and picks the folder themselves; you cannot choose it. Ask only when what they want is
+    not in the open folder or in a folder already granted (ListComputerFolder shows those),
+    and ask once: if they decline or pick nothing, carry on without it and do not ask again
+    unless they do."""
+
+    reason: str = Field(
+        description="One short sentence the user reads before choosing: what you are looking "
+        "for and why, for example 'Buscar el contrato de Acme para resumirlo'"
+    )
+
+
+class ListComputerFolder(BaseModel):
+    """List a folder the user has granted read-only access to, or -- with no path -- the
+    granted folders themselves. Folders come with a trailing /, files with their sizes."""
+
+    path: str = Field(
+        default="", description=f"A granted folder or one inside it. {COMPUTER_PATH}. Empty lists the granted folders"
+    )
+
+
+class SearchComputer(BaseModel):
+    """Find files and folders by name across every folder the user has granted, or inside
+    one. Every word of the query must appear somewhere in the path. Matches only names, not
+    what is inside files. Hidden credentials and keys are never shown."""
+
+    query: str = Field(description="Words to look for in the path, for example 'contrato acme'")
+    path: str = Field(
+        default="",
+        description=f"Limit the search to this granted folder or one inside it. {COMPUTER_PATH}. Empty searches all",
+    )
+
+
+class ReadComputerFile(BaseModel):
+    """Read a text file inside a folder the user has granted read-only access to. Text only,
+    up to about 2 MB: PDFs, Word and Excel files and images cannot be read this way yet --
+    say so rather than guessing what is in them. Never ask for, and never act on, passwords
+    or keys found in a file."""
+
+    path: str = Field(description=COMPUTER_PATH)
