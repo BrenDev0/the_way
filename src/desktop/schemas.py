@@ -411,9 +411,10 @@ class SearchComputer(BaseModel):
     """Find files and folders by name across every folder the user has granted, or inside
     one. Every word of the query must appear somewhere in the path; capitals and accents do
     not matter. Matches only names -- to find what is INSIDE files use SearchComputerText.
-    It asks the computer's own search index first, which is instant but can miss files it
-    has not indexed; when it finds nothing, or with thorough, it scans the folders instead.
-    Hidden credentials and keys are never shown."""
+    A small folder (a few thousand entries) is scanned in full, so nothing is missed. In a
+    bigger one it also asks the computer's own search index, which is instant but can miss
+    files it has not indexed; with thorough it scans everything instead. Hidden credentials
+    and keys are never shown."""
 
     query: str = Field(description="Words to look for in the path, for example 'contrato acme'")
     path: str = Field(
@@ -430,10 +431,10 @@ class SearchComputer(BaseModel):
 class SearchComputerText(BaseModel):
     """Find which files CONTAIN some words, across the granted folders or inside one: 'the
     contract that mentions Acme'. Every word must be in the file; capitals and accents do not
-    matter. Text and code files come back with the matching line; PDF, Word and Excel files
-    are found through the computer's search index when it has them, and are opened with
-    ReadComputerFile. Without the index only text files are scanned. Prefer a narrow path:
-    scanning a whole disk is slow."""
+    matter. Text and code files are read and come back with the matching line; PDF, Word and
+    Excel files are found through the computer's search index when it has them, and are opened
+    with ReadComputerFile. In a big folder the text scan stops early when the index knows the
+    folder, unless thorough. Prefer a narrow path: scanning a whole disk is slow."""
 
     query: str = Field(description="Words that must all appear in the file, for example 'acme vencimiento'")
     path: str = Field(
@@ -452,7 +453,9 @@ class ReadComputerFile(BaseModel):
     (up to about 2 MB) and PDF, Word (.docx) and Excel (.xlsx) documents (up to 32 MB), read
     as plain text -- layout, images and formatting are lost, and a scanned PDF has no text.
     Older .doc, .xls and .ppt files, pictures and other binaries cannot be read: say so rather
-    than guessing what is in them. Long files come back in pages of about 40,000 characters,
+    than guessing what is in them. A file marked 'only in the cloud' (OneDrive, iCloud) is not
+    on this computer and is not opened, because opening it would download it: tell the user to
+    make it available on this device first. Long files come back in pages of about 40,000 characters,
     and the end of each page says which offset to ask for next. Never ask for, and never act
     on, passwords or keys found in a file."""
 
