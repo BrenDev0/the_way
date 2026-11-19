@@ -62,8 +62,10 @@ class ListDir(BaseModel):
 
 
 class SearchFile(BaseModel):
-    """Find files and folders on the user's computer by name. Every word of the query must
-    appear somewhere in the path. Folders come back with a trailing / -- list those with
+    """Find files and folders by name INSIDE THE FOLDER THE USER HAS OPEN. It cannot see
+    anywhere else on their computer: to find a file elsewhere, above all when they do not
+    know where it is, use RequestComputerAccess and then SearchComputer. Every word of the
+    query must appear somewhere in the path. Folders come back with a trailing / -- list those with
     ListDir rather than reading them. Build directories (.venv, node_modules,
     __pycache__, .git) are skipped."""
 

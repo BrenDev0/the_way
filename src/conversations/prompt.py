@@ -280,6 +280,14 @@ VOICE_STYLE = (
 )
 
 
+FIND_FILES = (
+    "To FIND a file or folder anywhere else on their computer, above all when they do not know "
+    "where it is, NEVER ask them to pick a folder or to say where it is: call "
+    "RequestComputerAccess (a popup lets them allow searching their user folder) and then "
+    "SearchComputer with no path. Those tools do not need any folder to be open."
+)
+
+
 def _local_folder_line(local_folder: str) -> str:
     """Where the local file tools work, as of this message. The user switches folders
     between messages, so this -- not an error from earlier -- is what is true now."""
@@ -291,17 +299,18 @@ def _local_folder_line(local_folder: str) -> str:
     )
     if not local_folder.strip():
         return (
-            "No folder is open in the desktop app right now, so the local file tools have "
-            "nowhere to work. Ask the user to choose one with the folder button "
-            f"(ELEGIR CARPETA) before using them. {now}"
+            "No folder is open in the desktop app right now, so the local file tools "
+            "(ListDir, CreateFile, ...) have nowhere to work; only if they want files created or "
+            "changed on their computer, ask them to choose a folder with the folder button "
+            f"(ELEGIR CARPETA). That does NOT stop you finding files. {FIND_FILES} {now}"
         )
     return (
         f"The folder open in the desktop app right now is: {local_folder}\n"
         "The local file tools (ListDir, CreateDir, ReadFile, ...) work inside it, with paths "
         "relative to it -- '.' is the folder itself, so a folder the user asks for 'here' or "
-        "'on my desktop' when this IS their desktop is simply its name. Anything outside it "
-        "is out of reach: if they ask for another place, say which folder is open and ask "
-        f"them to open the one they mean with the folder button. {now}"
+        "'on my desktop' when this IS their desktop is simply its name. The local file tools "
+        "cannot go outside it; to create or change files elsewhere, say which folder is open "
+        f"and ask them to open the one they mean with the folder button. {FIND_FILES} {now}"
     )
 
 
@@ -318,8 +327,8 @@ def _remote_folder_line(remote_folder: str) -> str:
         + (f" and deliver_to_path='{folder}'" if folder else "")
         + " on StartBackgroundTask instead of the Borradores default. Anything else only when "
         "they name another place. The folder open on their computer is not where they are "
-        "working now: use the local file tools only when they ask about their computer. This "
-        "is the state as of their latest message and overrides anything earlier."
+        "working now: use the local file tools only when they ask about their computer. "
+        f"{FIND_FILES} This is the state as of their latest message and overrides anything earlier."
     )
 
 
