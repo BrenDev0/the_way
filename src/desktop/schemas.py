@@ -414,7 +414,9 @@ class ListComputerFolder(BaseModel):
 class SearchComputer(BaseModel):
     """Find files and folders by name across every folder the user has granted, or inside
     one. Every word of the query must appear somewhere in the path; capitals and accents do
-    not matter. Matches only names -- to find what is INSIDE files use SearchComputerText.
+    not matter. Matches names only; when no name matches, it goes on to search inside the
+    files by itself, so a note called 'test' is found by what it says. To search by content
+    from the start, use SearchComputerText.
     A small folder (a few thousand entries) is scanned in full, so nothing is missed. In a
     bigger one it also asks the computer's own search index, which is instant but can miss
     files it has not indexed; with thorough it scans everything instead. Hidden credentials
