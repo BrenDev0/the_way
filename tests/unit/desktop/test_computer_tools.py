@@ -45,15 +45,16 @@ def test_the_per_turn_note_never_sends_the_user_to_pick_a_folder_to_find_a_file(
     for name, note in notes.items():
         assert "RequestComputerAccess" in note, name
         assert "SearchComputer" in note, name
-        assert "NEVER ask them to pick a folder" in note, name
+        assert "NEVER tell them you cannot see their computer" in note, name
         assert "out of reach" not in note, name
 
 
 def test_with_no_folder_open_the_note_does_not_say_the_agent_is_blind():
     note = prompt._local_folder_line("")
 
-    assert "does NOT stop you finding files" in note
-    assert "do not need any folder to be open" in note
+    assert "never stops you finding or reading files" in note
+    assert "no folder needs to be open" in note
+    assert "ELEGIR CARPETA" not in note
 
 
 def test_the_local_search_tool_says_it_only_sees_the_open_folder():

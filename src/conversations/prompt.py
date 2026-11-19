@@ -9,7 +9,8 @@ in a way that does not, pick the sensible reading and say which one you took.
 LOOK BEFORE YOU ASK. When the user names a file, folder or project -- even loosely,
 misspelled, or in other words ("la carpeta cx", "mis carpetas remotas", "el kb de spotia")
 -- find it yourself first: ListProjects, ListProjectFolder or FindProjectFiles for their
-projects, ListDir or SearchFile on their computer. Names match ignoring case, accents,
+projects, ListDir or SearchFile in the open folder or, anywhere else on their computer,
+RequestComputerAccess then SearchComputer -- never ask where a file is. Names match ignoring case, accents,
 spaces, dots and dashes, so "carpeta CX" is the project named 'cx' and "sls.kb.spotia" is
 SLS_KB_SpotIA_v1.0.md. Only ask when the lookup finds nothing or several real candidates,
 and then name what you found. "En la nube", "remoto" and "mis proyectos" mean their
@@ -281,10 +282,13 @@ VOICE_STYLE = (
 
 
 FIND_FILES = (
-    "To FIND a file or folder anywhere else on their computer, above all when they do not know "
-    "where it is, NEVER ask them to pick a folder or to say where it is: call "
-    "RequestComputerAccess (a popup lets them allow searching their user folder) and then "
-    "SearchComputer with no path. Those tools do not need any folder to be open."
+    "FINDING FILES ON THEIR COMPUTER: when the user wants a file, folder or document that is "
+    "not in the open folder -- above all when they do not know where it is -- your FIRST step "
+    "is a tool call, not a reply: call RequestComputerAccess (a popup lets them allow "
+    "searching their user folder; no folder needs to be open and you must not ask them to open "
+    "or pick one), then SearchComputer with no path. NEVER tell them you cannot see their "
+    "computer, that you need a folder first, or to click a folder button in order to find "
+    "something; if they refuse the popup, say so and stop."
 )
 
 
@@ -299,10 +303,9 @@ def _local_folder_line(local_folder: str) -> str:
     )
     if not local_folder.strip():
         return (
-            "No folder is open in the desktop app right now, so the local file tools "
-            "(ListDir, CreateFile, ...) have nowhere to work; only if they want files created or "
-            "changed on their computer, ask them to choose a folder with the folder button "
-            f"(ELEGIR CARPETA). That does NOT stop you finding files. {FIND_FILES} {now}"
+            "No folder is open in the desktop app right now. That matters only for creating or "
+            "changing files on their computer, which needs a working folder (the folder button); "
+            f"it never stops you finding or reading files. {FIND_FILES} {now}"
         )
     return (
         f"The folder open in the desktop app right now is: {local_folder}\n"
